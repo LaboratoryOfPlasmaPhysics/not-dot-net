@@ -9,11 +9,16 @@ app = App(name="NotDotNet", version="0.1.0")
 
 
 @app.command
-def serve(host: str = "localhost", port: int = 8088, env_file: Optional[str] = None):
+def serve(
+    host: str = "localhost",
+    port: int = 8088,
+    env_file: Optional[str] = None,
+    seed_fake_users: bool = False,
+):
     """Serve the NotDotNet application."""
     from not_dot_net.app import main
 
-    main(host, port, env_file, reload=False)
+    main(host, port, env_file, seed_fake_users=seed_fake_users)
 
 
 @app.command

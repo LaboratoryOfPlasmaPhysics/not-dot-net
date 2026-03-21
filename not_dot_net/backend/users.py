@@ -95,6 +95,55 @@ async def ensure_default_admin() -> None:
                     pass
 
 
+FAKE_USERS = [
+    {"email": "marie.curie@lpp.polytechnique.fr", "full_name": "Marie Curie", "team": "Plasma Physics", "office": "B210", "phone": "+33 1 69 33 4001", "title": "Research Director", "employment_status": "researcher"},
+    {"email": "pierre.dumont@lpp.polytechnique.fr", "full_name": "Pierre Dumont", "team": "Instrumentation", "office": "A115", "phone": "+33 1 69 33 4002", "title": "Senior Engineer", "employment_status": "researcher"},
+    {"email": "sophie.martin@lpp.polytechnique.fr", "full_name": "Sophie Martin", "team": "Space Weather", "office": "C302", "phone": "+33 1 69 33 4003", "title": "Postdoc", "employment_status": "researcher"},
+    {"email": "lucas.bernard@lpp.polytechnique.fr", "full_name": "Lucas Bernard", "team": "Theory & Simulation", "office": "B108", "phone": "+33 1 69 33 4004", "title": "PhD Student", "employment_status": "phd_student"},
+    {"email": "emma.petit@lpp.polytechnique.fr", "full_name": "Emma Petit", "team": "Plasma Physics", "office": "B212", "phone": "+33 1 69 33 4005", "title": "PhD Student", "employment_status": "phd_student"},
+    {"email": "thomas.leroy@lpp.polytechnique.fr", "full_name": "Thomas Leroy", "team": "Instrumentation", "office": "A120", "phone": "+33 1 69 33 4006", "title": "Intern", "employment_status": "intern"},
+    {"email": "camille.moreau@lpp.polytechnique.fr", "full_name": "Camille Moreau", "team": "Administration", "office": "A001", "phone": "+33 1 69 33 4007", "title": "Administrative Assistant", "employment_status": "researcher"},
+    {"email": "jean.dupont@lpp.polytechnique.fr", "full_name": "Jean Dupont", "team": "Space Weather", "office": "C305", "phone": "+33 1 69 33 4008", "title": "Research Scientist", "employment_status": "researcher"},
+    {"email": "alice.roux@lpp.polytechnique.fr", "full_name": "Alice Roux", "team": "Theory & Simulation", "office": "B110", "phone": "+33 1 69 33 4009", "title": "Visiting Researcher", "employment_status": "visitor"},
+    {"email": "nicolas.lambert@lpp.polytechnique.fr", "full_name": "Nicolas Lambert", "team": "Plasma Physics", "office": "B215", "phone": "+33 1 69 33 4010", "title": "Professor", "employment_status": "researcher"},
+]
+
+
+async def seed_fake_users() -> None:
+    """Seed fake users for development. Skips users that already exist."""
+    from not_dot_net.backend.db import get_async_session, get_user_db
+    from not_dot_net.backend.schemas import UserCreate
+    from fastapi_users.exceptions import UserAlreadyExists
+
+    get_session_ctx = asynccontextmanager(get_async_session)
+    get_user_db_ctx = asynccontextmanager(get_user_db)
+    get_user_manager_ctx = asynccontextmanager(get_user_manager)
+
+    async with get_session_ctx() as session:
+        async with get_user_db_ctx(session) as user_db:
+            async with get_user_manager_ctx(user_db) as user_manager:
+                count = 0
+                for fake in FAKE_USERS:
+                    try:
+                        user = await user_manager.create(
+                            UserCreate(
+                                email=fake["email"],
+                                password="dev",
+                                is_active=True,
+                                is_superuser=False,
+                            )
+                        )
+                        for field in ("full_name", "phone", "office", "team", "title", "employment_status"):
+                            setattr(user, field, fake.get(field))
+                        session.add(user)
+                        count += 1
+                    except UserAlreadyExists:
+                        pass
+                await session.commit()
+                if count:
+                    print(f"Seeded {count} fake users.")
+
+
 async def authenticate_and_get_token(email: str, password: str) -> str | None:
     """Authenticate a user and return a cookie token, or None on failure.
 
