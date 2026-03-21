@@ -4,6 +4,7 @@ from fastapi.responses import RedirectResponse
 from nicegui import app, ui
 
 from not_dot_net.backend.users import authenticate_and_get_token
+from not_dot_net.frontend.i18n import t
 
 
 def setup():
@@ -16,7 +17,7 @@ def setup():
             try:
                 token = await authenticate_and_get_token(email.value, password.value)
                 if token is None:
-                    ui.notify("Invalid email or password", color="negative")
+                    ui.notify(t("invalid_credentials"), color="negative")
                     return
 
                 ui.run_javascript(
@@ -24,18 +25,18 @@ def setup():
                     f'window.location.href = "{redirect_to}";'
                 )
             except Exception:
-                ui.notify("Auth server error", color="negative")
+                ui.notify(t("auth_error"), color="negative")
 
         with ui.column().classes("absolute-center items-center gap-4"):
-            ui.label("LPP Intranet").classes("text-h4 text-weight-light")
+            ui.label(t("app_name")).classes("text-h4 text-weight-light")
             with ui.card().classes("w-80"):
-                email = ui.input("Email").props("outlined dense").classes(
+                email = ui.input(t("email")).props("outlined dense").classes(
                     "w-full"
                 ).on("keydown.enter", try_login)
                 password = ui.input(
-                    "Password", password=True, password_toggle_button=True
+                    t("password"), password=True, password_toggle_button=True
                 ).props("outlined dense").classes("w-full").on(
                     "keydown.enter", try_login
                 )
-                ui.button("Log in", on_click=try_login).classes("w-full")
+                ui.button(t("log_in"), on_click=try_login).classes("w-full")
         return None

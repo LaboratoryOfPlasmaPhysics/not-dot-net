@@ -6,26 +6,28 @@ from nicegui import ui
 from not_dot_net.backend.db import User, get_async_session
 from not_dot_net.backend.onboarding import OnboardingRequest
 from not_dot_net.config import get_settings
+from not_dot_net.frontend.i18n import t
 from sqlalchemy import select
 
 
 def render(current_user: User):
-    ui.label("New Person").classes("text-h6 mb-2")
+    ui.label(t("new_person")).classes("text-h6 mb-2")
 
     settings = get_settings()
     team_options = settings.teams
-    status_options = ["Researcher", "PhD student", "Intern", "Visitor"]
+    status_keys = ["researcher", "phd_student", "intern", "visitor"]
+    status_options = {key: t(key) for key in status_keys}
 
-    name_input = ui.input("Name").props("outlined dense").classes("w-full")
-    email_input = ui.input("Email").props("outlined dense").classes("w-full")
-    role_select = ui.select(status_options, label="Role / Status").props(
+    name_input = ui.input(t("name")).props("outlined dense").classes("w-full")
+    email_input = ui.input(t("email")).props("outlined dense").classes("w-full")
+    role_select = ui.select(status_options, label=t("role_status")).props(
         "outlined dense"
     ).classes("w-full")
-    team_select = ui.select(team_options, label="Team").props(
+    team_select = ui.select(team_options, label=t("team")).props(
         "outlined dense"
     ).classes("w-full")
     date_input = ui.date(value=date.today().isoformat()).classes("w-full")
-    note_input = ui.textarea("Note (optional)").props("outlined dense").classes("w-full")
+    note_input = ui.textarea(t("note_optional")).props("outlined dense").classes("w-full")
 
     request_list = ui.column().classes("w-full mt-4")
 
@@ -50,9 +52,9 @@ def render(current_user: User):
         request_list.clear()
         with request_list:
             if not requests:
-                ui.label("No onboarding requests yet.").classes("text-gray-500")
+                ui.label(t("no_requests")).classes("text-gray-500")
                 return
-            ui.label("Onboarding Requests").classes("text-h6 mt-2")
+            ui.label(t("onboarding_requests")).classes("text-h6 mt-2")
             for req in requests:
                 with ui.card().classes("w-full"):
                     with ui.row().classes("items-center justify-between w-full"):
@@ -62,15 +64,16 @@ def render(current_user: User):
                         ui.badge(req.status).props(
                             "color=orange" if req.status == "pending" else "color=green"
                         )
+                    role_display = t(req.role_status) if req.role_status else ""
                     ui.label(
-                        f"{req.role_status} · {req.team} · starts {req.start_date}"
+                        f"{role_display} · {req.team} · {t('starts', date=req.start_date)}"
                     ).classes("text-sm text-gray-500")
                     if req.note:
                         ui.label(req.note).classes("text-sm")
 
     async def submit():
         if not name_input.value or not email_input.value:
-            ui.notify("Name and email are required", color="negative")
+            ui.notify(t("name_email_required"), color="negative")
             return
 
         get_session_ctx = asynccontextmanager(get_async_session)
@@ -87,7 +90,7 @@ def render(current_user: User):
             session.add(request)
             await session.commit()
 
-        ui.notify("Onboarding request created", color="positive")
+        ui.notify(t("onboarding_created"), color="positive")
         name_input.value = ""
         email_input.value = ""
         role_select.value = None
@@ -95,7 +98,7 @@ def render(current_user: User):
         note_input.value = ""
         await refresh_list()
 
-    ui.button("Submit", on_click=submit, icon="send").props("color=primary").classes(
+    ui.button(t("submit"), on_click=submit, icon="send").props("color=primary").classes(
         "mt-2"
     )
 
