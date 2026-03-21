@@ -7,6 +7,7 @@ from not_dot_net.backend.db import init_db, create_db_and_tables
 from not_dot_net.backend.users import fastapi_users, jwt_backend, cookie_backend, ensure_default_admin
 from not_dot_net.backend.schemas import UserRead, UserUpdate
 from not_dot_net.backend.auth import router as auth_router
+from not_dot_net.backend.onboarding_router import router as onboarding_router
 from not_dot_net.frontend.login import setup as setup_login
 from not_dot_net.frontend.user_page import setup as setup_user_page
 
@@ -37,6 +38,7 @@ def create_app(config_file: str | None = None):
         tags=["users"],
     )
     app.include_router(auth_router)
+    app.include_router(onboarding_router)
 
     setup_login()
     setup_user_page()
