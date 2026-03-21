@@ -69,7 +69,7 @@ def main_page() -> None:
 
 def main(
     host: str = "localhost",
-    port: int = 8000,
+    port: int = 8088,
     env_file: Optional[str] = None,
     reload=False,
 ) -> None:
@@ -82,4 +82,4 @@ def main(
 
 
 if __name__ in {"__main__", "__mp_main__"}:
-    main("localhost", 8000, None)
+    main("localhost", 8088, None)

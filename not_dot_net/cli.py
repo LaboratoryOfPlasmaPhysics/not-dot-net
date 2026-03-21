@@ -9,7 +9,7 @@ app = App(name="NotDotNet", version="0.1.0")
 
 
 @app.command
-def serve(host: str = "localhost", port: int = 8000, env_file: Optional[str] = None):
+def serve(host: str = "localhost", port: int = 8088, env_file: Optional[str] = None):
     """Serve the NotDotNet application."""
     from not_dot_net.app import main
 
