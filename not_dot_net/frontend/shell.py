@@ -6,6 +6,7 @@ from nicegui import ui
 
 from not_dot_net.backend.db import User
 from not_dot_net.backend.users import current_active_user_optional
+from not_dot_net.frontend.directory import render as render_directory
 
 
 def setup():
@@ -29,7 +30,7 @@ def setup():
 
         with ui.tab_panels(tabs, value="People").classes("w-full"):
             with ui.tab_panel("People"):
-                ui.label("People directory placeholder")
+                render_directory(user)
             with ui.tab_panel("Onboarding"):
                 ui.label("Onboarding placeholder")
 
