@@ -95,6 +95,7 @@ def _person_card(person: User, current_user: User, state: dict):
                     ui.label(f"Office {person.office}").classes("text-sm text-gray-500")
 
         detail_container = ui.column().classes("w-full mt-2")
+        detail_container.on("click.stop", js_handler="() => {}")
         detail_container.set_visibility(False)
         state["details"][person.id] = detail_container
 
