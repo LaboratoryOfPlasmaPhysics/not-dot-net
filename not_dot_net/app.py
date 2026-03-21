@@ -74,8 +74,10 @@ def main(
     reload=False,
 ) -> None:
     create_app(env_file)
+    from not_dot_net.config import get_settings
     ui.run(
-        storage_secret="test", host=host, port=port, reload=reload, title="NotDotNet"
+        storage_secret=get_settings().storage_secret,
+        host=host, port=port, reload=reload, title="NotDotNet",
     )
 
 

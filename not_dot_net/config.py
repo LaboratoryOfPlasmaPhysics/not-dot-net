@@ -29,7 +29,8 @@ class BackendSettings(BaseModel):
 class Settings(BaseSettings):
     app_name: str = "LPP Intranet"
     admin_email: str = ""
-    jwt_secret: str = "CHANGE-ME-IN-PRODUCTION"
+    jwt_secret: str
+    storage_secret: str
     backend: BackendSettings = BackendSettings()
 
     model_config = SettingsConfigDict(yaml_file="config.yaml")
