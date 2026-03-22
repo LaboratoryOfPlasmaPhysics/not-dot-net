@@ -12,6 +12,7 @@ from fastapi_users.authentication import (
 from fastapi_users.db import SQLAlchemyUserDatabase
 
 from not_dot_net.backend.db import User, get_user_db
+from not_dot_net.backend.roles import Role
 from not_dot_net.config import get_settings
 
 
@@ -26,6 +27,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_register(self, user: User, request: Request | None = None):
         print(f"User {user.id} has registered.")
+
+    async def on_after_update(self, user: User, update_dict: dict, request=None):
+        if "role" in update_dict:
+            user.is_superuser = (user.role == Role.ADMIN)
 
 
 async def get_user_manager(
@@ -82,7 +87,7 @@ async def ensure_default_admin() -> None:
         async with get_user_db_ctx(session) as user_db:
             async with get_user_manager_ctx(user_db) as user_manager:
                 try:
-                    await user_manager.create(
+                    user = await user_manager.create(
                         UserCreate(
                             email=settings.admin_email,
                             password=settings.admin_password,
@@ -90,22 +95,25 @@ async def ensure_default_admin() -> None:
                             is_superuser=True,
                         )
                     )
+                    user.role = Role.ADMIN
+                    session.add(user)
+                    await session.commit()
                     print(f"Default admin '{settings.admin_email}' created.")
                 except UserAlreadyExists:
                     pass
 
 
 FAKE_USERS = [
-    {"email": "marie.curie@lpp.polytechnique.fr", "full_name": "Marie Curie", "team": "Plasma Physics", "office": "B210", "phone": "+33 1 69 33 4001", "title": "Research Director", "employment_status": "researcher"},
-    {"email": "pierre.dumont@lpp.polytechnique.fr", "full_name": "Pierre Dumont", "team": "Instrumentation", "office": "A115", "phone": "+33 1 69 33 4002", "title": "Senior Engineer", "employment_status": "researcher"},
-    {"email": "sophie.martin@lpp.polytechnique.fr", "full_name": "Sophie Martin", "team": "Space Weather", "office": "C302", "phone": "+33 1 69 33 4003", "title": "Postdoc", "employment_status": "researcher"},
-    {"email": "lucas.bernard@lpp.polytechnique.fr", "full_name": "Lucas Bernard", "team": "Theory & Simulation", "office": "B108", "phone": "+33 1 69 33 4004", "title": "PhD Student", "employment_status": "phd_student"},
-    {"email": "emma.petit@lpp.polytechnique.fr", "full_name": "Emma Petit", "team": "Plasma Physics", "office": "B212", "phone": "+33 1 69 33 4005", "title": "PhD Student", "employment_status": "phd_student"},
-    {"email": "thomas.leroy@lpp.polytechnique.fr", "full_name": "Thomas Leroy", "team": "Instrumentation", "office": "A120", "phone": "+33 1 69 33 4006", "title": "Intern", "employment_status": "intern"},
-    {"email": "camille.moreau@lpp.polytechnique.fr", "full_name": "Camille Moreau", "team": "Administration", "office": "A001", "phone": "+33 1 69 33 4007", "title": "Administrative Assistant", "employment_status": "researcher"},
-    {"email": "jean.dupont@lpp.polytechnique.fr", "full_name": "Jean Dupont", "team": "Space Weather", "office": "C305", "phone": "+33 1 69 33 4008", "title": "Research Scientist", "employment_status": "researcher"},
-    {"email": "alice.roux@lpp.polytechnique.fr", "full_name": "Alice Roux", "team": "Theory & Simulation", "office": "B110", "phone": "+33 1 69 33 4009", "title": "Visiting Researcher", "employment_status": "visitor"},
-    {"email": "nicolas.lambert@lpp.polytechnique.fr", "full_name": "Nicolas Lambert", "team": "Plasma Physics", "office": "B215", "phone": "+33 1 69 33 4010", "title": "Professor", "employment_status": "researcher"},
+    {"email": "marie.curie@lpp.polytechnique.fr", "full_name": "Marie Curie", "team": "Plasma Physics", "office": "B210", "phone": "+33 1 69 33 4001", "title": "Research Director", "employment_status": "researcher", "role": "staff"},
+    {"email": "pierre.dumont@lpp.polytechnique.fr", "full_name": "Pierre Dumont", "team": "Instrumentation", "office": "A115", "phone": "+33 1 69 33 4002", "title": "Senior Engineer", "employment_status": "researcher", "role": "staff"},
+    {"email": "sophie.martin@lpp.polytechnique.fr", "full_name": "Sophie Martin", "team": "Space Weather", "office": "C302", "phone": "+33 1 69 33 4003", "title": "Postdoc", "employment_status": "researcher", "role": "staff"},
+    {"email": "lucas.bernard@lpp.polytechnique.fr", "full_name": "Lucas Bernard", "team": "Theory & Simulation", "office": "B108", "phone": "+33 1 69 33 4004", "title": "PhD Student", "employment_status": "phd_student", "role": "member"},
+    {"email": "emma.petit@lpp.polytechnique.fr", "full_name": "Emma Petit", "team": "Plasma Physics", "office": "B212", "phone": "+33 1 69 33 4005", "title": "PhD Student", "employment_status": "phd_student", "role": "member"},
+    {"email": "thomas.leroy@lpp.polytechnique.fr", "full_name": "Thomas Leroy", "team": "Instrumentation", "office": "A120", "phone": "+33 1 69 33 4006", "title": "Intern", "employment_status": "intern", "role": "member"},
+    {"email": "camille.moreau@lpp.polytechnique.fr", "full_name": "Camille Moreau", "team": "Administration", "office": "A001", "phone": "+33 1 69 33 4007", "title": "Administrative Assistant", "employment_status": "researcher", "role": "staff"},
+    {"email": "jean.dupont@lpp.polytechnique.fr", "full_name": "Jean Dupont", "team": "Space Weather", "office": "C305", "phone": "+33 1 69 33 4008", "title": "Research Scientist", "employment_status": "researcher", "role": "staff"},
+    {"email": "alice.roux@lpp.polytechnique.fr", "full_name": "Alice Roux", "team": "Theory & Simulation", "office": "B110", "phone": "+33 1 69 33 4009", "title": "Visiting Researcher", "employment_status": "visitor", "role": "member"},
+    {"email": "nicolas.lambert@lpp.polytechnique.fr", "full_name": "Nicolas Lambert", "team": "Plasma Physics", "office": "B215", "phone": "+33 1 69 33 4010", "title": "Professor", "employment_status": "researcher", "role": "director"},
 ]
 
 
@@ -133,7 +141,7 @@ async def seed_fake_users() -> None:
                                 is_superuser=False,
                             )
                         )
-                        for field in ("full_name", "phone", "office", "team", "title", "employment_status"):
+                        for field in ("full_name", "phone", "office", "team", "title", "employment_status", "role"):
                             setattr(user, field, fake.get(field))
                         session.add(user)
                         count += 1

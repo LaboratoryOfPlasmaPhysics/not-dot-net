@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from not_dot_net.backend.roles import Role
+
 
 class AuthMethod(str, PyEnum):
     LOCAL = "local"
@@ -32,6 +34,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     team: Mapped[str | None] = mapped_column(default=None)
     title: Mapped[str | None] = mapped_column(default=None)
     employment_status: Mapped[str | None] = mapped_column(default=None)
+    role: Mapped[Role] = mapped_column(
+        SAEnum(Role), default=Role.MEMBER
+    )
 
 
 _engine: AsyncEngine | None = None

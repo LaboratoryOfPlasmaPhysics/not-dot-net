@@ -37,6 +37,13 @@ def test_settings_has_teams_list():
     assert len(settings.teams) > 0
 
 
+def test_user_default_role():
+    from not_dot_net.backend.roles import Role
+    # SQLAlchemy INSERT defaults are not applied on Python object construction;
+    # verify via column metadata.
+    assert User.__table__.c.role.default.arg == Role.MEMBER
+
+
 ONBOARDING_FIELDS = [
     "id", "created_by", "person_name", "person_email", "role_status",
     "team", "start_date", "note", "status", "created_at", "updated_at",
