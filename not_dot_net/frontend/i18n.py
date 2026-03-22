@@ -5,7 +5,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Shell / nav
         "app_name": "LPP Intranet",
         "people": "People",
-        "onboarding": "Onboarding",
         "my_profile": "My Profile",
         "logout": "Logout",
         # Login
@@ -29,23 +28,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "saved": "Saved",
         "confirm_delete": "Delete {name}?",
         "deleted": "Deleted {name}",
-        # Onboarding
-        "new_person": "New Person",
+        # Common
         "name": "Name",
-        "role_status": "Role / Status",
-        "start_date": "Start Date",
-        "note_optional": "Note (optional)",
         "submit": "Submit",
-        "name_email_required": "Name and email are required",
-        "onboarding_created": "Onboarding request created",
-        "no_requests": "No onboarding requests yet.",
-        "onboarding_requests": "Onboarding Requests",
-        "starts": "starts {date}",
-        # Roles
-        "researcher": "Researcher",
-        "phd_student": "PhD student",
-        "intern": "Intern",
-        "visitor": "Visitor",
         # Language
         "language": "Language",
     },
@@ -53,7 +38,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Shell / nav
         "app_name": "LPP Intranet",
         "people": "Personnes",
-        "onboarding": "Intégration",
         "my_profile": "Mon profil",
         "logout": "Déconnexion",
         # Login
@@ -77,23 +61,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "saved": "Enregistré",
         "confirm_delete": "Supprimer {name}\u202f?",
         "deleted": "{name} supprimé",
-        # Onboarding
-        "new_person": "Nouvelle personne",
+        # Common
         "name": "Nom",
-        "role_status": "Rôle / Statut",
-        "start_date": "Date de début",
-        "note_optional": "Note (facultatif)",
         "submit": "Envoyer",
-        "name_email_required": "Le nom et l'e-mail sont requis",
-        "onboarding_created": "Demande d'intégration créée",
-        "no_requests": "Aucune demande d'intégration pour le moment.",
-        "onboarding_requests": "Demandes d'intégration",
-        "starts": "début {date}",
-        # Roles
-        "researcher": "Chercheur",
-        "phd_student": "Doctorant",
-        "intern": "Stagiaire",
-        "visitor": "Visiteur",
         # Language
         "language": "Langue",
     },

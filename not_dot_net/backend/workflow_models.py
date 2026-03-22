@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text, func
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import JSON, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base
