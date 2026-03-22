@@ -126,26 +126,30 @@ async def _render_actionable(container, user: User):
                 async def handle_approve(comment, r=req):
                     try:
                         await submit_step(r.id, user.id, "approve", comment=comment)
-                        ui.notify(t("step_submitted"), color="positive")
-                        await _render_actionable(container, user)
                     except Exception as e:
                         ui.notify(str(e), color="negative")
+                        return
+                    # Notify before re-render (re-render deletes parent slots)
+                    ui.notify(t("step_submitted"), color="positive")
+                    await _render_actionable(container, user)
 
                 async def handle_reject(comment, r=req):
                     try:
                         await submit_step(r.id, user.id, "reject", comment=comment)
-                        ui.notify(t("step_submitted"), color="positive")
-                        await _render_actionable(container, user)
                     except Exception as e:
                         ui.notify(str(e), color="negative")
+                        return
+                    ui.notify(t("step_submitted"), color="positive")
+                    await _render_actionable(container, user)
 
                 async def handle_submit(data, r=req):
                     try:
                         await submit_step(r.id, user.id, "submit", data=data)
-                        ui.notify(t("step_submitted"), color="positive")
-                        await _render_actionable(container, user)
                     except Exception as e:
                         ui.notify(str(e), color="negative")
+                        return
+                    ui.notify(t("step_submitted"), color="positive")
+                    await _render_actionable(container, user)
 
                 with action_container:
                     if step_config.type == "approval":
