@@ -279,3 +279,25 @@ async def list_actionable(user) -> list[WorkflowRequest]:
             actionable.append(req)
 
     return actionable
+
+
+async def list_events(request_id: uuid.UUID) -> list[WorkflowEvent]:
+    get_session = asynccontextmanager(get_async_session)
+    async with get_session() as session:
+        result = await session.execute(
+            select(WorkflowEvent)
+            .where(WorkflowEvent.request_id == request_id)
+            .order_by(WorkflowEvent.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+
+async def list_all_requests() -> list[WorkflowRequest]:
+    """Admin-only: list all requests."""
+    get_session = asynccontextmanager(get_async_session)
+    async with get_session() as session:
+        result = await session.execute(
+            select(WorkflowRequest)
+            .order_by(WorkflowRequest.created_at.desc())
+        )
+        return list(result.scalars().all())
