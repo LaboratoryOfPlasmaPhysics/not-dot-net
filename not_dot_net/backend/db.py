@@ -52,7 +52,7 @@ def init_db(database_url: str) -> None:
 async def create_db_and_tables() -> None:
     if _engine is None:
         raise RuntimeError("DB not initialized — call init_db() first")
-    import not_dot_net.backend.onboarding  # noqa: F401 — register model with Base
+    import not_dot_net.backend.workflow_models  # noqa: F401 — register models with Base
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

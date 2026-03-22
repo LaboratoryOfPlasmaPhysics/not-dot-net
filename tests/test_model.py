@@ -43,14 +43,3 @@ def test_user_default_role():
     # verify via column metadata.
     assert User.__table__.c.role.default.arg == Role.MEMBER
 
-
-ONBOARDING_FIELDS = [
-    "id", "created_by", "person_name", "person_email", "role_status",
-    "team", "start_date", "note", "status", "created_at", "updated_at",
-]
-
-
-@pytest.mark.parametrize("field", ONBOARDING_FIELDS)
-def test_onboarding_request_has_field(field: str):
-    from not_dot_net.backend.onboarding import OnboardingRequest
-    assert hasattr(OnboardingRequest, field)
