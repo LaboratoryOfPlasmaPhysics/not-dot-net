@@ -46,6 +46,13 @@ dependencies = [
 ]
 
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "aiosqlite",
+]
+
 [project.scripts]
 not-dot-net = "not_dot_net.cli:app"
 
