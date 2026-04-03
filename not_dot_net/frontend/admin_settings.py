@@ -6,6 +6,7 @@ from yaml import safe_dump, safe_load
 
 from not_dot_net.backend.app_config import get_registry
 from not_dot_net.backend.audit import log_audit
+from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
 
 
@@ -24,6 +25,10 @@ async def render(user):
     """Render the admin settings tab content."""
     from not_dot_net.backend.permissions import check_permission
     await check_permission(user, "manage_settings")
+
+    with ui.expansion("Roles", icon="admin_panel_settings").classes("w-full"):
+        await render_roles(user)
+
     registry = get_registry()
 
     for prefix, cfg_section in sorted(registry.items()):
