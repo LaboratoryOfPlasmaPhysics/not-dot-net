@@ -7,6 +7,7 @@ from nicegui import app, ui
 from not_dot_net.backend.db import User
 from not_dot_net.backend.roles import Role, has_role
 from not_dot_net.backend.users import current_active_user_optional
+from not_dot_net.frontend.admin_settings import render as render_settings
 from not_dot_net.frontend.audit_log import render as render_audit
 from not_dot_net.frontend.bookings import render as render_bookings
 from not_dot_net.frontend.directory import render as render_directory
@@ -17,7 +18,7 @@ from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, get_locale, set_locale,
 
 def setup():
     @ui.page("/")
-    def main_page(
+    async def main_page(
         user: Optional[User] = Depends(current_active_user_optional),
     ) -> Optional[RedirectResponse]:
         if not user:
@@ -29,6 +30,7 @@ def setup():
         new_request_label = t("new_request")
         bookings_label = t("bookings")
         audit_label = t("audit_log")
+        settings_label = t("settings")
 
         can_create = has_role(user, Role.STAFF)
         is_admin = has_role(user, Role.ADMIN)
@@ -39,6 +41,7 @@ def setup():
             available_tabs.append(new_request_label)
         if is_admin:
             available_tabs.append(audit_label)
+            available_tabs.append(settings_label)
         saved_tab = app.storage.user.get("active_tab")
         initial_tab = saved_tab if saved_tab in available_tabs else dashboard_label
 
@@ -55,6 +58,7 @@ def setup():
                     ui.tab(new_request_label, icon="add_circle")
                 if is_admin:
                     ui.tab(audit_label, icon="policy")
+                    ui.tab(settings_label, icon="settings")
 
             def on_tab_change(e):
                 app.storage.user["active_tab"] = e.value
@@ -84,10 +88,12 @@ def setup():
                 render_bookings(user)
             if can_create:
                 with ui.tab_panel(new_request_label):
-                    render_new_request(user)
+                    await render_new_request(user)
             if is_admin:
                 with ui.tab_panel(audit_label):
                     render_audit()
+                with ui.tab_panel(settings_label):
+                    await render_settings(user)
 
         return None
 

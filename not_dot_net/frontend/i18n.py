@@ -114,7 +114,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "manage_software": "OS & Software",
         "add_os": "Add OS",
         "add_software": "Add Software",
+        "settings": "Settings",
+        "reset_defaults": "Reset to Defaults",
         "settings_saved": "Settings saved",
+        "settings_reset": "Settings reset to defaults",
         # Language
         "language": "Language",
     },
@@ -227,7 +230,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "manage_software": "OS & Logiciels",
         "add_os": "Ajouter un OS",
         "add_software": "Ajouter un logiciel",
+        "settings": "Paramètres",
+        "reset_defaults": "Réinitialiser",
         "settings_saved": "Paramètres enregistrés",
+        "settings_reset": "Paramètres réinitialisés",
         # Language
         "language": "Langue",
     },
