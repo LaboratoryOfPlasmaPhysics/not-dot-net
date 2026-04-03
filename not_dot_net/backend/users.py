@@ -16,17 +16,31 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 
 from not_dot_net.backend.db import User, get_user_db
 from not_dot_net.backend.roles import Role
-from not_dot_net.config import get_settings
+from not_dot_net.backend.secrets import AppSecrets
+
+
+_secrets: AppSecrets | None = None
+
+
+def init_user_secrets(secrets: AppSecrets) -> None:
+    global _secrets
+    _secrets = secrets
+
+
+def _get_secret() -> str:
+    if _secrets is None:
+        raise RuntimeError("Secrets not initialized — call init_user_secrets() first")
+    return _secrets.jwt_secret
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     @property
     def reset_password_token_secret(self):
-        return get_settings().jwt_secret
+        return _get_secret()
 
     @property
     def verification_token_secret(self):
-        return get_settings().jwt_secret
+        return _get_secret()
 
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %s registered", user.id)
@@ -52,7 +66,7 @@ cookie_transport = CookieTransport(
 
 
 def get_jwt_strategy() -> JWTStrategy[models.UP, models.ID]:
-    return JWTStrategy(secret=get_settings().jwt_secret, lifetime_seconds=3600)
+    return JWTStrategy(secret=_get_secret(), lifetime_seconds=3600)
 
 
 jwt_backend = AuthenticationBackend(
@@ -75,13 +89,11 @@ current_active_user = fastapi_users.current_user(active=True)
 current_active_user_optional = fastapi_users.current_user(active=True, optional=True)
 
 
-async def ensure_default_admin() -> None:
+async def ensure_default_admin(email: str, password: str) -> None:
     """Create default admin user if it doesn't exist yet."""
     from not_dot_net.backend.db import session_scope, get_user_db
     from not_dot_net.backend.schemas import UserCreate
     from fastapi_users.exceptions import UserAlreadyExists
-
-    settings = get_settings()
 
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
@@ -89,8 +101,8 @@ async def ensure_default_admin() -> None:
                 try:
                     user = await user_manager.create(
                         UserCreate(
-                            email=settings.admin_email,
-                            password=settings.admin_password,
+                            email=email,
+                            password=password,
                             is_active=True,
                             is_superuser=True,
                         )
@@ -98,7 +110,7 @@ async def ensure_default_admin() -> None:
                     user.role = Role.ADMIN
                     session.add(user)
                     await session.commit()
-                    logger.info("Default admin '%s' created", settings.admin_email)
+                    logger.info("Default admin '%s' created", email)
                 except UserAlreadyExists:
                     pass
 
