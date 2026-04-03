@@ -19,10 +19,23 @@ from not_dot_net.backend.booking_service import (
 )
 from not_dot_net.backend.booking_models import Booking, Resource
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.roles import Role
+from not_dot_net.backend.roles import RoleDefinition, roles_config
 
 
-async def _create_user(email="user@test.com", role=Role.STAFF) -> User:
+async def _setup_roles():
+    cfg = await roles_config.get()
+    cfg.roles["admin"] = RoleDefinition(
+        label="Admin",
+        permissions=["manage_bookings", "manage_roles", "manage_settings"],
+    )
+    cfg.roles["staff"] = RoleDefinition(
+        label="Staff",
+        permissions=["create_workflows"],
+    )
+    await roles_config.set(cfg)
+
+
+async def _create_user(email="user@test.com", role="staff") -> User:
     async with session_scope() as session:
         user = User(id=uuid.uuid4(), email=email, hashed_password="x", role=role)
         session.add(user)
@@ -204,7 +217,7 @@ async def test_cancel_other_user_booking_rejected():
 
 async def test_cancel_as_admin():
     user1 = await _create_user(email="u1@test.com")
-    admin = await _create_user(email="admin@test.com", role=Role.ADMIN)
+    admin = await _create_user(email="admin@test.com", role="admin")
     r = await _create_test_resource()
     start = date.today() + timedelta(days=1)
     b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
@@ -231,3 +244,61 @@ async def test_booking_with_os_and_software():
     )
     assert b.os_choice == "Ubuntu"
     assert b.software_tags == ["Python", "GCC"]
+
+
+# --- Permission enforcement ---
+
+
+async def test_create_resource_requires_permission():
+    await _setup_roles()
+    staff = await _create_user(email="staff@test.com", role="staff")
+    with pytest.raises(PermissionError):
+        await create_resource("PC", "desktop", actor=staff)
+
+
+async def test_create_resource_allowed_with_permission():
+    await _setup_roles()
+    admin = await _create_user(email="admin@test.com", role="admin")
+    r = await create_resource("PC", "desktop", actor=admin)
+    assert r.name == "PC"
+
+
+async def test_update_resource_requires_permission():
+    await _setup_roles()
+    admin = await _create_user(email="admin@test.com", role="admin")
+    r = await create_resource("PC", "desktop", actor=admin)
+    staff = await _create_user(email="staff@test.com", role="staff")
+    with pytest.raises(PermissionError):
+        await update_resource(r.id, actor=staff, name="New")
+
+
+async def test_delete_resource_requires_permission():
+    await _setup_roles()
+    admin = await _create_user(email="admin@test.com", role="admin")
+    r = await create_resource("PC", "desktop", actor=admin)
+    staff = await _create_user(email="staff@test.com", role="staff")
+    with pytest.raises(PermissionError):
+        await delete_resource(r.id, actor=staff)
+
+
+async def test_cancel_booking_with_actor_admin():
+    await _setup_roles()
+    admin = await _create_user(email="admin@test.com", role="admin")
+    user1 = await _create_user(email="u1@test.com", role="staff")
+    r = await create_resource("PC", "desktop", actor=admin)
+    start = date.today() + timedelta(days=1)
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    await cancel_booking(b.id, actor=admin)
+    assert len(await list_bookings_for_resource(r.id)) == 0
+
+
+async def test_cancel_booking_non_owner_non_admin_rejected():
+    await _setup_roles()
+    admin = await _create_user(email="admin@test.com", role="admin")
+    user1 = await _create_user(email="u1@test.com", role="staff")
+    user2 = await _create_user(email="u2@test.com", role="staff")
+    r = await create_resource("PC", "desktop", actor=admin)
+    start = date.today() + timedelta(days=1)
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    with pytest.raises(PermissionError):
+        await cancel_booking(b.id, actor=user2)

@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from not_dot_net.backend.booking_models import Booking, Resource
 from not_dot_net.backend.db import session_scope
-from not_dot_net.backend.permissions import permission
+from not_dot_net.backend.permissions import check_permission, has_permissions, permission
 
 MANAGE_BOOKINGS = permission("manage_bookings", "Manage bookings", "Create/edit/delete resources and software")
 
@@ -35,7 +35,10 @@ async def list_resources(active_only: bool = True) -> list[Resource]:
 
 
 async def create_resource(name: str, resource_type: str, description: str = "",
-                          location: str = "", specs: dict | None = None) -> Resource:
+                          location: str = "", specs: dict | None = None,
+                          actor=None) -> Resource:
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = Resource(
             name=name,
@@ -57,7 +60,9 @@ async def create_resource(name: str, resource_type: str, description: str = "",
     return resource
 
 
-async def update_resource(resource_id: uuid.UUID, **kwargs) -> Resource:
+async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resource:
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
@@ -70,7 +75,9 @@ async def update_resource(resource_id: uuid.UUID, **kwargs) -> Resource:
         return resource
 
 
-async def delete_resource(resource_id: uuid.UUID) -> None:
+async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
@@ -157,13 +164,22 @@ async def create_booking(
     return booking
 
 
-async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID, is_admin: bool = False) -> None:
+async def cancel_booking(booking_id: uuid.UUID, user_id: uuid.UUID | None = None,
+                         is_admin: bool = False, actor=None) -> None:
     async with session_scope() as session:
         booking = await session.get(Booking, booking_id)
         if booking is None:
             raise ValueError("Booking not found")
-        if not is_admin and booking.user_id != user_id:
+
+        if actor is not None:
+            is_owner = booking.user_id == actor.id
+            is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
+            if not is_owner and not is_manager:
+                raise PermissionError("Can only cancel your own bookings")
+            user_id = actor.id
+        elif not is_admin and booking.user_id != user_id:
             raise PermissionError("Can only cancel your own bookings")
+
         resource_id = booking.resource_id
         await session.delete(booking)
         await session.commit()
