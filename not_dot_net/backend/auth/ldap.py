@@ -6,12 +6,22 @@ from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel
 
+from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import get_user_db
 from not_dot_net.backend.schemas import TokenResponse
 from not_dot_net.backend.users import get_jwt_strategy
-from not_dot_net.config import get_settings, LDAPSettings
 
 router = APIRouter(tags=["auth"])
+
+
+class LdapConfig(BaseModel):
+    url: str = "ldap://localhost"
+    domain: str = "example.com"
+    base_dn: str = "dc=example,dc=com"
+    port: int = 389
+
+
+ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 
 
 class LDAPAuthRequest(BaseModel):
@@ -19,7 +29,7 @@ class LDAPAuthRequest(BaseModel):
     password: str
 
 
-def default_ldap_connect(ldap_cfg: LDAPSettings, username: str, password: str) -> Connection:
+def default_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> Connection:
     """Create and bind an AD connection using user@domain."""
     server = Server(ldap_cfg.url, port=ldap_cfg.port, get_info=ALL)
     bind_user = f"{username}@{ldap_cfg.domain}"
@@ -30,7 +40,7 @@ def default_ldap_connect(ldap_cfg: LDAPSettings, username: str, password: str) -
 def ldap_authenticate(
     username: str,
     password: str,
-    ldap_cfg: LDAPSettings,
+    ldap_cfg: LdapConfig,
     connect: Callable[..., Connection] = default_ldap_connect,
 ) -> str | None:
     """Bind to AD, search for mail by sAMAccountName. Returns email or None."""
@@ -70,8 +80,8 @@ async def ldap_login(
     credentials: LDAPAuthRequest,
     user_db=Depends(get_user_db),
 ):
-    ldap_cfg = get_settings().backend.users.auth.ldap
-    email = ldap_authenticate(credentials.username, credentials.password, ldap_cfg, _ldap_connect)
+    cfg = await ldap_config.get()
+    email = ldap_authenticate(credentials.username, credentials.password, cfg, _ldap_connect)
 
     if email is None:
         raise HTTPException(

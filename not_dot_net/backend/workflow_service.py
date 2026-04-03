@@ -3,8 +3,10 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from pydantic import BaseModel
 from sqlalchemy import select, or_, and_
 
+from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.roles import Role, has_role
 from not_dot_net.backend.workflow_engine import (
@@ -13,7 +15,97 @@ from not_dot_net.backend.workflow_engine import (
 )
 from not_dot_net.backend.workflow_models import RequestStatus, WorkflowEvent, WorkflowRequest
 from not_dot_net.backend.notifications import notify
-from not_dot_net.config import get_settings
+from not_dot_net.config import (
+    WorkflowConfig,
+    WorkflowStepConfig,
+    FieldConfig,
+    NotificationRuleConfig,
+)
+
+
+class WorkflowsConfig(BaseModel):
+    workflows: dict[str, WorkflowConfig] = {
+        "vpn_access": WorkflowConfig(
+            label="VPN Access Request",
+            start_role="staff",
+            target_email_field="target_email",
+            steps=[
+                WorkflowStepConfig(
+                    key="request",
+                    type="form",
+                    assignee_role="staff",
+                    fields=[
+                        FieldConfig(name="target_name", type="text", required=True, label="Person Name"),
+                        FieldConfig(name="target_email", type="email", required=True, label="Person Email"),
+                        FieldConfig(name="justification", type="textarea", required=False, label="Justification"),
+                    ],
+                    actions=["submit"],
+                ),
+                WorkflowStepConfig(
+                    key="approval",
+                    type="approval",
+                    assignee_role="director",
+                    actions=["approve", "reject"],
+                ),
+            ],
+            notifications=[
+                NotificationRuleConfig(event="submit", step="request", notify=["director"]),
+                NotificationRuleConfig(event="approve", notify=["requester", "target_person"]),
+                NotificationRuleConfig(event="reject", notify=["requester"]),
+            ],
+        ),
+        "onboarding": WorkflowConfig(
+            label="Onboarding",
+            start_role="staff",
+            target_email_field="person_email",
+            steps=[
+                WorkflowStepConfig(
+                    key="request",
+                    type="form",
+                    assignee_role="staff",
+                    fields=[
+                        FieldConfig(name="person_name", type="text", required=True),
+                        FieldConfig(name="person_email", type="email", required=True),
+                        FieldConfig(name="role_status", type="select", options_key="roles", required=True),
+                        FieldConfig(name="team", type="select", options_key="teams", required=True),
+                        FieldConfig(name="start_date", type="date", required=True),
+                        FieldConfig(name="end_date", type="date", required=False, label="End Date"),
+                        FieldConfig(name="note", type="textarea", required=False),
+                    ],
+                    actions=["submit"],
+                ),
+                WorkflowStepConfig(
+                    key="newcomer_info",
+                    type="form",
+                    assignee="target_person",
+                    partial_save=True,
+                    fields=[
+                        FieldConfig(name="id_document", type="file", required=True, label="ID Copy"),
+                        FieldConfig(name="rib", type="file", required=True, label="Bank Details (RIB)"),
+                        FieldConfig(name="photo", type="file", required=False, label="Badge Photo"),
+                        FieldConfig(name="phone", type="text", required=True),
+                        FieldConfig(name="emergency_contact", type="text", required=True),
+                    ],
+                    actions=["submit"],
+                ),
+                WorkflowStepConfig(
+                    key="admin_validation",
+                    type="approval",
+                    assignee_role="admin",
+                    actions=["approve", "reject"],
+                ),
+            ],
+            notifications=[
+                NotificationRuleConfig(event="submit", step="request", notify=["target_person"]),
+                NotificationRuleConfig(event="submit", step="newcomer_info", notify=["admin"]),
+                NotificationRuleConfig(event="approve", notify=["requester", "target_person"]),
+                NotificationRuleConfig(event="reject", notify=["requester"]),
+            ],
+        ),
+    }
+
+
+workflows_config = section("workflows", WorkflowsConfig, label="Workflows")
 
 
 async def _fire_notifications(req, event: str, step_key: str, wf):
@@ -24,7 +116,9 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
     from not_dot_net.backend.db import User
     from not_dot_net.backend.roles import Role as RoleEnum
 
-    settings = get_settings()
+    from not_dot_net.backend.mail import mail_config
+
+    mail_cfg = await mail_config.get()
 
     async with session_scope() as session:
         async def get_user_email(user_id):
@@ -45,15 +139,15 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             event=event,
             step_key=step_key,
             workflow=wf,
-            mail_settings=settings.mail,
+            mail_settings=mail_cfg,
             get_user_email=get_user_email,
             get_users_by_role=get_users_by_role,
         )
 
 
-def _get_workflow_config(workflow_type: str):
-    settings = get_settings()
-    wf = settings.workflows.get(workflow_type)
+async def _get_workflow_config(workflow_type: str):
+    cfg = await workflows_config.get()
+    wf = cfg.workflows.get(workflow_type)
     if wf is None:
         raise ValueError(f"Unknown workflow type: {workflow_type}")
     return wf
@@ -64,7 +158,7 @@ async def create_request(
     created_by: uuid.UUID,
     data: dict,
 ) -> WorkflowRequest:
-    wf = _get_workflow_config(workflow_type)
+    wf = await _get_workflow_config(workflow_type)
     first_step = wf.steps[0].key
 
     # Resolve target_email from data if configured
@@ -118,7 +212,7 @@ async def submit_step(
         if req is None:
             raise ValueError(f"Request {request_id} not found")
 
-        wf = _get_workflow_config(req.type)
+        wf = await _get_workflow_config(req.type)
 
         # Authorization: verify actor can act on this step
         if actor_user is not None:
@@ -200,7 +294,7 @@ async def save_draft(
         if req is None:
             raise ValueError(f"Request {request_id} not found")
 
-        wf = _get_workflow_config(req.type)
+        wf = await _get_workflow_config(req.type)
 
         # Authorization: verify actor can act on this step
         if actor_user is not None:
@@ -259,9 +353,9 @@ async def list_actionable(user) -> list[WorkflowRequest]:
     Builds SQL OR-conditions from workflow config so filtering happens in the
     database instead of loading all active requests into Python.
     """
-    settings = get_settings()
+    cfg = await workflows_config.get()
     filters = []
-    for wf_type, wf in settings.workflows.items():
+    for wf_type, wf in cfg.workflows.items():
         for step in wf.steps:
             step_match = and_(
                 WorkflowRequest.type == wf_type,

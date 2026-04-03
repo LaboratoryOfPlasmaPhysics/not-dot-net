@@ -4,17 +4,32 @@ import logging
 from email.message import EmailMessage
 
 import aiosmtplib
+from pydantic import BaseModel
 
-from not_dot_net.config import MailSettings
+from not_dot_net.backend.app_config import section
 
 logger = logging.getLogger("not_dot_net.mail")
+
+
+class MailConfig(BaseModel):
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_tls: bool = False
+    smtp_user: str = ""
+    smtp_password: str = ""
+    from_address: str = "noreply@not-dot-net.dev"
+    dev_mode: bool = True
+    dev_catch_all: str = ""
+
+
+mail_config = section("mail", MailConfig, label="Email / SMTP")
 
 
 async def send_mail(
     to: str,
     subject: str,
     body_html: str,
-    mail_settings: MailSettings,
+    mail_settings: MailConfig,
 ) -> None:
     effective_to = to
     if mail_settings.dev_catch_all:
