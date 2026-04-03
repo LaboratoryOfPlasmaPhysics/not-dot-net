@@ -8,19 +8,10 @@ from sqlalchemy import select, or_, and_
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
-from not_dot_net.backend.permissions import permission
+from not_dot_net.backend.permissions import permission, check_permission, has_permissions
 
 CREATE_WORKFLOWS = permission("create_workflows", "Create workflows", "Start new workflow requests")
 APPROVE_WORKFLOWS = permission("approve_workflows", "Approve workflows", "Act on role-assigned workflow steps")
-
-# Temporary compat — removed in Task 8 when enforcement is rewritten
-def has_role(user, role_str):
-    return True  # permissive stub until Task 8 rewrites authorization
-
-class _RoleCompat:
-    def __call__(self, val):
-        return val
-Role = _RoleCompat()
 
 from not_dot_net.backend.workflow_engine import (
     compute_next_step,
@@ -47,6 +38,7 @@ class WorkflowsConfig(BaseModel):
                     key="request",
                     type="form",
                     assignee_role="staff",
+                    assignee_permission="create_workflows",
                     fields=[
                         FieldConfig(name="target_name", type="text", required=True, label="Person Name"),
                         FieldConfig(name="target_email", type="email", required=True, label="Person Email"),
@@ -58,6 +50,7 @@ class WorkflowsConfig(BaseModel):
                     key="approval",
                     type="approval",
                     assignee_role="director",
+                    assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
                 ),
             ],
@@ -76,6 +69,7 @@ class WorkflowsConfig(BaseModel):
                     key="request",
                     type="form",
                     assignee_role="staff",
+                    assignee_permission="create_workflows",
                     fields=[
                         FieldConfig(name="person_name", type="text", required=True),
                         FieldConfig(name="person_email", type="email", required=True),
@@ -105,6 +99,7 @@ class WorkflowsConfig(BaseModel):
                     key="admin_validation",
                     type="approval",
                     assignee_role="admin",
+                    assignee_permission="approve_workflows",
                     actions=["approve", "reject"],
                 ),
             ],
@@ -127,7 +122,6 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
     Uses a single session for all user lookups to avoid N+1 queries.
     """
     from not_dot_net.backend.db import User
-    from not_dot_net.backend.roles import Role as RoleEnum
 
     from not_dot_net.backend.mail import mail_config
 
@@ -141,7 +135,7 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
         async def get_users_by_role(role_str):
             result = await session.execute(
                 select(User).where(
-                    User.role == RoleEnum(role_str),
+                    User.role == role_str,
                     User.is_active == True,
                 )
             )
@@ -170,7 +164,10 @@ async def create_request(
     workflow_type: str,
     created_by: uuid.UUID,
     data: dict,
+    actor=None,
 ) -> WorkflowRequest:
+    if actor is not None:
+        await check_permission(actor, CREATE_WORKFLOWS)
     wf = await _get_workflow_config(workflow_type)
     first_step = wf.steps[0].key
 
@@ -374,7 +371,7 @@ async def list_actionable(user) -> list[WorkflowRequest]:
                 WorkflowRequest.type == wf_type,
                 WorkflowRequest.current_step == step.key,
             )
-            if step.assignee_role and has_role(user, Role(step.assignee_role)):
+            if step.assignee_permission and await has_permissions(user, step.assignee_permission):
                 filters.append(step_match)
             elif step.assignee == "target_person":
                 filters.append(and_(step_match, WorkflowRequest.target_email == user.email))

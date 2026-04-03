@@ -1,14 +1,5 @@
 """Pure-function workflow step machine. No DB, no side effects."""
 
-# Temporary compat — removed in Task 8 when enforcement is rewritten
-def has_role(user, role_str):
-    return True  # permissive stub until Task 8 rewrites authorization
-
-class _RoleCompat:
-    def __call__(self, val):
-        return val
-Role = _RoleCompat()
-
 from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
 
@@ -22,10 +13,7 @@ def get_current_step_config(request, workflow: WorkflowConfig) -> WorkflowStepCo
 
 
 def get_step_progress(request, workflow: WorkflowConfig) -> tuple[int, int]:
-    """Return (current_step_1based, total_steps) for progress display.
-
-    Terminal statuses (completed/rejected) return (total, total) or (0, total).
-    """
+    """Return (current_step_1based, total_steps) for progress display."""
     total = len(workflow.steps)
     if request.status == RequestStatus.COMPLETED:
         return (total, total)
@@ -55,18 +43,11 @@ def get_available_actions(request, workflow: WorkflowConfig) -> list[str]:
 def compute_next_step(
     workflow: WorkflowConfig, current_step_key: str, action: str
 ) -> tuple[str | None, str]:
-    """Given an action, return (next_step_key, new_status).
-
-    Returns (None, "completed") if last step approved.
-    Returns (None, "rejected") if rejected.
-    """
+    """Given an action, return (next_step_key, new_status)."""
     if action == "reject":
         return (None, RequestStatus.REJECTED)
-
     if action == "save_draft":
         return (current_step_key, RequestStatus.IN_PROGRESS)
-
-    # submit or approve → advance to next step
     step_keys = [s.key for s in workflow.steps]
     if current_step_key not in step_keys:
         raise ValueError(f"Unknown step '{current_step_key}' in workflow")
@@ -77,14 +58,13 @@ def compute_next_step(
 
 
 def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
-    """Check if a user can act on the current step."""
+    """Check if a user can act on the current step (contextual assignment only).
+
+    Permission-based checks are handled by the service layer.
+    """
     step = get_current_step_config(request, workflow)
     if step is None:
         return False
-
-    # Role-based assignment
-    if step.assignee_role:
-        return has_role(user, Role(step.assignee_role))
 
     # Contextual assignment
     if step.assignee == "target_person":
@@ -92,7 +72,8 @@ def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
     if step.assignee == "requester":
         return str(user.id) == str(request.created_by)
 
-    return False
+    # If step has assignee_permission or assignee_role, the service layer handles it
+    return step.assignee_permission is not None or step.assignee_role is not None
 
 
 def get_completion_status(

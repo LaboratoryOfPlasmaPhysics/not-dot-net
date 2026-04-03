@@ -6,7 +6,6 @@ from not_dot_net.backend.workflow_engine import (
     can_user_act,
     get_completion_status,
 )
-from not_dot_net.backend.roles import Role
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, FieldConfig
 
 
@@ -16,8 +15,8 @@ TWO_STEP_WORKFLOW = WorkflowConfig(
     label="Test",
     start_role="staff",
     steps=[
-        WorkflowStepConfig(key="form1", type="form", assignee_role="staff", actions=["submit"]),
-        WorkflowStepConfig(key="approve", type="approval", assignee_role="director", actions=["approve", "reject"]),
+        WorkflowStepConfig(key="form1", type="form", assignee_role="staff", assignee_permission="create_workflows", actions=["submit"]),
+        WorkflowStepConfig(key="approve", type="approval", assignee_role="director", assignee_permission="approve_workflows", actions=["approve", "reject"]),
     ],
 )
 
@@ -52,7 +51,7 @@ class FakeRequest:
 
 class FakeUser:
     def __init__(self, role, email="user@test.com", id="user-1"):
-        self.role = role if isinstance(role, Role) else Role(role)
+        self.role = role
         self.email = email
         self.id = id
 
@@ -104,32 +103,28 @@ def test_compute_next_step_reject_terminates():
     assert result == (None, "rejected")
 
 
-def test_can_user_act_role_match():
-    user = FakeUser(Role.STAFF)
+def test_can_user_act_permission_based_step():
+    """Steps with assignee_permission always return True (service layer checks permissions)."""
+    user = FakeUser("member")
     req = FakeRequest(current_step="form1")
     assert can_user_act(user, req, TWO_STEP_WORKFLOW)
 
 
-def test_can_user_act_role_higher():
-    user = FakeUser(Role.DIRECTOR)
-    req = FakeRequest(current_step="form1")
+def test_can_user_act_permission_based_approval_step():
+    """Approval steps with assignee_permission also return True from engine."""
+    user = FakeUser("staff")
+    req = FakeRequest(current_step="approve")
     assert can_user_act(user, req, TWO_STEP_WORKFLOW)
-
-
-def test_can_user_act_role_too_low():
-    user = FakeUser(Role.MEMBER)
-    req = FakeRequest(current_step="form1")
-    assert not can_user_act(user, req, TWO_STEP_WORKFLOW)
 
 
 def test_can_user_act_target_person():
-    user = FakeUser(Role.MEMBER, email="target@test.com")
+    user = FakeUser("member", email="target@test.com")
     req = FakeRequest(current_step="info", target_email="target@test.com")
     assert can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
 
 
 def test_can_user_act_wrong_target():
-    user = FakeUser(Role.MEMBER, email="other@test.com")
+    user = FakeUser("member", email="other@test.com")
     req = FakeRequest(current_step="info", target_email="target@test.com")
     assert not can_user_act(user, req, PARTIAL_SAVE_WORKFLOW)
 
@@ -140,10 +135,10 @@ def test_can_user_act_requester():
         start_role="staff",
         steps=[WorkflowStepConfig(key="review", type="form", assignee="requester", actions=["submit"])],
     )
-    user = FakeUser(Role.MEMBER, id="user-42")
+    user = FakeUser("member", id="user-42")
     req = FakeRequest(current_step="review", created_by="user-42")
     assert can_user_act(user, req, requester_wf)
-    other = FakeUser(Role.MEMBER, id="user-99")
+    other = FakeUser("member", id="user-99")
     assert not can_user_act(other, req, requester_wf)
 
 

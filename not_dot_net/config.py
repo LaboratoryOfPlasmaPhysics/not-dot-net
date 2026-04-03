@@ -23,6 +23,7 @@ class WorkflowStepConfig(BaseModel):
     key: str
     type: str  # form, approval
     assignee_role: str | None = None
+    assignee_permission: str | None = None
     assignee: str | None = None  # contextual: target_person, requester
     fields: list[FieldConfig] = []
     actions: list[str] = []
