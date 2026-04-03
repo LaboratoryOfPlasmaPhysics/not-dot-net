@@ -17,12 +17,7 @@ from not_dot_net.backend.booking_service import (
     list_resources,
     update_resource,
 )
-from not_dot_net.backend.app_settings import (
-    get_os_choices,
-    get_software_tags,
-    set_os_choices,
-    set_software_tags,
-)
+from not_dot_net.config import bookings_config
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.roles import Role, has_role
 from not_dot_net.config import org_config
@@ -338,8 +333,9 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     default_range = book_range or {"from": str(today), "to": str(today + timedelta(days=1))}
     range_label = f"{default_range['from']} → {default_range['to']}"
 
-    os_choices = await get_os_choices()
-    all_software = await get_software_tags()
+    bc = await bookings_config.get()
+    os_choices = bc.os_choices
+    all_software = bc.software_tags
 
     ui.label(range_label).classes("text-sm text-grey-8")
     with ui.row().classes("items-center gap-2"):
@@ -509,8 +505,9 @@ def _show_software_dialog(outer_container, user):
     """Admin dialog to manage OS choices and per-OS software tags."""
 
     async def _load_and_render():
-        os_list = await get_os_choices()
-        sw_tags = await get_software_tags()
+        bc = await bookings_config.get()
+        os_list = bc.os_choices
+        sw_tags = bc.software_tags
         _render_dialog(os_list, dict(sw_tags))
 
     def _render_dialog(os_list, sw_tags):
@@ -611,8 +608,11 @@ def _show_software_dialog(outer_container, user):
                 ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
                 async def do_save():
-                    await set_os_choices(state["os_list"])
-                    await set_software_tags(state["sw_tags"])
+                    bc = await bookings_config.get()
+                    await bookings_config.set(bc.model_copy(update={
+                        "os_choices": state["os_list"],
+                        "software_tags": state["sw_tags"],
+                    }))
                     ui.notify(t("settings_saved"), color="positive")
                     dialog.close()
 

@@ -1,31 +1,21 @@
 """Dev entry point with auto-reload.
 
-Usage: uv run python not_dot_net/_dev.py [--env-file config.yaml] [--seed-fake-users]
+Usage: uv run python not_dot_net/_dev.py [--seed-fake-users]
 """
 import sys
+from pathlib import Path
 
 from not_dot_net.app import create_app
-
+from not_dot_net.backend.secrets import read_secrets_file
 from nicegui import ui
 
-from not_dot_net.config import get_settings
-
-
-def _parse_env_file() -> str | None:
-    if "--env-file" in sys.argv:
-        idx = sys.argv.index("--env-file")
-        if idx + 1 < len(sys.argv):
-            return sys.argv[idx + 1]
-    return None
-
-
 create_app(
-    config_file=_parse_env_file(),
+    secrets_file="./secrets.key",
     _seed_fake_users="--seed-fake-users" in sys.argv,
 )
-settings = get_settings()
+secrets = read_secrets_file(Path("./secrets.key"))
 ui.run(
-    storage_secret=settings.storage_secret,
+    storage_secret=secrets.storage_secret,
     host="localhost",
     port=8088,
     reload=True,

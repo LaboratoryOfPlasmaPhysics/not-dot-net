@@ -1,12 +1,18 @@
 import logging
 import os
-from typing import Optional
+from pathlib import Path
 
 from nicegui import app, ui
 
-from not_dot_net.config import init_settings
 from not_dot_net.backend.db import init_db, create_db_and_tables
-from not_dot_net.backend.users import fastapi_users, jwt_backend, cookie_backend, ensure_default_admin
+from not_dot_net.backend.secrets import load_or_create
+from not_dot_net.backend.users import (
+    fastapi_users,
+    jwt_backend,
+    cookie_backend,
+    init_user_secrets,
+    ensure_default_admin,
+)
 from not_dot_net.backend.schemas import UserRead, UserUpdate
 from not_dot_net.backend.auth import router as auth_router
 from not_dot_net.frontend.login import setup as setup_login
@@ -14,27 +20,37 @@ from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
 
 
-def create_app(config_file: str | None = None, _seed_fake_users: bool = False):
+DEV_DB_URL = "sqlite+aiosqlite:///./dev.db"
+DEV_ADMIN_EMAIL = "admin@not-dot-net.dev"
+DEV_ADMIN_PASSWORD = "admin"
+
+
+def create_app(
+    secrets_file: str = "./secrets.key",
+    _seed_fake_users: bool = False,
+):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    settings = init_settings(config_file)
-    init_db(settings.backend.database_url)
+
+    database_url = os.environ.get("DATABASE_URL", DEV_DB_URL)
+    dev_mode = "DATABASE_URL" not in os.environ
+
+    init_db(database_url)
+    secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
+    init_user_secrets(secrets)
 
     async def startup():
         await create_db_and_tables()
-        await ensure_default_admin()
+        if dev_mode:
+            await ensure_default_admin(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD)
         if _seed_fake_users:
             from not_dot_net.backend.seeding import seed_fake_users
             await seed_fake_users()
 
     app.on_startup(startup)
-
-    # CSRF middleware is available in backend/csrf.py but disabled for now —
-    # NiceGUI's ASGI stack doesn't tolerate additional middleware wrapping.
-    # TODO: re-enable with integration tests covering the login flow.
 
     app.include_router(
         fastapi_users.get_auth_router(jwt_backend),
@@ -64,13 +80,14 @@ def create_app(config_file: str | None = None, _seed_fake_users: bool = False):
 def main(
     host: str = "localhost",
     port: int = 8088,
-    env_file: Optional[str] = None,
+    secrets_file: str = "./secrets.key",
     seed_fake_users: bool = False,
 ) -> None:
-    create_app(env_file, _seed_fake_users=seed_fake_users)
-    from not_dot_net.config import get_settings
+    create_app(secrets_file, _seed_fake_users=seed_fake_users)
+    from not_dot_net.backend.secrets import read_secrets_file
+    secrets = read_secrets_file(Path(secrets_file))
     ui.run(
-        storage_secret=get_settings().storage_secret,
+        storage_secret=secrets.storage_secret,
         host=host, port=port, reload=False, title="NotDotNet",
     )
 
