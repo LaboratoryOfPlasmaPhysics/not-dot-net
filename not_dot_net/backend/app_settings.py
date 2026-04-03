@@ -1,17 +1,8 @@
 """Runtime-editable app settings stored in DB, with config file defaults."""
 
-from sqlalchemy import JSON, String, select
-from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
-
-from not_dot_net.backend.db import Base, session_scope
+from not_dot_net.backend.app_config import AppSetting  # noqa: F401 — re-export
+from not_dot_net.backend.db import session_scope
 from not_dot_net.config import get_settings
-
-
-class AppSetting(MappedAsDataclass, Base, kw_only=True):
-    __tablename__ = "app_setting"
-
-    key: Mapped[str] = mapped_column(String(100), primary_key=True)
-    value: Mapped[dict | list] = mapped_column(JSON)
 
 
 async def _get(key: str):
