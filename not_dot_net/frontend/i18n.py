@@ -120,6 +120,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings_reset": "Settings reset to defaults",
         # Language
         "language": "Language",
+        # Pages
+        "pages": "Pages",
+        "new_page": "New Page",
+        "edit_page": "Edit Page",
+        "page_title": "Title",
+        "page_slug": "Slug",
+        "page_content": "Content (Markdown)",
+        "page_sort_order": "Sort Order",
+        "page_published": "Published",
+        "page_saved": "Page saved",
+        "page_deleted": "Page deleted",
+        "page_not_found": "Page not found",
+        "page_draft": "Draft",
+        "confirm_delete_page": "Delete this page?",
     },
     "fr": {
         # Shell / nav
@@ -236,6 +250,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings_reset": "Paramètres réinitialisés",
         # Language
         "language": "Langue",
+        # Pages
+        "pages": "Pages",
+        "new_page": "Nouvelle page",
+        "edit_page": "Modifier la page",
+        "page_title": "Titre",
+        "page_slug": "Identifiant URL",
+        "page_content": "Contenu (Markdown)",
+        "page_sort_order": "Ordre d'affichage",
+        "page_published": "Publiée",
+        "page_saved": "Page enregistrée",
+        "page_deleted": "Page supprimée",
+        "page_not_found": "Page introuvable",
+        "page_draft": "Brouillon",
+        "confirm_delete_page": "Supprimer cette page ?",
     },
 }
 
