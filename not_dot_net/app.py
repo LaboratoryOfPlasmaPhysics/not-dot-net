@@ -19,6 +19,7 @@ from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
 from not_dot_net.frontend.setup_wizard import setup as setup_wizard
+from not_dot_net.frontend.i18n import t as i18n_t
 
 
 DEV_DB_URL = "sqlite+aiosqlite:///./dev.db"
@@ -82,6 +83,26 @@ def create_app(
 
     if not dev_mode:
         setup_wizard()
+
+    @ui.page("/pages/{slug}")
+    async def public_page(slug: str):
+        from not_dot_net.backend.page_service import get_page
+        page = await get_page(slug)
+        if page is None or not page.published:
+            ui.colors(primary="#0F52AC")
+            with ui.column().classes("absolute-center items-center"):
+                ui.icon("error", size="xl", color="negative")
+                ui.label(i18n_t("page_not_found")).classes("text-h6")
+            return
+
+        ui.colors(primary="#0F52AC")
+        with ui.column().classes("w-full max-w-3xl mx-auto pa-6"):
+            with ui.row().classes("items-center gap-2 mb-4"):
+                ui.link("← LPP Intranet", "/").classes("text-primary")
+            ui.label(page.title).classes("text-h4 text-weight-light mb-4").style(
+                "color: #0F52AC"
+            )
+            ui.markdown(page.content).classes("w-full")
 
 
 def main(
