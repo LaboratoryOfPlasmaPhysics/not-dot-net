@@ -1,4 +1,4 @@
-"""Integration tests for local auth endpoints (register + login)."""
+"""Integration tests for local auth endpoints (login)."""
 
 import pytest
 import uuid
@@ -9,7 +9,7 @@ from not_dot_net.backend.users import get_user_manager
 from not_dot_net.backend.schemas import UserCreate
 
 async def _create_user_via_manager(email="test@test.com", password="Secret123!"):
-    """Create a user through the UserManager (same path as the register endpoint)."""
+    """Create a user through the UserManager."""
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:

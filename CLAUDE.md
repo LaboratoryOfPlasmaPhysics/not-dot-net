@@ -48,14 +48,14 @@ Both `db.py` and `config.py` use `init_*()` functions that must be called before
 ### Auth endpoints
 
 `backend/auth/` contains APIRouter-based endpoints:
-- `local.py`: POST `/auth/local` (password login), POST `/auth/register` (registration)
+- `local.py`: POST `/auth/local` (password login)
 - `ldap.py`: POST `/auth/ldap` (LDAP bind + JWT)
 
 ### Frontend pages
 
 NiceGUI pages in `frontend/` expose a `setup()` function that registers `@ui.page` routes. They import dependencies directly from `backend/users.py`.
 
-`login.py` uses `authenticate_and_get_token()` helper (in `backend/users.py`) which manually resolves the DI chain — this is the fastapi-users escape hatch for NiceGUI callbacks where FastAPI DI is unavailable.
+`login.py` posts to `/auth/cookie/login` via JS fetch — the browser receives an httponly cookie via `Set-Cookie` header. No server-side DI escape hatch needed.
 
 ### Configuration
 

@@ -44,6 +44,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %s registered", user.id)
 
+    async def on_after_login(self, user: User, request: Request | None = None, response=None):
+        from not_dot_net.backend.audit import log_audit
+        await log_audit("auth", "login", actor_id=user.id, actor_email=user.email)
+
     async def on_after_update(self, user: User, update_dict: dict, request: Request | None = None):
         if "role" in update_dict:
             user.is_superuser = (user.role == "admin")
@@ -60,7 +64,7 @@ bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 cookie_transport = CookieTransport(
     cookie_name="fastapiusersauth",
     cookie_max_age=3600,
-    cookie_httponly=False,
+    cookie_secure=False,
 )
 
 
@@ -114,29 +118,3 @@ async def ensure_default_admin(email: str, password: str) -> None:
                     pass
 
 
-async def authenticate_and_get_token(email: str, password: str) -> str | None:
-    """Authenticate a user and return a cookie token, or None on failure.
-
-    Intended for use in NiceGUI page callbacks where FastAPI DI is not available.
-    """
-    from not_dot_net.backend.db import session_scope, get_user_db
-    from fastapi.security import OAuth2PasswordRequestForm
-
-    async with session_scope() as session:
-        async with asynccontextmanager(get_user_db)(session) as user_db:
-            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
-                credentials = OAuth2PasswordRequestForm(
-                    username=email, password=password, scope="", grant_type="password"
-                )
-                user = await user_manager.authenticate(credentials)
-                if user is None or not user.is_active:
-                    from not_dot_net.backend.audit import log_audit
-                    await log_audit("auth", "login_failed", detail=f"email={email}")
-                    return None
-                from not_dot_net.backend.audit import log_audit
-                await log_audit(
-                    "auth", "login",
-                    actor_id=user.id, actor_email=user.email,
-                )
-                strategy = cookie_backend.get_strategy()
-                return await strategy.write_token(user)

@@ -15,7 +15,7 @@ from not_dot_net.backend.users import (
 )
 from not_dot_net.backend.schemas import UserRead, UserUpdate
 from not_dot_net.backend.auth import router as auth_router
-from not_dot_net.frontend.login import setup as setup_login
+from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
 from not_dot_net.frontend.setup_wizard import setup as setup_wizard
@@ -71,6 +71,7 @@ def create_app(
         tags=["users"],
     )
     app.include_router(auth_router)
+    app.include_router(login_router)
 
     from not_dot_net.frontend.i18n import validate_translations
     validate_translations()
