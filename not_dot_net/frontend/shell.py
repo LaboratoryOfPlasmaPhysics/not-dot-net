@@ -1,7 +1,8 @@
+import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import Depends
-from fastapi.responses import RedirectResponse
 from nicegui import app, ui
 
 from not_dot_net.backend.db import User
@@ -17,13 +18,27 @@ from not_dot_net.frontend.new_request import render as render_new_request
 from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, get_locale, set_locale, t
 
 
+_GUEST_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
+
+@dataclass
+class GuestUser:
+    """Lightweight stand-in for unauthenticated visitors."""
+    id: uuid.UUID = field(default=_GUEST_UUID)
+    email: str = "guest"
+    role: str = ""
+    full_name: str | None = None
+    is_active: bool = False
+    is_superuser: bool = False
+
+
 def setup():
     @ui.page("/")
     async def main_page(
         user: Optional[User] = Depends(current_active_user_optional),
-    ) -> Optional[RedirectResponse]:
-        if not user:
-            return RedirectResponse("/login")
+    ):
+        logged_in = user is not None
+        effective_user = user or GuestUser()
 
         locale = get_locale()
         people_label = t("people")
@@ -34,10 +49,9 @@ def setup():
         audit_label = t("audit_log")
         settings_label = t("settings")
 
-        can_create = await has_permissions(user, "create_workflows")
-        is_admin = await has_permissions(user, "manage_settings")
+        can_create = await has_permissions(effective_user, "create_workflows") if logged_in else False
+        is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
 
-        # Restore last active tab (fall back to dashboard)
         available_tabs = [dashboard_label, people_label, bookings_label, pages_label]
         if can_create:
             available_tabs.append(new_request_label)
@@ -77,28 +91,33 @@ def setup():
                     list(SUPPORTED_LOCALES), value=locale, on_change=on_lang_change
                 ).props("flat dense color=white text-color=white toggle-color=white")
 
-                with ui.button(icon="person").props("flat color=white"):
-                    with ui.menu():
-                        ui.menu_item(t("my_profile"), on_click=lambda: tabs.set_value(people_label))
-                        ui.menu_item(t("logout"), on_click=lambda: _logout())
+                if logged_in:
+                    with ui.button(icon="person").props("flat color=white"):
+                        with ui.menu():
+                            ui.menu_item(t("my_profile"), on_click=lambda: tabs.set_value(people_label))
+                            ui.menu_item(t("logout"), on_click=lambda: _logout())
+                else:
+                    ui.button(t("log_in"), icon="login", on_click=lambda: ui.navigate.to("/login")).props(
+                        "flat color=white"
+                    )
 
         with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
             with ui.tab_panel(dashboard_label):
-                render_dashboard(user)
+                render_dashboard(effective_user)
             with ui.tab_panel(people_label):
-                render_directory(user)
+                render_directory(effective_user)
             with ui.tab_panel(bookings_label):
-                render_bookings(user)
+                render_bookings(effective_user)
             with ui.tab_panel(pages_label):
-                render_pages(user)
+                render_pages(effective_user)
             if can_create:
                 with ui.tab_panel(new_request_label):
-                    await render_new_request(user)
+                    await render_new_request(effective_user)
             if is_admin:
                 with ui.tab_panel(audit_label):
                     render_audit()
                 with ui.tab_panel(settings_label):
-                    await render_settings(user)
+                    await render_settings(effective_user)
 
         return None
 

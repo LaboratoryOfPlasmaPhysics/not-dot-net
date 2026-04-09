@@ -80,35 +80,27 @@ async def _render_page_list(container, user: User):
 async def _show_editor(container, user: User, page=None):
     editing = page is not None
 
-    with ui.dialog() as dialog, ui.card().classes("w-[700px]"):
-        ui.label(t("edit_page") if editing else t("new_page")).classes("text-h6")
+    with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
+        # Top bar: metadata + actions
+        with ui.row().classes("items-center gap-3 w-full mb-2"):
+            title_input = ui.input(
+                t("page_title"), value=page.title if editing else "",
+            ).props("outlined dense").classes("flex-grow")
 
-        title_input = ui.input(
-            t("page_title"), value=page.title if editing else "",
-        ).props("outlined dense").classes("w-full")
+            slug_input = ui.input(
+                t("page_slug"), value=page.slug if editing else "",
+            ).props("outlined dense").classes("w-48")
 
-        slug_input = ui.input(
-            t("page_slug"), value=page.slug if editing else "",
-        ).props("outlined dense").classes("w-full")
-
-        if not editing:
-            title_input.on_value_change(
-                lambda e: slug_input.set_value(_slugify(e.value))
-            )
-
-        content_input = ui.textarea(
-            t("page_content"), value=page.content if editing else "",
-        ).props("outlined").classes("w-full").style("min-height: 300px")
-
-        with ui.row().classes("items-center gap-4"):
             order_input = ui.number(
                 t("page_sort_order"), value=page.sort_order if editing else 0,
-            ).props("outlined dense").classes("w-32")
+            ).props("outlined dense").classes("w-28")
+
             published_toggle = ui.switch(
                 t("page_published"), value=page.published if editing else False,
             )
 
-        with ui.row().classes("justify-end gap-2 mt-2"):
+            ui.space()
+
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
             async def do_save():
@@ -142,6 +134,28 @@ async def _show_editor(container, user: User, page=None):
                 dialog.close()
                 await _render_page_list(container, user)
 
-            ui.button(t("save"), on_click=do_save).props("color=primary")
+            ui.button(t("save"), icon="save", on_click=do_save).props("color=primary")
+
+        if not editing:
+            title_input.on_value_change(
+                lambda e: slug_input.set_value(_slugify(e.value))
+            )
+
+        # Side-by-side: CodeMirror editor + live preview
+        with ui.splitter(value=50).classes("w-full flex-grow") as splitter:
+            with splitter.before:
+                content_input = ui.codemirror(
+                    value=page.content if editing else "",
+                    language="Markdown",
+                    theme="githubLight",
+                    line_wrapping=True,
+                ).classes("w-full h-full")
+
+            with splitter.after:
+                preview = ui.markdown(
+                    page.content if editing else "",
+                ).classes("pa-4 w-full overflow-auto")
+
+        content_input.on_value_change(lambda e: preview.set_content(e.value))
 
     dialog.open()

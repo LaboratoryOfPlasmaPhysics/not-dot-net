@@ -45,7 +45,8 @@ async def _render_bookings(container, user: User, filter_range=None):
     container.clear()
     is_admin = await has_permissions(user, "manage_bookings")
     resources = await list_resources(active_only=not is_admin)
-    my_bookings = await list_bookings_for_user(user.id)
+    logged_in = user.is_active
+    my_bookings = await list_bookings_for_user(user.id) if logged_in else []
 
     with container:
         # --- My Bookings ---
@@ -328,7 +329,10 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                         "flat dense round size=xs color=negative"
                     )
 
-    # Book form — pre-filled from global range picker
+    # Book form — only for authenticated users
+    if not user.is_active:
+        return
+
     ui.label(t("book")).classes("text-subtitle2 mt-3 mb-1")
     default_range = book_range or {"from": str(today), "to": str(today + timedelta(days=1))}
     range_label = f"{default_range['from']} → {default_range['to']}"

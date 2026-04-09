@@ -51,6 +51,7 @@ async def seed_fake_users() -> None:
     if created_users:
         await _seed_fake_workflows(created_users)
     await _seed_resources_and_bookings(created_users)
+    await _seed_pages()
 
 
 async def _seed_fake_workflows(users: list) -> None:
@@ -149,3 +150,160 @@ async def _seed_resources_and_bookings(users: list) -> None:
             pass
 
     logger.info("Seeded %d resources, %d bookings", len(resources), count)
+
+
+SEED_PAGES = [
+    {
+        "title": "Welcome to LPP Intranet",
+        "slug": "welcome",
+        "sort_order": 1,
+        "published": True,
+        "content": """\
+# Welcome to the LPP Intranet
+
+This is the internal portal for **Laboratoire de Physique des Plasmas**.
+
+## Quick Links
+
+- **People** — find colleagues, offices, and phone numbers
+- **Bookings** — reserve desktops and laptops
+- **Pages** — documentation and guides
+
+## Getting Started
+
+If you are new to the lab, please check the [onboarding guide](/pages/onboarding)
+and make sure your VPN access request has been submitted.
+
+## Contact
+
+For technical issues with this intranet, contact the IT team at `it@lpp.fr`.
+""",
+    },
+    {
+        "title": "Onboarding Guide",
+        "slug": "onboarding",
+        "sort_order": 2,
+        "published": True,
+        "content": """\
+# Onboarding Guide
+
+Welcome to LPP! Here's what you need to do in your first week.
+
+## Day 1
+
+1. Get your badge from the reception desk (Building A, ground floor)
+2. Set up your workstation — request one via the **Bookings** tab
+3. Submit a **VPN access request** via the Dashboard
+
+## First Week
+
+- [ ] Complete mandatory safety training
+- [ ] Join the lab mailing lists (ask your team lead)
+- [ ] Set up your email signature
+
+## IT Resources
+
+| Resource | How to Access |
+|----------|--------------|
+| WiFi | Network: `LPP-Staff`, credentials from IT |
+| VPN | Submit request via Dashboard |
+| Printers | Auto-discovered on the network |
+| GitLab | `https://gitlab.lpp.fr` — use LDAP credentials |
+
+## Useful Contacts
+
+- **IT Support**: it@lpp.fr
+- **HR**: rh@lpp.fr
+- **Facility Manager**: services@lpp.fr
+""",
+    },
+    {
+        "title": "Meeting Rooms",
+        "slug": "meeting-rooms",
+        "sort_order": 3,
+        "published": True,
+        "content": """\
+# Meeting Rooms
+
+## Building A
+
+| Room | Capacity | Equipment |
+|------|----------|-----------|
+| A101 — Salle Arago | 20 | Projector, videoconference |
+| A204 — Salle Coulomb | 8 | Screen, whiteboard |
+| A310 — Salle Maxwell | 6 | Whiteboard only |
+
+## Building B
+
+| Room | Capacity | Equipment |
+|------|----------|-----------|
+| B102 — Salle Ampere | 40 | Projector, microphone, recording |
+| B205 — Salle Faraday | 12 | Projector, videoconference |
+
+## Booking
+
+Meeting rooms are managed via the shared Nextcloud calendar.
+Contact your team assistant for access.
+""",
+    },
+    {
+        "title": "Network & VPN Configuration",
+        "slug": "network-vpn",
+        "sort_order": 4,
+        "published": False,
+        "content": """\
+# Network & VPN Configuration
+
+> **Draft** — this page is being updated.
+
+## VPN Setup
+
+### Linux
+
+```bash
+sudo apt install openconnect
+sudo openconnect vpn.lpp.fr --user=your.name
+```
+
+### macOS
+
+Install Cisco AnyConnect from Self Service, then connect to `vpn.lpp.fr`.
+
+### Windows
+
+Download the AnyConnect client from `https://vpn.lpp.fr` and follow the prompts.
+
+## Proxy Settings
+
+Internal services do not require a proxy. For external access from lab machines:
+
+```
+http_proxy=http://proxy.lpp.fr:3128
+https_proxy=http://proxy.lpp.fr:3128
+```
+""",
+    },
+]
+
+
+async def _seed_pages() -> None:
+    """Seed demo markdown pages."""
+    from not_dot_net.backend.page_service import list_pages, create_page
+
+    existing = await list_pages(published_only=False)
+    if existing:
+        return
+
+    count = 0
+    for seed in SEED_PAGES:
+        await create_page(
+            title=seed["title"],
+            slug=seed["slug"],
+            content=seed["content"],
+            author_id=None,
+            sort_order=seed["sort_order"],
+            published=seed["published"],
+        )
+        count += 1
+
+    logger.info("Seeded %d pages", count)

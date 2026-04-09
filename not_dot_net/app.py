@@ -19,7 +19,7 @@ from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
 from not_dot_net.frontend.setup_wizard import setup as setup_wizard
-from not_dot_net.frontend.public_page import public_page_router
+from not_dot_net.frontend.public_page import setup as setup_public_pages
 
 
 DEV_DB_URL = "sqlite+aiosqlite:///./dev.db"
@@ -84,7 +84,7 @@ def create_app(
     if not dev_mode:
         setup_wizard()
 
-    app.include_router(public_page_router)
+    setup_public_pages()
 
 
 def main(

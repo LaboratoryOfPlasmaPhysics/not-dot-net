@@ -23,14 +23,42 @@ from not_dot_net.frontend.workflow_step import (
 
 def render(user: User):
     """Render the dashboard tab content."""
+    pages_container = ui.column().classes("w-full")
     my_requests_container = ui.column().classes("w-full")
     actionable_container = ui.column().classes("w-full")
 
     async def refresh():
-        await _render_my_requests(my_requests_container, user)
-        await _render_actionable(actionable_container, user)
+        await _render_pages_section(pages_container)
+        if user.is_active:
+            await _render_my_requests(my_requests_container, user)
+            await _render_actionable(actionable_container, user)
 
     ui.timer(0, refresh, once=True)
+
+
+async def _render_pages_section(container):
+    from not_dot_net.backend.page_service import list_pages
+
+    container.clear()
+    pages = await list_pages(published_only=True)
+    if not pages:
+        return
+
+    with container:
+        with ui.element("div").classes(
+            "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4"
+        ):
+            for page in pages:
+                with ui.card().classes("q-py-sm q-px-md"):
+                    ui.link(page.title, f"/pages/{page.slug}").classes(
+                        "text-subtitle1 font-bold"
+                    )
+                    first_line = next(
+                        (ln for ln in page.content.splitlines() if ln.strip() and not ln.startswith("#")),
+                        "",
+                    )
+                    if first_line:
+                        ui.label(first_line[:120]).classes("text-sm text-grey-8")
 
 
 async def _workflow_labels() -> dict[str, str]:
