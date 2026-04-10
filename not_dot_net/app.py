@@ -18,6 +18,7 @@ from not_dot_net.backend.auth import router as auth_router
 from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
+from not_dot_net.frontend.workflow_detail import setup as setup_workflow_detail
 from not_dot_net.frontend.setup_wizard import setup as setup_wizard
 from not_dot_net.frontend.public_page import setup as setup_public_pages
 
@@ -83,6 +84,7 @@ def create_app(
     setup_login()
     setup_shell()
     setup_token()
+    setup_workflow_detail()
 
     if not dev_mode:
         setup_wizard()
