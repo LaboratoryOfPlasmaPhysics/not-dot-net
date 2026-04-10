@@ -74,6 +74,9 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(login_router)
 
+    from not_dot_net.backend.workflow_file_routes import router as workflow_file_router
+    app.include_router(workflow_file_router)
+
     from not_dot_net.frontend.i18n import validate_translations
     validate_translations()
 
