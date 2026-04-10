@@ -134,6 +134,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "page_not_found": "Page not found",
         "page_draft": "Draft",
         "confirm_delete_page": "Delete this page?",
+        # Workflow detail
+        "back_to_dashboard": "Back to dashboard",
+        "requested_by": "Requested by",
+        "via_token": "via token link",
+        "show_data": "Show submitted data",
+        "hide_data": "Hide data",
+        "take_action": "Take Action",
+        "waiting_since": "Waiting since",
+        "your_action_needed": "Your action needed",
+        "request_detail": "Request Detail",
+        "view_detail": "View Detail",
+        "age": "Age",
     },
     "fr": {
         # Shell / nav
@@ -264,6 +276,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "page_not_found": "Page introuvable",
         "page_draft": "Brouillon",
         "confirm_delete_page": "Supprimer cette page ?",
+        # Workflow detail
+        "back_to_dashboard": "Retour au tableau de bord",
+        "requested_by": "Demandé par",
+        "via_token": "via lien de jeton",
+        "show_data": "Afficher les données",
+        "hide_data": "Masquer les données",
+        "take_action": "Agir",
+        "waiting_since": "En attente depuis",
+        "your_action_needed": "Action requise",
+        "request_detail": "Détail de la demande",
+        "view_detail": "Voir le détail",
+        "age": "Ancienneté",
     },
 }
 
