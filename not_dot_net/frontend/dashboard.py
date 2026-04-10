@@ -1,23 +1,27 @@
 """Dashboard tab — My Requests + Awaiting My Action."""
 
-from nicegui import ui
+import uuid
 
-from not_dot_net.backend.db import User
+from nicegui import ui
+from sqlalchemy import select
+
+from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_service import (
     list_user_requests,
     list_all_requests,
     list_actionable,
     list_events_batch,
-    submit_step,
+    compute_step_age_days,
+    workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
-from not_dot_net.backend.workflow_service import workflows_config
+from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.workflow_step import (
-    render_approval,
-    render_step_form,
     render_status_badge,
+    render_step_progress,
+    render_urgency_badge,
 )
 
 
@@ -75,15 +79,20 @@ def _target_display(req) -> str:
     return name or req.target_email or ""
 
 
+async def _resolve_actor_names_batch(actor_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Resolve actor UUIDs to display names."""
+    if not actor_ids:
+        return {}
+    async with session_scope() as session:
+        result = await session.execute(
+            select(User.id, User.full_name, User.email).where(User.id.in_(actor_ids))
+        )
+        return {row.id: row.full_name or row.email for row in result.all()}
+
+
 # ---------------------------------------------------------------------------
 # My Requests — table view
 # ---------------------------------------------------------------------------
-
-_STATUS_COLORS = {
-    "in_progress": "blue",
-    "completed": "positive",
-    "rejected": "negative",
-}
 
 
 async def _render_my_requests(container, user: User):
@@ -102,17 +111,18 @@ async def _render_my_requests(container, user: User):
 
         cfg = await workflows_config.get()
         wf_labels = await _workflow_labels()
+        dash_cfg = await dashboard_config.get()
+        events_by_req = await list_events_batch([req.id for req in requests])
 
         columns = [
             {"name": "type", "label": t("workflow_type"), "field": "type", "sortable": True, "align": "left"},
             {"name": "target", "label": t("target_person"), "field": "target", "sortable": True, "align": "left"},
             {"name": "progress", "label": t("progress"), "field": "progress", "sortable": True, "align": "center"},
             {"name": "step", "label": t("current_step"), "field": "step", "sortable": True, "align": "left"},
+            {"name": "age", "label": t("age"), "field": "age", "sortable": True, "align": "center"},
             {"name": "date", "label": t("created_at"), "field": "date", "sortable": True, "align": "left"},
             {"name": "status", "label": t("status"), "field": "status", "sortable": True, "align": "center"},
         ]
-
-        events_by_req = await list_events_batch([req.id for req in requests])
 
         rows = []
         for req in requests:
@@ -120,15 +130,8 @@ async def _render_my_requests(container, user: User):
             step_config = get_current_step_config(req, wf) if wf else None
             step_label = step_config.key if step_config else req.current_step
             current, total = get_step_progress(req, wf) if wf else (0, 0)
-
-            event_rows = [
-                {
-                    "ts": ev.created_at.strftime("%Y-%m-%d %H:%M") if ev.created_at else "",
-                    "label": f"{ev.step_key}: {ev.action}",
-                    "comment": ev.comment or "",
-                }
-                for ev in events_by_req.get(req.id, [])
-            ]
+            events = events_by_req.get(req.id, [])
+            age = compute_step_age_days(events, req.current_step)
 
             rows.append({
                 "id": str(req.id),
@@ -137,9 +140,14 @@ async def _render_my_requests(container, user: User):
                 "progress": f"{current}/{total}",
                 "progress_pct": current / total if total else 0,
                 "step": step_label,
+                "age": age,
+                "age_color": (
+                    "positive" if age < dash_cfg.urgency_fresh_days
+                    else "warning" if age < dash_cfg.urgency_aging_days
+                    else "negative"
+                ),
                 "date": _format_date(req.created_at),
                 "status": req.status,
-                "events": event_rows,
             })
 
         table = ui.table(
@@ -148,11 +156,16 @@ async def _render_my_requests(container, user: User):
         table.props("flat bordered dense")
 
         table.add_slot("body", r'''
-            <q-tr :props="props" @click="props.expand = !props.expand" class="cursor-pointer">
+            <q-tr :props="props" @click="() => $parent.$emit('row-click', props.row)" class="cursor-pointer">
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <q-badge v-if="col.name === 'status'"
                         :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : 'primary'"
                         :label="col.value"
+                    />
+                    <q-badge v-else-if="col.name === 'age'"
+                        :color="props.row.age_color"
+                        :label="col.value + 'd'"
+                        outline
                     />
                     <div v-else-if="col.name === 'progress'" class="flex items-center gap-1" style="min-width: 80px">
                         <q-linear-progress
@@ -166,21 +179,11 @@ async def _render_my_requests(container, user: User):
                     <span v-else>{{ col.value }}</span>
                 </q-td>
             </q-tr>
-            <q-tr v-show="props.expand" :props="props">
-                <q-td colspan="100%">
-                    <div class="q-pa-sm">
-                        <div v-for="(ev, i) in props.row.events" :key="i" class="q-mb-xs">
-                            <span class="text-caption text-grey q-mr-sm">{{ ev.ts }}</span>
-                            <span class="text-caption">{{ ev.label }}</span>
-                            <div v-if="ev.comment" class="text-caption text-grey q-ml-lg">{{ ev.comment }}</div>
-                        </div>
-                        <span v-if="!props.row.events.length" class="text-caption text-grey">—</span>
-                    </div>
-                </q-td>
-            </q-tr>
         ''')
 
-        # Filter row above table
+        table.on("row-click", lambda e: ui.navigate.to(f"/workflow/request/{e.args['id']}"))
+
+        # Filter row
         type_options = sorted({r["type"] for r in rows})
         status_options = sorted({r["status"] for r in rows})
 
@@ -218,7 +221,7 @@ async def _render_my_requests(container, user: User):
 
 
 # ---------------------------------------------------------------------------
-# Awaiting My Action — grid of cards
+# Awaiting My Action — enriched cards
 # ---------------------------------------------------------------------------
 
 
@@ -234,88 +237,91 @@ async def _render_actionable(container, user: User):
 
         cfg = await workflows_config.get()
         wf_labels = await _workflow_labels()
-        state = {"expanded_id": None}
+        dash_cfg = await dashboard_config.get()
 
-        # Responsive grid: 1 col on small, 2 on medium, 3 on large
+        events_by_req = await list_events_batch([req.id for req in requests])
+
+        # Build card data and sort by age (oldest first)
+        card_data = []
+        for req in requests:
+            wf = cfg.workflows.get(req.type)
+            if not wf:
+                continue
+            step_config = get_current_step_config(req, wf)
+            if not step_config:
+                continue
+            events = events_by_req.get(req.id, [])
+            age = compute_step_age_days(events, req.current_step)
+            card_data.append((req, wf, step_config, events, age))
+
+        card_data.sort(key=lambda x: x[4], reverse=True)
+
+        # Resolve all actor names in one batch
+        all_actor_ids = set()
+        for _, _, _, events, _ in card_data:
+            all_actor_ids.update(ev.actor_id for ev in events if ev.actor_id)
+        for req, _, _, _, _ in card_data:
+            if req.created_by:
+                all_actor_ids.add(req.created_by)
+        actor_names = await _resolve_actor_names_batch(all_actor_ids)
+
         with ui.element("div").classes(
             "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
         ):
-            for req in requests:
-                wf = cfg.workflows.get(req.type)
-                if not wf:
-                    continue
-                step_config = get_current_step_config(req, wf)
-                if not step_config:
-                    continue
-
+            for req, wf, step_config, events, age in card_data:
                 target = _target_display(req)
                 group_label = wf_labels.get(req.type, req.type)
-                current, total = get_step_progress(req, wf)
+                requester = actor_names.get(req.created_by, "")
 
-                with ui.card().classes("cursor-pointer q-py-sm q-px-md") as card:
+                last_event = next(
+                    (ev for ev in reversed(events) if ev.action != "create"),
+                    None,
+                )
+                last_comment = next(
+                    (ev for ev in reversed(events) if ev.comment),
+                    None,
+                )
+
+                with ui.card().classes(
+                    "cursor-pointer q-py-sm q-px-md hover:shadow-lg transition-shadow"
+                ).on("click", lambda _, r=req: ui.navigate.to(f"/workflow/request/{r.id}")):
+                    # Header: target + urgency
                     with ui.row().classes("items-center justify-between w-full"):
                         with ui.column().classes("gap-0"):
                             ui.label(target or group_label).classes("font-bold")
                             ui.label(group_label).classes("text-xs text-grey")
+                        render_urgency_badge(
+                            age, dash_cfg.urgency_fresh_days, dash_cfg.urgency_aging_days,
+                        )
+
+                    # Step progress
+                    render_step_progress(req.current_step, req.status, wf.steps)
+
+                    # People
+                    with ui.column().classes("gap-0 mt-2"):
+                        ui.label(f"{t('requested_by')}: {requester}").classes(
+                            "text-xs text-grey-8"
+                        )
+                        if last_event:
+                            actor = actor_names.get(last_event.actor_id, t("via_token"))
+                            ui.label(f"{actor} — {last_event.step_key}: {last_event.action}").classes(
+                                "text-xs text-grey-8"
+                            )
+
+                    # Last comment
+                    if last_comment:
+                        actor = actor_names.get(last_comment.actor_id, "")
+                        date_str = (
+                            last_comment.created_at.strftime("%b %d")
+                            if last_comment.created_at else ""
+                        )
+                        with ui.element("div").classes("mt-2 pl-3").style(
+                            "border-left: 3px solid #1976d2; background: #f5f5f5; "
+                            "padding: 4px 8px; border-radius: 4px;"
+                        ):
+                            comment_text = last_comment.comment
+                            if len(comment_text) > 80:
+                                comment_text = comment_text[:77] + "..."
                             ui.label(
-                                f"{t('current_step')}: {step_config.key} ({current}/{total})"
-                            ).classes("text-sm text-grey-8")
-                        if req.updated_at:
-                            ui.label(_format_date(req.updated_at)).classes("text-sm text-grey")
-                    ui.linear_progress(
-                        value=current / total if total else 0, color="primary",
-                    ).classes("w-full").props("rounded size=6px")
-
-                    action_container = ui.column().classes("w-full mt-2")
-                    action_container.set_visibility(False)
-                    action_container.on("click.stop", js_handler="() => {}")
-
-                    async def _expand(
-                        ac=action_container, r=req, sc=step_config, w=wf, st=state,
-                    ):
-                        if st["expanded_id"] == r.id:
-                            ac.set_visibility(False)
-                            st["expanded_id"] = None
-                            return
-                        st["expanded_id"] = r.id
-                        ac.set_visibility(True)
-                        ac.clear()
-                        with ac:
-                            ui.separator()
-                            await _render_action_form(container, user, r, sc, w)
-
-                    card.on("click", _expand)
-
-
-async def _render_action_form(outer_container, user, req, step_config, wf):
-    async def handle_approve(comment, r=req):
-        try:
-            await submit_step(r.id, user.id, "approve", comment=comment, actor_user=user)
-        except Exception as e:
-            ui.notify(str(e), color="negative")
-            return
-        ui.notify(t("step_submitted"), color="positive")
-        await _render_actionable(outer_container, user)
-
-    async def handle_reject(comment, r=req):
-        try:
-            await submit_step(r.id, user.id, "reject", comment=comment, actor_user=user)
-        except Exception as e:
-            ui.notify(str(e), color="negative")
-            return
-        ui.notify(t("step_submitted"), color="positive")
-        await _render_actionable(outer_container, user)
-
-    async def handle_submit(data, r=req):
-        try:
-            await submit_step(r.id, user.id, "submit", data=data, actor_user=user)
-        except Exception as e:
-            ui.notify(str(e), color="negative")
-            return
-        ui.notify(t("step_submitted"), color="positive")
-        await _render_actionable(outer_container, user)
-
-    if step_config.type == "approval":
-        render_approval(req.data, wf, step_config, handle_approve, handle_reject)
-    elif step_config.type == "form":
-        await render_step_form(step_config, req.data, on_submit=handle_submit)
+                                f'💬 "{comment_text}" — {actor}, {date_str}'
+                            ).classes("text-xs text-grey-8")
