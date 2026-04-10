@@ -67,7 +67,7 @@ def setup():
         ):
             ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
             with ui.tabs().classes("ml-4") as tabs:
-                ui.tab(dashboard_label, icon="dashboard")
+                dashboard_tab = ui.tab(dashboard_label, icon="dashboard")
                 ui.tab(people_label, icon="people")
                 ui.tab(bookings_label, icon="event_available")
                 ui.tab(pages_label, icon="article")
@@ -118,6 +118,20 @@ def setup():
                     render_audit()
                 with ui.tab_panel(settings_label):
                     await render_settings(effective_user)
+
+        if logged_in:
+            from not_dot_net.backend.workflow_service import get_actionable_count
+
+            async def update_badge():
+                count = await get_actionable_count(effective_user)
+                tab_text = f"{dashboard_label} ({count})" if count > 0 else dashboard_label
+                dashboard_tab._props["label"] = tab_text
+                dashboard_tab.update()
+                title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
+                await ui.run_javascript(f"document.title = {title!r}")
+
+            ui.timer(60, update_badge)
+            ui.timer(0, update_badge, once=True)
 
         return None
 
