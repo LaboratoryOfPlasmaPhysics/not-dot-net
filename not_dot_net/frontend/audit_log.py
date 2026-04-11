@@ -68,6 +68,7 @@ async def _render_log(container, category=None, actor_email=None):
 
         rows = [
             {
+                "_id": str(ev.id),
                 "time": ev.created_at.strftime("%Y-%m-%d %H:%M:%S") if ev.created_at else "",
                 "category": ev.category,
                 "action": ev.action,
@@ -77,8 +78,6 @@ async def _render_log(container, category=None, actor_email=None):
             }
             for ev in events
         ]
-
-        rows = [{"_id": str(ev.id), **row} for ev, row in zip(events, rows)]
 
         table = ui.table(
             columns=columns, rows=rows, row_key="_id",

@@ -81,6 +81,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "detail": "Detail",
         "time": "Time",
         "no_events": "No events",
+        "permission_denied": "Permission denied",
         # Bookings
         "bookings": "Bookings",
         "resources": "Resources",
@@ -223,6 +224,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "detail": "Détail",
         "time": "Heure",
         "no_events": "Aucun événement",
+        "permission_denied": "Permission refusée",
         # Bookings
         "bookings": "Réservations",
         "resources": "Ressources",

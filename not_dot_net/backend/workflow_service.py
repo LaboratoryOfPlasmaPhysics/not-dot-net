@@ -4,10 +4,10 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger(__name__)
-
 from pydantic import BaseModel
 from sqlalchemy import select, or_, and_
+
+logger = logging.getLogger(__name__)
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope

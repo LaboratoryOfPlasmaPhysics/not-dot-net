@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,8 +24,6 @@ class LdapConfig(BaseModel):
 
 ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 
-
-import re
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 
