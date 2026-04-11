@@ -1,7 +1,10 @@
 """Workflow service layer — DB operations that use the step machine engine."""
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
 from sqlalchemy import select, or_, and_
@@ -304,7 +307,7 @@ async def submit_step(
         try:
             await _fire_notifications(req, action, event.step_key, wf)
         except Exception:
-            pass  # notifications are best-effort, don't fail the step
+            logger.exception("Failed to send notifications for request %s", request_id)
 
         return req
 
@@ -462,6 +465,8 @@ async def _build_actionable_filters(user, cfg):
                 WorkflowRequest.current_step == step.key,
             )
             if step.assignee_permission and await has_permissions(user, step.assignee_permission):
+                filters.append(step_match)
+            elif step.assignee_role and user.role == step.assignee_role:
                 filters.append(step_match)
             elif step.assignee == "target_person":
                 filters.append(and_(step_match, WorkflowRequest.target_email == user.email))

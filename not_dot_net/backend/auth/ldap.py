@@ -24,6 +24,11 @@ class LdapConfig(BaseModel):
 ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 
 
+import re
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+
+
 class LDAPAuthRequest(BaseModel):
     username: str
     password: str
@@ -80,6 +85,12 @@ async def ldap_login(
     credentials: LDAPAuthRequest,
     user_db=Depends(get_user_db),
 ):
+    if not _USERNAME_RE.match(credentials.username):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username format",
+        )
+
     cfg = await ldap_config.get()
     email = ldap_authenticate(credentials.username, credentials.password, cfg, _ldap_connect)
 
@@ -90,7 +101,7 @@ async def ldap_login(
         )
 
     user = await user_db.get_by_email(email)
-    if not user:
+    if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No local user mapped to this LDAP account",

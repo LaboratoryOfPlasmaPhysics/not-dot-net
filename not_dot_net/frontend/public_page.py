@@ -9,7 +9,7 @@ from not_dot_net.frontend.i18n import t
 def setup():
     @ui.page("/pages/{slug}")
     async def page_view(slug: str):
-        page = await get_page(slug)
+        page = await get_page(slug, published_only=True)
 
         ui.colors(primary="#0F52AC")
         with ui.header().classes("row items-center px-4").style(
@@ -20,7 +20,7 @@ def setup():
             )
             ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
 
-        if page is None or not page.published:
+        if page is None:
             with ui.column().classes("absolute-center items-center"):
                 ui.icon("error", size="xl", color="negative")
                 ui.label(t("page_not_found")).classes("text-h6")

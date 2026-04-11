@@ -12,7 +12,7 @@ import json
 from urllib.parse import urlparse
 
 _SAFE_METHODS = frozenset({b"GET", b"HEAD", b"OPTIONS"})
-_SKIP_PREFIXES = ("/socket.io", "/_nicegui", "/auth/")
+_SKIP_PREFIXES = ("/socket.io", "/_nicegui", "/auth/jwt/", "/auth/local", "/auth/ldap")
 
 
 class CSRFMiddleware:

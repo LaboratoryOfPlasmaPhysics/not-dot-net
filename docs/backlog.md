@@ -3,6 +3,7 @@
 Findings from full codebase review (2026-04-11). Ordered by severity within each category.
 
 **Fixed (2026-04-11):** B-01, B-02, B-03, B-04, B-05, B-07. B-06 confirmed false positive.
+**Fixed (2026-04-11):** B-08, B-09, B-10, B-11, B-12, B-13, B-14, B-15, B-16, B-17.
 
 ---
 

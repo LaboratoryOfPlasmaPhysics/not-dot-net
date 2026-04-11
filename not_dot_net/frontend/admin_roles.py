@@ -116,9 +116,10 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
 
         if role_key != "admin":
             async def delete():
-                if user_count > 0:
+                current_count = (await _user_count_by_role()).get(role_key, 0)
+                if current_count > 0:
                     ui.notify(
-                        f"Cannot delete role '{role_key}' — {user_count} users assigned",
+                        f"Cannot delete role '{role_key}' — {current_count} users assigned",
                         color="negative",
                     )
                     return

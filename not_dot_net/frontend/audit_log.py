@@ -78,8 +78,10 @@ async def _render_log(container, category=None, actor_email=None):
             for ev in events
         ]
 
+        rows = [{"_id": str(ev.id), **row} for ev, row in zip(events, rows)]
+
         table = ui.table(
-            columns=columns, rows=rows, row_key="time",
+            columns=columns, rows=rows, row_key="_id",
             pagination={"rowsPerPage": 25},
         ).classes("w-full")
         table.props("flat bordered dense")

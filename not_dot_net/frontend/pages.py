@@ -13,7 +13,7 @@ from not_dot_net.backend.page_service import (
     get_page,
     update_page,
 )
-from not_dot_net.backend.permissions import has_permissions
+from not_dot_net.backend.permissions import check_permission, has_permissions
 from not_dot_net.frontend.i18n import t
 
 
@@ -68,6 +68,7 @@ async def _render_page_list(container, user: User):
                             ).props("flat dense round color=primary size=sm")
 
                             async def do_delete(p=page):
+                                await check_permission(user, MANAGE_PAGES)
                                 await delete_page(p.id)
                                 ui.notify(t("page_deleted"), color="positive")
                                 await _render_page_list(container, user)
@@ -104,6 +105,7 @@ async def _show_editor(container, user: User, page=None):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
             async def do_save():
+                await check_permission(user, MANAGE_PAGES)
                 if not title_input.value.strip():
                     ui.notify(t("required_field"), color="negative")
                     return

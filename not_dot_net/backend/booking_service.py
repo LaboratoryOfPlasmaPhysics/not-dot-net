@@ -60,6 +60,9 @@ async def create_resource(name: str, resource_type: str, description: str = "",
     return resource
 
 
+_RESOURCE_MUTABLE = frozenset({"name", "resource_type", "description", "location", "specs", "active"})
+
+
 async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resource:
     if actor is not None:
         await check_permission(actor, MANAGE_BOOKINGS)
@@ -68,8 +71,9 @@ async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resou
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found")
         for key, value in kwargs.items():
-            if hasattr(resource, key):
-                setattr(resource, key, value)
+            if key not in _RESOURCE_MUTABLE:
+                raise ValueError(f"Cannot update field '{key}'")
+            setattr(resource, key, value)
         await session.commit()
         await session.refresh(resource)
         return resource

@@ -20,9 +20,12 @@ async def list_pages(published_only: bool = True) -> list[Page]:
         return list(result.scalars().all())
 
 
-async def get_page(slug: str) -> Page | None:
+async def get_page(slug: str, published_only: bool = False) -> Page | None:
     async with session_scope() as session:
-        result = await session.execute(select(Page).where(Page.slug == slug))
+        query = select(Page).where(Page.slug == slug)
+        if published_only:
+            query = query.where(Page.published == True)  # noqa: E712
+        result = await session.execute(query)
         return result.scalars().first()
 
 
@@ -53,14 +56,18 @@ async def create_page(
         return page
 
 
+_PAGE_MUTABLE = frozenset({"title", "slug", "content", "sort_order", "published"})
+
+
 async def update_page(page_id: uuid.UUID, **kwargs) -> Page:
     async with session_scope() as session:
         page = await session.get(Page, page_id)
         if page is None:
             raise ValueError(f"Page {page_id} not found")
         for key, value in kwargs.items():
-            if hasattr(page, key):
-                setattr(page, key, value)
+            if key not in _PAGE_MUTABLE:
+                raise ValueError(f"Cannot update field '{key}'")
+            setattr(page, key, value)
         await session.commit()
         await session.refresh(page)
         return page
