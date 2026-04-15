@@ -16,10 +16,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE ./
 COPY not_dot_net ./not_dot_net
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 RUN useradd --system --uid 1000 --home /data notdotnet \
     && mkdir -p /data /secrets \
