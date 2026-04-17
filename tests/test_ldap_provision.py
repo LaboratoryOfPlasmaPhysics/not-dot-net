@@ -156,6 +156,13 @@ async def test_try_ldap_auto_provision_off():
     assert user is None
 
 
+async def test_provision_stores_dn():
+    from not_dot_net.backend.auth.ldap import provision_ldap_user, LdapUserInfo
+    info = LdapUserInfo(email="provision-dn@example.com", dn="cn=provision-dn,dc=example,dc=com")
+    user = await provision_ldap_user(info, default_role="member")
+    assert user.ldap_dn == "cn=provision-dn,dc=example,dc=com"
+
+
 async def test_existing_ldap_user_gets_resynced_on_login():
     fake_users = {
         "jdoe": {

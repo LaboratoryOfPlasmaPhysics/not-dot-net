@@ -218,6 +218,7 @@ async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
             return
         for info_field, user_field in _INFO_TO_USER.items():
             setattr(user, user_field, getattr(info, info_field))
+        user.ldap_dn = info.dn
         await session.commit()
 
 
@@ -240,6 +241,7 @@ async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "Us
                 )
                 user.auth_method = AuthMethod.LDAP
                 user.full_name = user_info.full_name
+                user.ldap_dn = user_info.dn
                 user.role = default_role
                 session.add(user)
                 await session.commit()

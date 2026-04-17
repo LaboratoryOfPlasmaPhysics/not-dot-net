@@ -33,6 +33,7 @@ async def test_sync_updates_mapped_fields_only():
         assert refreshed.title == "New Title"
         assert refreshed.team == "New Team"
         assert refreshed.employment_status == "Permanent"
+        assert refreshed.ldap_dn == "cn=x,dc=example,dc=com"
 
 
 async def test_sync_accepts_none_values():
