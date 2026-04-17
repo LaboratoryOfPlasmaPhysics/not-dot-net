@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
-    PATH=/opt/venv/bin:$PATH
+    PATH=/opt/venv/bin:$PATH \
+    NICEGUI_STORAGE_PATH=/app/.nicegui
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 \

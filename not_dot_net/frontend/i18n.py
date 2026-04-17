@@ -120,6 +120,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "reset_defaults": "Reset to Defaults",
         "settings_saved": "Settings saved",
         "settings_reset": "Settings reset to defaults",
+        # Roles
+        "roles": "Roles",
+        "role_key": "Key",
+        "role_label": "Label",
+        "add": "Add",
+        "default_role": "Default Role",
         # Language
         "language": "Language",
         # Pages
@@ -264,6 +270,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "reset_defaults": "Réinitialiser",
         "settings_saved": "Paramètres enregistrés",
         "settings_reset": "Paramètres réinitialisés",
+        # Roles
+        "roles": "Rôles",
+        "role_key": "Clé",
+        "role_label": "Libellé",
+        "add": "Ajouter",
+        "default_role": "Rôle par défaut",
         # Language
         "language": "Langue",
         # Pages
