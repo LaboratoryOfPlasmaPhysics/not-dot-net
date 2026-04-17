@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from ldap3 import Server, Connection, ALL, Tls
+from ldap3 import Server, Connection, ALL, Tls, MODIFY_REPLACE
 from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel
@@ -151,6 +151,47 @@ def set_ldap_connect(fn: Callable[..., Connection]) -> None:
 
 def get_ldap_connect() -> Callable[..., Connection]:
     return _ldap_connect
+
+
+class LdapModifyError(Exception):
+    """Raised when an AD modify fails (bind, permissions, or server error)."""
+
+
+def ldap_modify_user(
+    dn: str,
+    changes: dict[str, str | None],
+    bind_username: str,
+    bind_password: str,
+    ldap_cfg: LdapConfig,
+    connect: Callable[..., Connection] = default_ldap_connect,
+) -> None:
+    """Bind as bind_username and replace attributes on dn.
+
+    `changes` maps AD attribute name to new value. `None` clears the attribute.
+    Raises LdapModifyError on bind failure, insufficient rights, or server error.
+    """
+    if not changes:
+        return
+    try:
+        conn = connect(ldap_cfg, bind_username, bind_password)
+    except LDAPBindError as e:
+        raise LdapModifyError(f"LDAP bind failed: {e}") from e
+    except LDAPException as e:
+        raise LdapModifyError(f"LDAP connection error: {e}") from e
+
+    try:
+        modify_payload = {
+            attr: [(MODIFY_REPLACE, [value] if value else [])]
+            for attr, value in changes.items()
+        }
+        ok = conn.modify(dn, modify_payload)
+        if not ok:
+            raise LdapModifyError(
+                f"modify failed: {conn.result.get('description')} "
+                f"({conn.result.get('message')})"
+            )
+    finally:
+        conn.unbind()
 
 
 async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "User":
