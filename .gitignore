@@ -114,3 +114,9 @@ ENV/
 uv.lock
 .superpowers/
 .worktrees/
+
+# Tests enum
+tests/failles_securite_intranet.md
+
+.codex
+*.key

@@ -1,6 +1,16 @@
 """Integration tests for custom pages feature."""
 
-from not_dot_net.backend.page_service import create_page, get_page, list_pages, MANAGE_PAGES
+from nicegui.testing import User
+
+from not_dot_net.backend.page_service import (
+    MANAGE_PAGES,
+    create_page,
+    delete_page,
+    get_page,
+    list_pages,
+    update_page,
+)
+from not_dot_net.frontend.i18n import t
 
 
 async def test_full_page_lifecycle():
@@ -18,7 +28,6 @@ async def test_full_page_lifecycle():
     assert any(p.slug == "faq" for p in all_p)
 
     # Publish it
-    from not_dot_net.backend.page_service import update_page
     await update_page(page.id, published=True)
 
     # Now visible
@@ -26,14 +35,64 @@ async def test_full_page_lifecycle():
     assert any(p.slug == "faq" for p in published)
 
     # Public fetch by slug
-    fetched = await get_page("faq")
+    fetched = await get_page("faq", published_only=True)
     assert fetched is not None
     assert fetched.published is True
 
     # Delete
-    from not_dot_net.backend.page_service import delete_page
     await delete_page(page.id)
     assert await get_page("faq") is None
+
+
+async def test_public_page_route_shows_published_content(user: User):
+    await create_page(
+        title="Public FAQ",
+        slug="public-faq",
+        content="## FAQ\n\nVisible to everyone.",
+        author_id=None,
+        published=True,
+    )
+
+    await user.open("/pages/public-faq")
+    await user.should_see("Public FAQ")
+    await user.should_see("Visible to everyone.")
+
+
+async def test_public_page_route_hides_draft_content(user: User):
+    await create_page(
+        title="Private Draft",
+        slug="private-draft",
+        content="This should stay hidden.",
+        author_id=None,
+        published=False,
+    )
+
+    await user.open("/pages/private-draft")
+    await user.should_see(t("page_not_found"))
+    await user.should_not_see("This should stay hidden.")
+
+
+async def test_public_page_route_reflects_publish_and_unpublish(user: User):
+    page = await create_page(
+        title="Release Notes",
+        slug="release-notes-public",
+        content="Deployment window tonight.",
+        author_id=None,
+        published=False,
+    )
+
+    await user.open("/pages/release-notes-public")
+    await user.should_see(t("page_not_found"))
+
+    await update_page(page.id, published=True)
+    await user.open("/pages/release-notes-public")
+    await user.should_see("Release Notes")
+    await user.should_see("Deployment window tonight.")
+
+    await update_page(page.id, published=False)
+    await user.open("/pages/release-notes-public")
+    await user.should_see(t("page_not_found"))
+    await user.should_not_see("Deployment window tonight.")
 
 
 async def test_manage_pages_permission_exists():

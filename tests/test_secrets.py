@@ -1,8 +1,8 @@
 import json
-import os
 import stat
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -42,18 +42,26 @@ def test_read_missing_file_raises(tmp_secrets):
         read_secrets_file(tmp_secrets)
 
 
-def test_load_or_create_generates_on_first_run(tmp_secrets):
+def test_load_or_create_dev_mode_generates_on_first_run(tmp_secrets):
     from not_dot_net.backend.secrets import load_or_create
-    secrets = load_or_create(tmp_secrets, dev_mode=False)
+    secrets = load_or_create(tmp_secrets, dev_mode=True)
     assert secrets.jwt_secret
     assert tmp_secrets.exists()
+    mode = stat.S_IMODE(tmp_secrets.stat().st_mode)
+    assert mode == 0o600
 
 
 def test_load_or_create_reads_on_subsequent_run(tmp_secrets):
     from not_dot_net.backend.secrets import load_or_create
-    first = load_or_create(tmp_secrets, dev_mode=False)
+    first = load_or_create(tmp_secrets, dev_mode=True)
     second = load_or_create(tmp_secrets, dev_mode=False)
     assert first == second
+
+
+def test_load_or_create_prod_mode_refuses_if_missing(tmp_secrets):
+    from not_dot_net.backend.secrets import load_or_create
+    with pytest.raises(SystemExit):
+        load_or_create(tmp_secrets, dev_mode=False)
 
 
 def test_load_or_create_dev_mode_regenerates_if_missing(tmp_secrets):
@@ -67,8 +75,19 @@ def test_load_or_create_dev_mode_regenerates_if_missing(tmp_secrets):
 
 
 def test_load_or_create_prod_mode_refuses_if_deleted(tmp_secrets):
-    from not_dot_net.backend.secrets import load_or_create, read_secrets_file
-    load_or_create(tmp_secrets, dev_mode=False)
+    from not_dot_net.backend.secrets import load_or_create
+    load_or_create(tmp_secrets, dev_mode=True)
     tmp_secrets.unlink()
     with pytest.raises(SystemExit):
-        read_secrets_file(tmp_secrets)
+        load_or_create(tmp_secrets, dev_mode=False)
+
+
+def test_generate_logs_path_but_not_secret_values(tmp_secrets, caplog):
+    from not_dot_net.backend.secrets import generate_secrets_file
+
+    with caplog.at_level("INFO", logger="not_dot_net.secrets"):
+        secrets = generate_secrets_file(tmp_secrets)
+
+    assert str(tmp_secrets) in caplog.text
+    assert secrets.jwt_secret not in caplog.text
+    assert secrets.storage_secret not in caplog.text

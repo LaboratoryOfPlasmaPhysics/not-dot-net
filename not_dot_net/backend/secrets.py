@@ -43,5 +43,5 @@ def load_or_create(path: Path, dev_mode: bool) -> AppSecrets:
     if dev_mode:
         logger.info("Dev mode: generating secrets file %s", path)
         return generate_secrets_file(path)
-    logger.info("First run: generating secrets file %s", path)
-    return generate_secrets_file(path)
+    logger.error("Secrets file not found in production mode: %s", path)
+    sys.exit(1)
