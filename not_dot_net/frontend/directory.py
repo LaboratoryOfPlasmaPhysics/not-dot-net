@@ -124,10 +124,11 @@ def _person_card(person: User, current_user: User, state: dict):
         ]
     )
 
-    with ui.card().classes("cursor-pointer") as card:
+    with ui.card() as card:
         card._person_search_text = search_text
 
-        with ui.row().classes("items-center gap-3"):
+        header = ui.row().classes("items-center gap-3 cursor-pointer w-full")
+        with header:
             ui.icon("person", size="xl").classes(
                 "rounded-full bg-gray-200 p-2"
             )
@@ -142,7 +143,6 @@ def _person_card(person: User, current_user: User, state: dict):
                     ui.label(duration).classes("text-xs text-gray-400")
 
         detail_container = ui.column().classes("w-full mt-2")
-        detail_container.on("click.stop", js_handler="() => {}")
         detail_container.set_visibility(False)
         state["details"][person.id] = detail_container
 
@@ -158,7 +158,7 @@ def _person_card(person: User, current_user: User, state: dict):
                 state["expanded_id"] = person.id
                 await _render_detail(detail_container, person, current_user, state)
 
-        card.on("click", toggle_expand)
+        header.on("click", toggle_expand)
 
 
 async def _render_detail(container, person: User, current_user: User, state: dict):
