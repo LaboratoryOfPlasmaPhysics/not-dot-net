@@ -39,11 +39,12 @@ def create_app(
     secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
     init_user_secrets(secrets)
 
+    if not dev_mode:
+        run_upgrade(database_url)
+
     async def startup():
         if dev_mode:
             await create_db_and_tables()
-        else:
-            run_upgrade(database_url)
         from not_dot_net.backend.roles import seed_admin_permissions
         await seed_admin_permissions()
         if dev_mode:
