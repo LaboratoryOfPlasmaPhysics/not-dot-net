@@ -44,6 +44,14 @@ class LdapConfig(BaseModel):
     user_filter: str = ""
     auto_provision: bool = True
 
+    @property
+    def effective_url(self) -> str:
+        url = self.url.strip()
+        if not url.startswith(("ldap://", "ldaps://")):
+            scheme = "ldaps" if self.tls_mode == TlsMode.LDAPS else "ldap"
+            url = f"{scheme}://{url}"
+        return url
+
 
 ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 
@@ -78,7 +86,7 @@ def default_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> 
     """
     use_ssl = ldap_cfg.tls_mode == TlsMode.LDAPS
     tls = _build_tls(ldap_cfg)
-    server = Server(ldap_cfg.url, port=ldap_cfg.port, use_ssl=use_ssl, tls=tls, get_info=ALL)
+    server = Server(ldap_cfg.effective_url, port=ldap_cfg.port, use_ssl=use_ssl, tls=tls, get_info=ALL)
     bind_user = f"{username}@{ldap_cfg.domain}"
 
     auto_bind = "TLS_BEFORE_BIND" if ldap_cfg.tls_mode == TlsMode.START_TLS else True

@@ -134,8 +134,11 @@ def setup():
                     badge_timer.active = False
 
             badge_timer = ui.timer(60, update_badge)
-            ui.timer(0, update_badge, once=True)
-            app.on_disconnect(lambda: setattr(badge_timer, 'active', False))
+            init_timer = ui.timer(0, update_badge, once=True)
+            def _on_disconnect():
+                badge_timer.deactivate()
+                init_timer.deactivate()
+            app.on_disconnect(_on_disconnect)
 
         return None
 

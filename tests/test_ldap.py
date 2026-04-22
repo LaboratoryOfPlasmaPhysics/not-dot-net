@@ -71,6 +71,29 @@ def test_user_without_mail_returns_none():
     assert result is None
 
 
+class TestEffectiveUrl:
+    def test_bare_hostname_gets_ldap_scheme(self):
+        cfg = LdapConfig(url="dc01.example.com")
+        assert cfg.effective_url == "ldap://dc01.example.com"
+
+    def test_bare_hostname_gets_ldaps_when_tls_ldaps(self):
+        from not_dot_net.backend.auth.ldap import TlsMode
+        cfg = LdapConfig(url="dc01.example.com", tls_mode=TlsMode.LDAPS)
+        assert cfg.effective_url == "ldaps://dc01.example.com"
+
+    def test_full_url_unchanged(self):
+        cfg = LdapConfig(url="ldap://dc01.example.com")
+        assert cfg.effective_url == "ldap://dc01.example.com"
+
+    def test_ldaps_url_unchanged(self):
+        cfg = LdapConfig(url="ldaps://dc01.example.com")
+        assert cfg.effective_url == "ldaps://dc01.example.com"
+
+    def test_whitespace_stripped(self):
+        cfg = LdapConfig(url="  dc01.example.com  ")
+        assert cfg.effective_url == "ldap://dc01.example.com"
+
+
 def test_authentication_returns_dn_and_extended_attrs():
     result = ldap_authenticate("jdoe", "secret", LDAP_CFG, connect=fake_ldap_connect)
     assert result is not None
