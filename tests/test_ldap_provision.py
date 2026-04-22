@@ -91,16 +91,16 @@ async def test_try_ldap_auth_provisions_new_user():
     assert user.auth_method == AuthMethod.LDAP
 
 
-async def test_try_ldap_auth_returns_existing_user():
-    """If the user already exists locally, return them without re-provisioning."""
-    # Create a local user first
+async def test_try_ldap_auth_returns_existing_ldap_user():
+    """If an LDAP user already exists locally, return them without re-provisioning."""
     async with session_scope() as session:
-        async with asynccontextmanager(get_user_db)(session) as user_db:
-            async with asynccontextmanager(get_user_manager)(user_db) as mgr:
-                user = await mgr.create(
-                    UserCreate(email="existing@example.com", password="x", is_active=True)
-                )
-                original_id = user.id
+        user = User(
+            email="existing@example.com", hashed_password="x",
+            is_active=True, auth_method=AuthMethod.LDAP,
+        )
+        session.add(user)
+        await session.commit()
+        original_id = user.id
 
     fake_users = {
         "existing": {

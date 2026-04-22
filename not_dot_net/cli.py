@@ -51,6 +51,63 @@ def stamp(
 
 
 @app.command
+def promote(user: str):
+    """Grant admin role to a user (match by email, name, or substring)."""
+    asyncio.run(_set_role(user, "admin"))
+
+
+@app.command
+def revoke(user: str):
+    """Remove admin role from a user (match by email, name, or substring)."""
+    asyncio.run(_set_role(user, "member"))
+
+
+async def _find_user(session, query: str):
+    from not_dot_net.backend.db import User
+    from sqlalchemy import select, func
+
+    result = await session.execute(select(User).where(User.email == query))
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+
+    pattern = f"%{query}%"
+    result = await session.execute(
+        select(User).where(
+            func.lower(User.email).like(pattern.lower())
+            | func.lower(User.full_name).like(pattern.lower())
+        )
+    )
+    matches = result.scalars().all()
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        print(f"Ambiguous — '{query}' matches {len(matches)} users:")
+        for m in matches:
+            print(f"  {m.email}  ({m.full_name or '-'})")
+        raise SystemExit(1)
+    return None
+
+
+async def _set_role(query: str, role: str):
+    from not_dot_net.backend.db import init_db, session_scope
+
+    database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+    init_db(database_url)
+
+    async with session_scope() as session:
+        user = await _find_user(session, query)
+        if not user:
+            print(f"Error: no user matching '{query}'.")
+            raise SystemExit(1)
+        old_role = user.role
+        user.role = role
+        user.is_superuser = (role == "admin")
+        await session.commit()
+        print(f"'{user.email}' ({user.full_name or '-'}): {old_role or '(none)'} → {role}")
+
+
+@app.command
 def create_user(
     username: str,
     password: str,

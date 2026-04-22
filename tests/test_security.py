@@ -84,6 +84,78 @@ class TestNoPublicRestApi:
         assert "/auth/local" not in self._routes()
 
 
+class TestEmailCollision:
+    """LDAP auth must not hijack a local account that shares the same email."""
+
+    async def test_ldap_login_blocked_when_local_account_exists(self):
+        from contextlib import asynccontextmanager
+        from not_dot_net.backend.auth.ldap import (
+            LdapConfig, ldap_config, set_ldap_connect,
+        )
+        from not_dot_net.backend.db import AuthMethod, session_scope, get_user_db
+        from not_dot_net.backend.users import get_user_manager
+        from not_dot_net.backend.schemas import UserCreate
+        from not_dot_net.frontend.login import _try_ldap_auth
+        from tests.test_ldap_provision import _make_fake_connect
+
+        async with session_scope() as session:
+            async with asynccontextmanager(get_user_db)(session) as user_db:
+                async with asynccontextmanager(get_user_manager)(user_db) as mgr:
+                    user = await mgr.create(
+                        UserCreate(email="admin@example.com", password="localpass", is_active=True)
+                    )
+                    user.role = "admin"
+                    user.auth_method = AuthMethod.LOCAL
+                    session.add(user)
+                    await session.commit()
+
+        fake_users = {
+            "admin": {
+                "mail": "admin@example.com",
+                "displayName": "AD Admin",
+                "password": "ldappass",
+            },
+        }
+        cfg = LdapConfig(url="fake", domain="example.com", base_dn="dc=example,dc=com", auto_provision=True)
+        await ldap_config.set(cfg)
+        set_ldap_connect(_make_fake_connect(fake_users))
+
+        result = await _try_ldap_auth("admin", "ldappass")
+        assert result is None
+
+    async def test_ldap_login_allowed_for_existing_ldap_account(self):
+        from not_dot_net.backend.auth.ldap import (
+            LdapConfig, ldap_config, set_ldap_connect,
+        )
+        from not_dot_net.backend.db import AuthMethod, User, session_scope
+        from not_dot_net.frontend.login import _try_ldap_auth
+        from tests.test_ldap_provision import _make_fake_connect
+
+        async with session_scope() as session:
+            user = User(
+                email="ldapuser@example.com", hashed_password="x",
+                is_active=True, auth_method=AuthMethod.LDAP,
+            )
+            session.add(user)
+            await session.commit()
+            original_id = user.id
+
+        fake_users = {
+            "ldapuser": {
+                "mail": "ldapuser@example.com",
+                "displayName": "LDAP User",
+                "password": "pass",
+            },
+        }
+        cfg = LdapConfig(url="fake", domain="example.com", base_dn="dc=example,dc=com", auto_provision=True)
+        await ldap_config.set(cfg)
+        set_ldap_connect(_make_fake_connect(fake_users))
+
+        result = await _try_ldap_auth("ldapuser", "pass")
+        assert result is not None
+        assert result.id == original_id
+
+
 class TestLdapEscaping:
     def test_special_chars_escaped(self):
         from ldap3.utils.conv import escape_filter_chars
