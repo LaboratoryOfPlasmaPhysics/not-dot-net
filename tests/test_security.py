@@ -67,8 +67,11 @@ class TestNoPublicRestApi:
     def _routes(self):
         from nicegui import app
         from not_dot_net.app import create_app
-        create_app()
-        return {getattr(r, "path", None) for r in app.routes}
+        paths = {getattr(r, "path", None) for r in app.routes}
+        if "/login" not in paths and "/auth/login" not in paths:
+            create_app()
+            paths = {getattr(r, "path", None) for r in app.routes}
+        return paths
 
     def test_users_router_not_mounted(self):
         paths = self._routes()

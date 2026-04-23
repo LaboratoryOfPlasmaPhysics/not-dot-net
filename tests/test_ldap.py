@@ -1,4 +1,5 @@
 import pytest
+from ldap3.core.exceptions import LDAPException
 from ldap3 import Server, Connection, MOCK_SYNC, OFFLINE_AD_2012_R2
 
 from not_dot_net.backend.auth.ldap import ldap_authenticate, LdapConfig, LdapUserInfo
@@ -168,3 +169,168 @@ def test_authentication_returns_dn_and_extended_attrs():
     assert info.office == "Room 101"
     assert info.title == "Researcher"
     assert info.department == "Plasma"
+
+
+def test_ldap_exception_returns_none():
+    def raising_connect(ldap_cfg: LdapConfig, username: str, password: str):
+        raise LDAPException("server unavailable")
+
+    result = ldap_authenticate("jdoe", "secret", LDAP_CFG, connect=raising_connect)
+    assert result is None
+
+
+def test_search_filter_includes_escaped_username():
+    captured: dict[str, object] = {}
+
+    class FakeConnection:
+        def __init__(self):
+            self.entries = []
+
+        def search(self, base_dn, search_filter, attributes):
+            captured["base_dn"] = base_dn
+            captured["search_filter"] = search_filter
+            captured["attributes"] = attributes
+            self.entries = []
+
+        def unbind(self):
+            captured["unbound"] = True
+
+    def connect(ldap_cfg: LdapConfig, username: str, password: str):
+        captured["username"] = username
+        return FakeConnection()
+
+    result = ldap_authenticate("admin)(objectClass=*", "secret", LDAP_CFG, connect=connect)
+
+    assert result is None
+    assert captured["base_dn"] == LDAP_CFG.base_dn
+    assert captured["search_filter"] == r"(sAMAccountName=admin\29\28objectClass=\2a)"
+    assert captured["unbound"] is True
+
+
+def test_search_filter_includes_configured_user_filter():
+    captured: dict[str, object] = {}
+    ldap_cfg = LdapConfig(
+        url="fake",
+        domain="example.com",
+        base_dn="dc=example,dc=com",
+        user_filter="(memberOf=cn=intranet,ou=groups,dc=example,dc=com)",
+    )
+
+    class FakeConnection:
+        def __init__(self):
+            self.entries = []
+
+        def search(self, base_dn, search_filter, attributes):
+            captured["search_filter"] = search_filter
+            self.entries = []
+
+        def unbind(self):
+            captured["unbound"] = True
+
+    def connect(ldap_cfg: LdapConfig, username: str, password: str):
+        return FakeConnection()
+
+    result = ldap_authenticate("jdoe", "secret", ldap_cfg, connect=connect)
+
+    assert result is None
+    assert captured["search_filter"] == (
+        "(&(sAMAccountName=jdoe)"
+        "(memberOf=cn=intranet,ou=groups,dc=example,dc=com))"
+    )
+    assert captured["unbound"] is True
+
+
+def test_connection_remains_bound_after_success():
+    state = {"unbound": False}
+
+    class Attr:
+        def __init__(self, value):
+            self.value = value
+
+    class Entry:
+        entry_dn = "cn=jdoe,ou=users,dc=example,dc=com"
+        mail = Attr("jdoe@example.com")
+        displayName = Attr("John Doe")
+        givenName = Attr("John")
+        sn = Attr("Doe")
+        telephoneNumber = Attr("+33123456789")
+        physicalDeliveryOfficeName = Attr("Room 101")
+        title = Attr("Researcher")
+        department = Attr("Plasma")
+
+    class FakeConnection:
+        def __init__(self):
+            self.entries = [Entry()]
+
+        def search(self, base_dn, search_filter, attributes):
+            return True
+
+        def unbind(self):
+            state["unbound"] = True
+
+    def connect(ldap_cfg: LdapConfig, username: str, password: str):
+        return FakeConnection()
+
+    result = ldap_authenticate("jdoe", "secret", LDAP_CFG, connect=connect)
+
+    assert result is not None
+    assert state["unbound"] is False
+
+
+def test_connection_unbound_after_user_not_found():
+    state = {"unbound": False}
+
+    class FakeConnection:
+        def __init__(self):
+            self.entries = []
+
+        def search(self, base_dn, search_filter, attributes):
+            self.entries = []
+            return True
+
+        def unbind(self):
+            state["unbound"] = True
+
+    def connect(ldap_cfg: LdapConfig, username: str, password: str):
+        return FakeConnection()
+
+    result = ldap_authenticate("missing", "secret", LDAP_CFG, connect=connect)
+
+    assert result is None
+    assert state["unbound"] is True
+
+
+def test_connection_remains_bound_after_missing_mail_fallback():
+    state = {"unbound": False}
+
+    class Attr:
+        def __init__(self, value):
+            self.value = value
+
+    class Entry:
+        entry_dn = "cn=nomail,ou=users,dc=example,dc=com"
+        mail = Attr(None)
+        userPrincipalName = Attr(None)
+        displayName = Attr("No Mail")
+        givenName = Attr("No")
+        sn = Attr("Mail")
+
+    class FakeConnection:
+        def __init__(self):
+            self.entries = [Entry()]
+
+        def search(self, base_dn, search_filter, attributes):
+            return True
+
+        def unbind(self):
+            state["unbound"] = True
+
+    def connect(ldap_cfg: LdapConfig, username: str, password: str):
+        return FakeConnection()
+
+    result = ldap_authenticate("nomail", "secret", LDAP_CFG, connect=connect)
+
+    assert result is not None
+    info, _ = result
+    assert info.email == "nomail@example.com"
+    assert state["unbound"] is False

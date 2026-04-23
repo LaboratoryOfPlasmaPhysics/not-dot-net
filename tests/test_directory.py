@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 from nicegui.testing import User
 
 from not_dot_net.backend.db import session_scope, get_user_db
+from not_dot_net.backend.migrate import run_upgrade
 from not_dot_net.backend.schemas import UserCreate
 from not_dot_net.backend.users import get_user_manager, get_jwt_strategy
+from not_dot_net.app import DEV_DB_URL
 
 
 async def _create_user_and_token(email: str, password: str) -> str:
@@ -21,6 +23,7 @@ async def _create_user_and_token(email: str, password: str) -> str:
 
 
 async def test_directory_shows_search(user: User) -> None:
+    run_upgrade(DEV_DB_URL)
     await user.open("/login")
     # Wait for startup tasks (DB creation, admin seeding) to complete
     await asyncio.sleep(0.5)

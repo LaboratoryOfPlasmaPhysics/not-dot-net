@@ -1,10 +1,10 @@
 """Integration tests for local auth endpoints (login)."""
 
 import pytest
-import uuid
 from contextlib import asynccontextmanager
 
 from not_dot_net.backend.db import User, session_scope, get_user_db
+from not_dot_net.backend.audit import list_audit_events
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.backend.schemas import UserCreate
 from not_dot_net.frontend.login import handle_login
@@ -79,6 +79,78 @@ async def test_jwt_token_generation():
     assert len(token) > 20
 
 
+async def test_login_endpoint_success_sets_auth_cookie_and_redirects():
+    await _create_user_via_manager("success@test.com", "CorrectPassword1!")
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "success@test.com", "password": "CorrectPassword1!"}
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    set_cookie_headers = response.headers.getlist("set-cookie")
+    assert any("fastapiusersauth=" in header for header in set_cookie_headers)
+
+
+async def test_login_endpoint_success_honors_safe_redirect():
+    await _create_user_via_manager("redirect@test.com", "CorrectPassword1!")
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {
+                            "username": "redirect@test.com",
+                            "password": "CorrectPassword1!",
+                            "redirect_to": "/dashboard?tab=security",
+                        }
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard?tab=security"
+
+
+@pytest.mark.parametrize(
+    "unsafe_redirect",
+    [
+        "https://evil.example/steal",
+        "//evil.example/steal",
+        "javascript:alert(1)",
+        "data:text/html,owned",
+        "evil.example/no-leading-slash",
+        "/\\evil.example",
+    ],
+)
+async def test_login_endpoint_success_rejects_unsafe_redirect(unsafe_redirect: str):
+    await _create_user_via_manager("redirect-unsafe@test.com", "CorrectPassword1!")
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {
+                            "username": "redirect-unsafe@test.com",
+                            "password": "CorrectPassword1!",
+                            "redirect_to": unsafe_redirect,
+                        }
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
 async def test_login_endpoint_does_not_enumerate_accounts():
     await _create_user_via_manager("enum@test.com", "CorrectPassword1!")
 
@@ -106,6 +178,20 @@ async def test_login_endpoint_does_not_enumerate_accounts():
     assert "set-cookie" not in nonexistent_user.headers
 
 
+async def test_login_endpoint_empty_credentials_fail_like_any_other_failure():
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest({"username": "", "password": ""}),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?error=1"
+    assert "set-cookie" not in response.headers
+
+
 async def test_login_endpoint_rejects_inactive_user():
     user = await _create_user_via_manager("inactive@test.com", "CorrectPassword1!")
     async with session_scope() as session:
@@ -127,3 +213,70 @@ async def test_login_endpoint_rejects_inactive_user():
     assert response.status_code == 303
     assert response.headers["location"] == "/login?error=1"
     assert "set-cookie" not in response.headers
+
+
+async def test_login_endpoint_success_emits_audit_event():
+    await _create_user_via_manager("audit-success@test.com", "CorrectPassword1!")
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "audit-success@test.com", "password": "CorrectPassword1!"}
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    events = await list_audit_events(category="auth", action="login")
+    assert len(events) == 1
+    assert events[0].actor_email == "audit-success@test.com"
+
+
+async def test_login_endpoint_failed_login_does_not_emit_success_audit_event():
+    await _create_user_via_manager("audit-failure@test.com", "CorrectPassword1!")
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "audit-failure@test.com", "password": "WrongPassword!"}
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?error=1"
+    assert await list_audit_events(category="auth", action="login") == []
+
+
+async def test_login_endpoint_falls_back_to_ldap_when_local_auth_fails(monkeypatch):
+    ldap_user = User(
+        email="ldap-success@test.com",
+        hashed_password="x",
+        is_active=True,
+    )
+
+    async def fake_try_ldap_auth(username: str, password: str):
+        if username == "ldap-success@test.com" and password == "CorrectPassword1!":
+            return ldap_user
+        return None
+
+    monkeypatch.setattr("not_dot_net.frontend.login._try_ldap_auth", fake_try_ldap_auth)
+
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "ldap-success@test.com", "password": "CorrectPassword1!"}
+                    ),
+                    user_manager=user_manager,
+                )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    set_cookie_headers = response.headers.getlist("set-cookie")
+    assert any("fastapiusersauth=" in header for header in set_cookie_headers)
