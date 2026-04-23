@@ -258,18 +258,16 @@ async def _prompt_ad_credentials_then_edit(container, person, current_user, stat
     is_own = person.id == current_user.id
     dialog = ui.dialog()
     with dialog, ui.card():
-        if is_own:
-            ui.label(t("confirm_password_to_save_ad"))
-            username_input = None
-            password_input = ui.input(t("password"), password=True).props("outlined dense")
-        else:
-            ui.label(t("admin_ad_credentials"))
-            username_input = ui.input(t("ad_admin_username")).props("outlined dense")
-            password_input = ui.input(t("password"), password=True).props("outlined dense")
+        ui.label(t("confirm_password_to_save_ad") if is_own else t("admin_ad_credentials"))
+        username_input = ui.input(
+            t("email_or_username"),
+            value=current_user.email.split("@")[0] if is_own else "",
+        ).props("outlined dense")
+        password_input = ui.input(t("password"), password=True).props("outlined dense")
         error_label = ui.label("").classes("text-negative")
 
         async def submit():
-            bind_user = (current_user.email.split("@")[0] if is_own else username_input.value)
+            bind_user = username_input.value.strip()
             if not bind_user or not password_input.value:
                 return
             cfg = await ldap_config.get()
