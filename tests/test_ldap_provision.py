@@ -7,9 +7,7 @@ from not_dot_net.backend.auth.ldap import (
     LdapConfig, LdapUserInfo, provision_ldap_user, ldap_config,
     set_ldap_connect, ldap_authenticate,
 )
-from not_dot_net.backend.db import AuthMethod, User, get_user_db, session_scope
-from not_dot_net.backend.users import get_user_manager
-from not_dot_net.backend.schemas import UserCreate
+from not_dot_net.backend.db import AuthMethod, User, session_scope
 from not_dot_net.frontend.login import _try_ldap_auth
 
 from ldap3 import Server, Connection, MOCK_SYNC, OFFLINE_AD_2012_R2
@@ -154,6 +152,48 @@ async def test_try_ldap_auto_provision_off():
 
     user = await _try_ldap_auth("noprov", "pass")
     assert user is None
+
+
+async def test_provision_sets_all_ldap_fields():
+    """All AD-backed fields must be set on first provision (not just after sync)."""
+    info = LdapUserInfo(
+        email="allfields@example.com",
+        dn="cn=allfields,dc=example,dc=com",
+        full_name="All Fields",
+        phone="+33123456",
+        office="Room 42",
+        title="Engineer",
+        department="Physics",
+        company="CNRS",
+        description="Test user",
+        webpage="https://example.com",
+        member_of=["CN=Group1,DC=example,DC=com"],
+        uid_number=1234,
+        gid_number=5678,
+    )
+    user = await provision_ldap_user(info, default_role="member")
+    assert user.phone == "+33123456"
+    assert user.office == "Room 42"
+    assert user.title == "Engineer"
+    assert user.team == "Physics"
+    assert user.company == "CNRS"
+    assert user.description == "Test user"
+    assert user.webpage == "https://example.com"
+    assert user.member_of == ["CN=Group1,DC=example,DC=com"]
+    assert user.uid_number == 1234
+    assert user.gid_number == 5678
+
+
+async def test_provision_accepts_local_domain_email():
+    """AD emails like user@corp.local must not be rejected by email validation."""
+    info = LdapUserInfo(
+        email="testlpp@lab-lpp.local",
+        dn="cn=testlpp,ou=Palaiseau,dc=lab-lpp,dc=local",
+        full_name="Test LPP",
+    )
+    user = await provision_ldap_user(info, default_role="member")
+    assert user.email == "testlpp@lab-lpp.local"
+    assert user.auth_method == AuthMethod.LDAP
 
 
 async def test_provision_stores_dn():

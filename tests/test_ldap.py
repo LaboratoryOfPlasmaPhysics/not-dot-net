@@ -18,6 +18,7 @@ FAKE_USERS = {
         "password": "secret",
     },
     "nomail": {"mail": None, "displayName": "No Mail", "givenName": "No", "sn": "Mail", "password": "secret"},
+    "upnonly": {"mail": None, "userPrincipalName": "upnonly@example.com", "displayName": "UPN Only", "password": "secret"},
 }
 
 
@@ -33,7 +34,8 @@ def fake_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> Con
             "objectClass": "person",
         }
         for attr in ("mail", "displayName", "givenName", "sn",
-                     "telephoneNumber", "physicalDeliveryOfficeName", "title", "department"):
+                     "telephoneNumber", "physicalDeliveryOfficeName", "title", "department",
+                     "userPrincipalName", "sAMAccountName"):
             if attrs.get(attr):
                 entry_attrs[attr] = attrs[attr]
         conn.strategy.add_entry(f"cn={uid},ou=users,{ldap_cfg.base_dn}", entry_attrs)
@@ -66,9 +68,16 @@ def test_unknown_user_returns_none():
     assert result is None
 
 
-def test_user_without_mail_returns_none():
+def test_user_without_mail_falls_back_to_domain():
     result = ldap_authenticate("nomail", "secret", LDAP_CFG, connect=fake_ldap_connect)
-    assert result is None
+    assert result is not None
+    assert result.email == "nomail@example.com"
+
+
+def test_user_without_mail_falls_back_to_upn():
+    result = ldap_authenticate("upnonly", "secret", LDAP_CFG, connect=fake_ldap_connect)
+    assert result is not None
+    assert result.email == "upnonly@example.com"
 
 
 class TestEffectiveUrl:

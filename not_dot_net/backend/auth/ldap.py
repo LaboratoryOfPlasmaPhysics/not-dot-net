@@ -23,9 +23,18 @@ AD_ATTR_MAP: dict[str, str] = {
     "office":     "physicalDeliveryOfficeName",
     "title":      "title",
     "team":       "department",
+    "company":    "company",
+    "description": "description",
+    "webpage":    "wWWHomePage",
 }
 
-_AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + ["givenName", "sn"]
+# Read-only AD attributes (not in AD_ATTR_MAP because users can't write them back)
+_AD_READ_ONLY = [
+    "givenName", "sn", "userPrincipalName", "sAMAccountName",
+    "memberOf", "thumbnailPhoto", "uidNumber", "gidNumber",
+]
+
+_AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + _AD_READ_ONLY
 
 
 class TlsMode(str, Enum):
@@ -70,6 +79,13 @@ class LdapUserInfo:
     office: str | None = None
     title: str | None = None
     department: str | None = None
+    company: str | None = None
+    description: str | None = None
+    webpage: str | None = None
+    member_of: list[str] | None = None
+    photo: bytes | None = None
+    uid_number: int | None = None
+    gid_number: int | None = None
 
 
 def _build_tls(ldap_cfg: LdapConfig) -> Tls | None:
@@ -96,6 +112,32 @@ def default_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> 
 def _attr_value(entry, name: str) -> str | None:
     attr = getattr(entry, name, None)
     return attr.value if attr is not None else None
+
+
+def _attr_list(entry, name: str) -> list[str] | None:
+    attr = getattr(entry, name, None)
+    if attr is None:
+        return None
+    vals = attr.values if hasattr(attr, "values") else attr.value
+    if isinstance(vals, list):
+        return [str(v) for v in vals] if vals else None
+    return [str(vals)] if vals else None
+
+
+def _attr_bytes(entry, name: str) -> bytes | None:
+    attr = getattr(entry, name, None)
+    if attr is None:
+        return None
+    val = attr.value
+    return val if isinstance(val, bytes) else None
+
+
+def _attr_int(entry, name: str) -> int | None:
+    attr = getattr(entry, name, None)
+    if attr is None:
+        return None
+    val = attr.value
+    return int(val) if val is not None else None
 
 
 def ldap_authenticate(
@@ -130,9 +172,11 @@ def ldap_authenticate(
         if not conn.entries:
             return None
         entry = conn.entries[0]
-        email = _attr_value(entry, "mail")
-        if email is None:
-            return None
+        email = (
+            _attr_value(entry, "mail")
+            or _attr_value(entry, "userPrincipalName")
+            or f"{username}@{ldap_cfg.domain}"
+        )
         return LdapUserInfo(
             email=email,
             dn=entry.entry_dn,
@@ -143,6 +187,13 @@ def ldap_authenticate(
             office=_attr_value(entry, "physicalDeliveryOfficeName"),
             title=_attr_value(entry, "title"),
             department=_attr_value(entry, "department"),
+            company=_attr_value(entry, "company"),
+            description=_attr_value(entry, "description"),
+            webpage=_attr_value(entry, "wWWHomePage"),
+            member_of=_attr_list(entry, "memberOf"),
+            photo=_attr_bytes(entry, "thumbnailPhoto"),
+            uid_number=_attr_int(entry, "uidNumber"),
+            gid_number=_attr_int(entry, "gidNumber"),
         )
     finally:
         conn.unbind()
@@ -204,12 +255,19 @@ def ldap_modify_user(
 
 # LdapUserInfo field name -> User model field name
 _INFO_TO_USER: dict[str, str] = {
-    "email":      "email",
-    "full_name":  "full_name",
-    "phone":      "phone",
-    "office":     "office",
-    "title":      "title",
-    "department": "team",
+    "email":       "email",
+    "full_name":   "full_name",
+    "phone":       "phone",
+    "office":      "office",
+    "title":       "title",
+    "department":  "team",
+    "company":     "company",
+    "description": "description",
+    "webpage":     "webpage",
+    "member_of":   "member_of",
+    "photo":       "photo",
+    "uid_number":  "uid_number",
+    "gid_number":  "gid_number",
 }
 
 
@@ -231,28 +289,26 @@ async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
 
 
 async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "User":
-    """Create a local user from AD attributes. Returns the new User."""
-    from not_dot_net.backend.db import User, AuthMethod, session_scope, get_user_db
-    from not_dot_net.backend.schemas import UserCreate
-    from not_dot_net.backend.users import get_user_manager
-    from contextlib import asynccontextmanager
+    """Create a local user from AD attributes. Returns the new User.
+
+    Bypasses UserCreate/UserManager to avoid EmailStr validation — AD
+    domains like .local are valid internally but rejected by pydantic.
+    """
+    from not_dot_net.backend.db import User, AuthMethod, session_scope
 
     async with session_scope() as session:
-        async with asynccontextmanager(get_user_db)(session) as user_db:
-            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
-                user = await user_manager.create(
-                    UserCreate(
-                        email=user_info.email,
-                        password=uuid.uuid4().hex,  # random, unusable for local login
-                        is_active=True,
-                    )
-                )
-                user.auth_method = AuthMethod.LDAP
-                user.full_name = user_info.full_name
-                user.ldap_dn = user_info.dn
-                user.role = default_role
-                session.add(user)
-                await session.commit()
-                await session.refresh(user)
-                logger.info("Auto-provisioned LDAP user '%s' with role '%s'", user.email, default_role)
-                return user
+        fields = {user_field: getattr(user_info, info_field)
+                  for info_field, user_field in _INFO_TO_USER.items()}
+        user = User(
+            **fields,
+            hashed_password="!ldap-no-local-password",
+            auth_method=AuthMethod.LDAP,
+            ldap_dn=user_info.dn,
+            role=default_role,
+            is_active=True,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        logger.info("Auto-provisioned LDAP user '%s' with role '%s'", user.email, default_role)
+        return user

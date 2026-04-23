@@ -98,13 +98,14 @@ async def _render_bookings(container, user: User, filter_range=None):
 
         with ui.row().classes("items-center gap-2 mb-3"):
             ui.icon("date_range", size="sm").classes("text-primary")
-            range_display = ui.input(
-                t("filter"), value=_range_label(default_range),
-            ).props("outlined dense readonly").classes("min-w-[250px]")
-            with range_display.add_slot("append"):
-                ui.icon("event").classes("cursor-pointer")
-            with ui.menu() as menu:
-                date_picker = ui.date(default_range).props("range")
+            with ui.element("div"):
+                range_display = ui.input(
+                    t("filter"), value=_range_label(default_range),
+                ).props("outlined dense readonly").classes("min-w-[250px]")
+                with range_display.add_slot("append"):
+                    ui.icon("event").classes("cursor-pointer")
+                with ui.menu() as menu:
+                    date_picker = ui.date(default_range).props("range")
 
             all_sites = [t("all_types")] + sites
             site_select = ui.select(
@@ -238,7 +239,7 @@ async def _resource_card(outer_container, res, user, is_admin, state,
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-0"):
                 with ui.row().classes("items-center gap-2"):
-                    icon = "computer" if res.resource_type == "desktop" else "laptop"
+                    icon = "desktop_windows" if res.resource_type == "desktop" else "laptop"
                     ui.icon(icon, size="sm").classes("text-grey-7")
                     ui.label(res.name).classes("font-bold")
                 ui.label(t(res.resource_type)).classes("text-xs text-grey")

@@ -30,3 +30,6 @@ class UserUpdate(schemas.BaseUserUpdate):
     start_date: date | None = None
     end_date: date | None = None
     role: str | None = None
+    company: str | None = None
+    description: str | None = None
+    webpage: str | None = None

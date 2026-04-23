@@ -5,7 +5,7 @@ from enum import Enum as PyEnum
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
-from sqlalchemy import Date, Enum as SAEnum, String
+from sqlalchemy import Date, Enum as SAEnum, JSON, LargeBinary, String
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -42,6 +42,13 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     employment_status: Mapped[str | None] = mapped_column(default=None)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    company: Mapped[str | None] = mapped_column(default=None)
+    description: Mapped[str | None] = mapped_column(default=None)
+    webpage: Mapped[str | None] = mapped_column(default=None)
+    uid_number: Mapped[int | None] = mapped_column(default=None)
+    gid_number: Mapped[int | None] = mapped_column(default=None)
+    member_of: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, default=None)
     role: Mapped[str] = mapped_column(
         String(50), default=""
     )

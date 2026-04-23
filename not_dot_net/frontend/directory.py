@@ -121,6 +121,7 @@ def _person_card(person: User, current_user: User, state: dict):
             person.full_name or "", person.email,
             person.team or "", person.office or "",
             person.title or "", person.employment_status or "",
+            person.company or "",
         ]
     )
 
@@ -129,13 +130,25 @@ def _person_card(person: User, current_user: User, state: dict):
 
         header = ui.row().classes("items-center gap-3 cursor-pointer w-full")
         with header:
-            ui.icon("person", size="xl").classes(
-                "rounded-full bg-gray-200 p-2"
-            )
+            if person.photo:
+                import base64
+                b64 = base64.b64encode(person.photo).decode()
+                ui.image(f"data:image/jpeg;base64,{b64}").classes(
+                    "w-12 h-12 rounded-full object-cover"
+                )
+            else:
+                ui.icon("person", size="xl").classes(
+                    "rounded-full bg-gray-200 p-2"
+                )
             with ui.column().classes("gap-0"):
                 ui.label(display_name).classes("font-bold")
                 if person.team:
-                    ui.label(person.team).classes("text-sm text-gray-500")
+                    subtitle = person.team
+                    if person.company:
+                        subtitle += f" — {person.company}"
+                    ui.label(subtitle).classes("text-sm text-gray-500")
+                elif person.company:
+                    ui.label(person.company).classes("text-sm text-gray-500")
                 if person.office:
                     ui.label(f"{t('office')} {person.office}").classes("text-sm text-gray-500")
                 duration = _format_duration(person)
@@ -171,14 +184,32 @@ async def _render_detail(container, person: User, current_user: User, state: dic
         if person.phone:
             ui.label(f"{t('phone')}: {person.phone}").classes("text-sm")
         ui.label(f"{t('email')}: {person.email}").classes("text-sm")
+        if person.company:
+            ui.label(f"{t('company')}: {person.company}").classes("text-sm")
         if person.employment_status:
             ui.label(f"{t('status')}: {person.employment_status}").classes("text-sm")
         if person.title:
             ui.label(f"{t('title')}: {person.title}").classes("text-sm")
+        if person.description:
+            ui.label(f"{t('description')}: {person.description}").classes("text-sm")
+        if person.webpage:
+            with ui.row().classes("items-center gap-1"):
+                ui.label(f"{t('webpage')}:").classes("text-sm")
+                ui.link(person.webpage, person.webpage, new_tab=True).classes("text-sm")
         if person.start_date:
             ui.label(f"{t('start_date')}: {person.start_date}").classes("text-sm")
         if person.end_date:
             ui.label(f"{t('end_date')}: {person.end_date}").classes("text-sm")
+        if person.uid_number is not None or person.gid_number is not None:
+            parts = []
+            if person.uid_number is not None:
+                parts.append(f"{t('uid_number')}: {person.uid_number}")
+            if person.gid_number is not None:
+                parts.append(f"{t('gid_number')}: {person.gid_number}")
+            ui.label(" | ".join(parts)).classes("text-sm text-gray-500")
+        if person.member_of:
+            cn_names = [dn.split(",")[0].removeprefix("CN=") for dn in person.member_of]
+            ui.label(f"{t('member_of')}: {', '.join(cn_names)}").classes("text-sm text-gray-500")
 
         if is_own or is_admin:
             async def do_edit():
@@ -244,6 +275,15 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
         ).props("outlined dense")
         fields["office"] = ui.input(
             t("office"), value=person.office or ""
+        ).props("outlined dense")
+        fields["company"] = ui.input(
+            t("company"), value=person.company or ""
+        ).props("outlined dense")
+        fields["description"] = ui.input(
+            t("description"), value=person.description or ""
+        ).props("outlined dense")
+        fields["webpage"] = ui.input(
+            t("webpage"), value=person.webpage or ""
         ).props("outlined dense")
 
         async def save():

@@ -116,7 +116,10 @@ def test_ldap(username: str, password: str):
 async def _test_ldap(username: str, password: str):
     from not_dot_net.backend.db import init_db
     from not_dot_net.backend.app_config import AppSetting  # noqa: F401 — register model
-    from not_dot_net.backend.auth.ldap import ldap_config, ldap_authenticate, get_ldap_connect
+    from not_dot_net.backend.auth.ldap import (
+        ldap_config, ldap_authenticate, get_ldap_connect,
+        default_ldap_connect,
+    )
 
     database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
     init_db(database_url)
@@ -124,12 +127,49 @@ async def _test_ldap(username: str, password: str):
     cfg = await ldap_config.get()
     print(f"LDAP config: url={cfg.url} effective_url={cfg.effective_url} domain={cfg.domain}")
     print(f"  base_dn={cfg.base_dn} port={cfg.port} tls_mode={cfg.tls_mode}")
+    print(f"  tls_verify={cfg.tls_verify}")
     print(f"  auto_provision={cfg.auto_provision} user_filter={cfg.user_filter!r}")
-    print(f"Attempting LDAP auth for '{username}'...")
 
+    print(f"\nStep 1: LDAP bind as '{username}@{cfg.domain}'...")
+    try:
+        conn = default_ldap_connect(cfg, username, password)
+        print(f"  Bind OK — server: {conn.server.host}:{conn.server.port}")
+        print(f"  TLS: {conn.tls_started}, bound: {conn.bound}")
+        conn.unbind()
+    except Exception as exc:
+        print(f"  Bind FAILED: {type(exc).__name__}: {exc}")
+        raise SystemExit(1)
+
+    print(f"\nStep 2: manual search...")
+    from ldap3 import SUBTREE
+    from ldap3.utils.conv import escape_filter_chars
+    conn = default_ldap_connect(cfg, username, password)
+    safe_user = escape_filter_chars(username)
+    search_filter = f"(sAMAccountName={safe_user})"
+    if cfg.user_filter:
+        search_filter = f"(&{search_filter}{cfg.user_filter})"
+    print(f"  base_dn: {cfg.base_dn}")
+    print(f"  filter:  {search_filter}")
+    ok = conn.search(cfg.base_dn, search_filter, search_scope=SUBTREE, attributes=["*"])
+    print(f"  search returned: {ok}, entries: {len(conn.entries)}, result: {conn.result}")
+    if conn.entries:
+        entry = conn.entries[0]
+        print(f"  DN: {entry.entry_dn}")
+        print(f"  Attributes: {entry.entry_attributes_as_dict}")
+    else:
+        print("  No entries found. Trying without user_filter...")
+        ok2 = conn.search(cfg.base_dn, f"(sAMAccountName={safe_user})", search_scope=SUBTREE, attributes=["*"])
+        print(f"  search returned: {ok2}, entries: {len(conn.entries)}, result: {conn.result}")
+        if conn.entries:
+            entry = conn.entries[0]
+            print(f"  DN: {entry.entry_dn}")
+            print(f"  objectClass: {entry.entry_attributes_as_dict.get('objectClass', '?')}")
+    conn.unbind()
+
+    print(f"\nStep 3: full auth flow...")
     result = ldap_authenticate(username, password, cfg, get_ldap_connect())
     if result is None:
-        print("LDAP auth failed — bad credentials, user not found, or connection error.")
+        print("  Auth+search returned None — check Step 2 output above.")
         raise SystemExit(1)
     print(f"Success:")
     print(f"  email: {result.email}")
@@ -139,6 +179,13 @@ async def _test_ldap(username: str, password: str):
     print(f"  office: {result.office}")
     print(f"  title: {result.title}")
     print(f"  department: {result.department}")
+    print(f"  company: {result.company}")
+    print(f"  description: {result.description}")
+    print(f"  webpage: {result.webpage}")
+    print(f"  uid_number: {result.uid_number}")
+    print(f"  gid_number: {result.gid_number}")
+    print(f"  member_of: {result.member_of}")
+    print(f"  photo: {'yes (' + str(len(result.photo)) + ' bytes)' if result.photo else 'no'}")
 
 
 @app.command
