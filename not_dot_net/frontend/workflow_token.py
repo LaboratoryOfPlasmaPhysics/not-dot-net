@@ -98,9 +98,10 @@ def setup():
                 encrypted_fields = {f.name for f in step.fields if f.encrypted}
 
                 async def handle_file_upload(field_name, event):
-                    content = event.content.read()
-                    filename = event.name
-                    content_type = event.type or "application/octet-stream"
+                    upload = event.file
+                    content = await upload.read()
+                    filename = upload.name
+                    content_type = upload.content_type or "application/octet-stream"
 
                     if field_name in encrypted_fields:
                         enc_file = await store_encrypted(

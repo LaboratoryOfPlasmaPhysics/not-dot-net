@@ -41,17 +41,19 @@ async def render_step_form(
         elif field_cfg.type == "file":
             uploaded = (files or {}).get(field_cfg.name)
             if uploaded:
-                ui.label(f"{label}: uploaded").classes("text-positive text-sm")
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.icon("check_circle", color="positive", size="sm")
+                    ui.label(f"{label}: {uploaded}").classes("text-positive text-sm")
+            elif on_file_upload:
+                req_mark = " *" if field_cfg.required else ""
+                ui.upload(
+                    label=f"{label}{req_mark}",
+                    auto_upload=True,
+                    on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
+                ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
             else:
-                with ui.row().classes("items-center gap-2"):
-                    ui.label(label).classes("text-sm")
-                    if on_file_upload:
-                        ui.upload(
-                            label=t("file_upload"),
-                            auto_upload=True,
-                            on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
-                        ).props("dense flat").classes("max-w-xs")
-            fields[field_cfg.name] = None  # files tracked separately
+                ui.label(f"{label}: no upload available").classes("text-grey text-sm")
+            fields[field_cfg.name] = None
         elif field_cfg.type == "email":
             fields[field_cfg.name] = ui.input(
                 label=label, value=value, validation={"Invalid email": lambda v: "@" in v if v else True}
