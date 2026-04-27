@@ -279,6 +279,31 @@ async def create_request(
         return req
 
 
+async def _create_tenure_from_onboarding(req: WorkflowRequest, user_id: uuid.UUID) -> None:
+    """Create a tenure record from a completed onboarding request."""
+    from not_dot_net.backend.tenure_service import add_tenure
+    from datetime import date as dt_date
+
+    status = req.data.get("status")
+    employer = req.data.get("employer")
+    if not status or not employer:
+        return
+
+    start_date = dt_date.today()
+    if req.data.get("start_date"):
+        try:
+            start_date = dt_date.fromisoformat(req.data["start_date"])
+        except (ValueError, TypeError):
+            pass
+
+    await add_tenure(
+        user_id=user_id,
+        status=status,
+        employer=employer,
+        start_date=start_date,
+    )
+
+
 async def submit_step(
     request_id: uuid.UUID,
     actor_id: uuid.UUID | None,
@@ -371,6 +396,25 @@ async def submit_step(
                             await mark_for_retention(wf_file.encrypted_file_id, days=365)
             except Exception:
                 logger.exception("Failed to mark files for retention for request %s", req.id)
+
+            if req.type == "onboarding":
+                try:
+                    target_user_id = None
+                    if req.data.get("returning_user_id"):
+                        target_user_id = uuid.UUID(req.data["returning_user_id"])
+                    elif req.target_email:
+                        async with session_scope() as tenure_session:
+                            from not_dot_net.backend.db import User as UserModel
+                            result = await tenure_session.execute(
+                                select(UserModel).where(UserModel.email == req.target_email)
+                            )
+                            target_user = result.scalar_one_or_none()
+                            if target_user:
+                                target_user_id = target_user.id
+                    if target_user_id:
+                        await _create_tenure_from_onboarding(req, target_user_id)
+                except Exception:
+                    logger.exception("Failed to create tenure for onboarding request %s", req.id)
 
         # Audit
         from not_dot_net.backend.audit import log_audit
