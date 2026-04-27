@@ -74,22 +74,21 @@ class WorkflowsConfig(BaseModel):
         ),
         "onboarding": WorkflowConfig(
             label="Onboarding",
-            start_role="staff",
-            target_email_field="person_email",
+            target_email_field="contact_email",
+            document_instructions={
+                "Intern": ["ID document", "Internship agreement", "Photo"],
+                "PhD": ["ID document", "Bank details (RIB)", "Photo", "PhD enrollment certificate"],
+                "_default": ["ID document", "Bank details (RIB)", "Photo"],
+            },
             steps=[
                 WorkflowStepConfig(
-                    key="request",
+                    key="initiation",
                     type="form",
-                    assignee_role="staff",
+                    assignee="requester",
                     assignee_permission="create_workflows",
                     fields=[
-                        FieldConfig(name="person_name", type="text", required=True),
-                        FieldConfig(name="person_email", type="email", required=True),
-                        FieldConfig(name="role_status", type="select", options_key="roles", required=True),
-                        FieldConfig(name="team", type="select", options_key="teams", required=True),
-                        FieldConfig(name="start_date", type="date", required=True),
-                        FieldConfig(name="end_date", type="date", required=False, label="End Date"),
-                        FieldConfig(name="note", type="textarea", required=False),
+                        FieldConfig(name="contact_email", type="email", required=True, label="Contact Email"),
+                        FieldConfig(name="status", type="select", required=True, label="Status", options_key="employment_statuses"),
                     ],
                     actions=["submit"],
                 ),
@@ -99,27 +98,41 @@ class WorkflowsConfig(BaseModel):
                     assignee="target_person",
                     partial_save=True,
                     fields=[
-                        FieldConfig(name="id_document", type="file", required=True, label="ID Copy"),
-                        FieldConfig(name="rib", type="file", required=True, label="Bank Details (RIB)"),
-                        FieldConfig(name="photo", type="file", required=False, label="Badge Photo"),
-                        FieldConfig(name="phone", type="text", required=True),
-                        FieldConfig(name="emergency_contact", type="text", required=True),
+                        FieldConfig(name="first_name", type="text", required=True, label="First Name"),
+                        FieldConfig(name="last_name", type="text", required=True, label="Last Name"),
+                        FieldConfig(name="phone", type="text", label="Phone"),
+                        FieldConfig(name="address", type="textarea", label="Address"),
+                        FieldConfig(name="emergency_contact", type="text", label="Emergency Contact"),
+                        FieldConfig(name="id_document", type="file", required=True, label="ID Document", encrypted=True),
+                        FieldConfig(name="bank_details", type="file", required=True, label="Bank Details (RIB)", encrypted=True),
+                        FieldConfig(name="photo", type="file", label="Photo", encrypted=True),
                     ],
                     actions=["submit"],
                 ),
                 WorkflowStepConfig(
                     key="admin_validation",
                     type="approval",
-                    assignee_role="admin",
-                    assignee_permission="approve_workflows",
-                    actions=["approve", "reject"],
+                    assignee_permission="access_personal_data",
+                    actions=["approve", "request_corrections", "reject"],
+                    corrections_target="newcomer_info",
+                ),
+                WorkflowStepConfig(
+                    key="it_account_creation",
+                    type="form",
+                    assignee_permission="manage_users",
+                    fields=[
+                        FieldConfig(name="notes", type="textarea", label="Notes"),
+                    ],
+                    actions=["complete"],
                 ),
             ],
             notifications=[
-                NotificationRuleConfig(event="submit", step="request", notify=["target_person"]),
-                NotificationRuleConfig(event="submit", step="newcomer_info", notify=["admin"]),
-                NotificationRuleConfig(event="approve", notify=["requester", "target_person"]),
+                NotificationRuleConfig(event="submit", step="initiation", notify=["target_person"]),
+                NotificationRuleConfig(event="submit", step="newcomer_info", notify=["permission:access_personal_data"]),
+                NotificationRuleConfig(event="approve", step="admin_validation", notify=["permission:manage_users", "requester"]),
+                NotificationRuleConfig(event="request_corrections", step="admin_validation", notify=["target_person"]),
                 NotificationRuleConfig(event="reject", notify=["requester"]),
+                NotificationRuleConfig(event="complete", step="it_account_creation", notify=["requester", "target_person"]),
             ],
         ),
     }
@@ -134,8 +147,8 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
     Uses a single session for all user lookups to avoid N+1 queries.
     """
     from not_dot_net.backend.db import User
-
     from not_dot_net.backend.mail import mail_config
+    from not_dot_net.backend.permissions import has_permissions
 
     mail_cfg = await mail_config.get()
 
@@ -153,6 +166,13 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             )
             return list(result.scalars().all())
 
+        async def get_users_by_permission(perm):
+            result = await session.execute(
+                select(User).where(User.is_active == True)
+            )
+            all_users = list(result.scalars().all())
+            return [u for u in all_users if await has_permissions(u, perm)]
+
         await notify(
             request=req,
             event=event,
@@ -161,6 +181,7 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             mail_settings=mail_cfg,
             get_user_email=get_user_email,
             get_users_by_role=get_users_by_role,
+            get_users_by_permission=get_users_by_permission,
         )
 
 
@@ -293,6 +314,24 @@ async def submit_step(
 
         await session.commit()
         await session.refresh(req)
+
+        # Mark encrypted files for retention on workflow completion (requires Task 8 column)
+        if new_status == RequestStatus.COMPLETED:
+            try:
+                from not_dot_net.backend.encrypted_storage import mark_for_retention
+                from not_dot_net.backend.workflow_models import WorkflowFile
+                if hasattr(WorkflowFile, "encrypted_file_id"):
+                    async with session_scope() as retention_session:
+                        file_result = await retention_session.execute(
+                            select(WorkflowFile).where(
+                                WorkflowFile.request_id == req.id,
+                                WorkflowFile.encrypted_file_id != None,
+                            )
+                        )
+                        for wf_file in file_result.scalars().all():
+                            await mark_for_retention(wf_file.encrypted_file_id, days=365)
+            except Exception:
+                logger.exception("Failed to mark files for retention for request %s", req.id)
 
         # Audit
         from not_dot_net.backend.audit import log_audit

@@ -29,6 +29,17 @@ TEMPLATES = {
         "body": "<p>Please complete your information by visiting the link below:</p>"
                 '<p><a href="{link}">{link}</a></p>',
     },
+    "request_corrections": {
+        "subject": "Corrections needed for your {workflow_label} submission",
+        "body": "<p>The administration team has requested corrections on your "
+                "<strong>{workflow_label}</strong> submission.</p>"
+                "<p>Please visit the link you received previously to update your information.</p>",
+    },
+    "complete": {
+        "subject": "Your {workflow_label} is complete — welcome!",
+        "body": "<p>Your <strong>{workflow_label}</strong> onboarding is now complete. "
+                "Your account has been created.</p>",
+    },
 }
 
 
@@ -61,6 +72,7 @@ async def resolve_recipients(
     request,
     get_user_email,
     get_users_by_role,
+    get_users_by_permission=None,
 ) -> list[str]:
     """Resolve notification targets to email addresses."""
     emails = set()
@@ -71,6 +83,11 @@ async def resolve_recipients(
                 emails.add(email)
         elif target == "target_person" and request.target_email:
             emails.add(request.target_email)
+        elif target.startswith("permission:") and get_users_by_permission:
+            perm = target.split(":", 1)[1]
+            users = await get_users_by_permission(perm)
+            for user in users:
+                emails.add(user.email)
         else:
             users = await get_users_by_role(target)
             for user in users:
@@ -86,6 +103,7 @@ async def notify(
     mail_settings,
     get_user_email,
     get_users_by_role,
+    get_users_by_permission=None,
 ) -> list[str]:
     base_url = mail_settings.base_url.rstrip("/")
     """Fire notifications for a workflow event. Returns list of emails sent to."""
@@ -98,7 +116,7 @@ async def notify(
     all_sent = []
     for rule in rules:
         recipients = await resolve_recipients(
-            rule.notify, request, get_user_email, get_users_by_role,
+            rule.notify, request, get_user_email, get_users_by_role, get_users_by_permission,
         )
 
         # Determine template

@@ -111,9 +111,7 @@ async def test_save_draft():
     req = await create_request(
         workflow_type="onboarding",
         created_by=user.id,
-        data={"person_name": "Bob", "person_email": "bob@test.com",
-              "role_status": "intern", "team": "Plasma Physics",
-              "start_date": "2026-04-01"},
+        data={"contact_email": "bob@test.com", "status": "Intern"},
     )
     # Advance to newcomer_info step (generates token for target_person)
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
@@ -175,15 +173,13 @@ async def test_get_request_by_id_not_found():
 
 
 async def test_token_generated_for_target_person_step():
-    """After submitting the onboarding request step, a token should be generated for the newcomer_info step."""
+    """After submitting the onboarding initiation step, a token should be generated for the newcomer_info step."""
     await _setup_roles()
     user = await _create_user()
     req = await create_request(
         workflow_type="onboarding",
         created_by=user.id,
-        data={"person_name": "Bob", "person_email": "bob@test.com",
-              "role_status": "intern", "team": "Plasma Physics",
-              "start_date": "2026-04-01"},
+        data={"contact_email": "bob@test.com", "status": "Intern"},
     )
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.current_step == "newcomer_info"
@@ -262,3 +258,79 @@ async def test_create_request_allowed_with_permission():
         actor=staff,
     )
     assert req.type == "vpn_access"
+
+
+async def test_onboarding_v2_full_flow():
+    """Test the complete 4-step onboarding: initiation → newcomer_info → admin_validation → it_account_creation."""
+    await _setup_roles()
+    cfg = await roles_config.get()
+    cfg.roles["admin"].permissions.append("access_personal_data")
+    cfg.roles["admin"].permissions.append("manage_users")
+    await roles_config.set(cfg)
+
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+    admin = await _create_user(email="admin@test.com", role="admin")
+
+    # Step 1: Initiation
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "newcomer@example.com", "status": "PhD"},
+        actor=initiator,
+    )
+    assert req.current_step == "initiation"
+
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    assert req.current_step == "newcomer_info"
+    assert req.token is not None
+
+    # Step 2: Newcomer submits info via token
+    req = await submit_step(
+        req.id, actor_id=None, action="submit",
+        data={"first_name": "Marie", "last_name": "Curie", "phone": "+33 1 00 00"},
+        actor_token=req.token,
+    )
+    assert req.current_step == "admin_validation"
+
+    # Step 3: Admin approves
+    req = await submit_step(req.id, admin.id, "approve", data={}, actor_user=admin)
+    assert req.current_step == "it_account_creation"
+
+    # Step 4: IT marks complete
+    req = await submit_step(req.id, admin.id, "complete", data={"notes": "account: mcurie"}, actor_user=admin)
+    assert req.status == "completed"
+
+
+async def test_onboarding_v2_request_corrections():
+    """Admin sends workflow back to newcomer_info via request_corrections."""
+    await _setup_roles()
+    cfg = await roles_config.get()
+    cfg.roles["admin"].permissions.append("access_personal_data")
+    await roles_config.set(cfg)
+
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+    admin = await _create_user(email="admin@test.com", role="admin")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "newcomer@example.com", "status": "CDD"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    req = await submit_step(
+        req.id, actor_id=None, action="submit",
+        data={"first_name": "Jean", "last_name": "Dupont"},
+        actor_token=req.token,
+    )
+    assert req.current_step == "admin_validation"
+
+    # Admin requests corrections
+    req = await submit_step(
+        req.id, admin.id, "request_corrections",
+        comment="Please re-upload ID document",
+        actor_user=admin,
+    )
+    assert req.current_step == "newcomer_info"
+    assert req.status == "in_progress"
+    assert req.token is not None  # new token generated for target_person step
