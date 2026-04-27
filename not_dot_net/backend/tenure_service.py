@@ -4,7 +4,6 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import Date, ForeignKey, String, func, or_, select
-from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
@@ -106,7 +105,7 @@ async def headcount_at_date(target: date) -> int:
     """Count people with an active tenure on a given date."""
     async with session_scope() as session:
         result = await session.execute(
-            select(sa_func.count(sa_func.distinct(UserTenure.user_id)))
+            select(func.count(func.distinct(UserTenure.user_id)))
             .where(
                 UserTenure.start_date <= target,
                 or_(
