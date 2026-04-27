@@ -132,7 +132,7 @@ def setup():
                     dashboard_tab.update()
                     title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
                     await ui.run_javascript(f"document.title = {title!r}")
-                except RuntimeError:
+                except (RuntimeError, TimeoutError):
                     pass
 
             safe_timer(60, update_badge)
