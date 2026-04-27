@@ -39,9 +39,44 @@ from not_dot_net.config import (
 )
 
 
+ALLOWED_EXTENSIONS: set[str] = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+
+# Magic bytes → expected extensions
+_MAGIC_SIGNATURES: list[tuple[bytes, set[str]]] = [
+    (b"%PDF", {".pdf"}),
+    (b"\xff\xd8\xff", {".jpg", ".jpeg"}),
+    (b"\x89PNG\r\n\x1a\n", {".png"}),
+    (b"PK\x03\x04", {".docx"}),  # ZIP-based (OOXML)
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", {".doc"}),  # OLE2 (legacy Word)
+]
+
+
+def _check_magic(content: bytes, ext: str) -> bool:
+    """Check if file content matches its extension via magic bytes."""
+    for signature, valid_exts in _MAGIC_SIGNATURES:
+        if content[:len(signature)] == signature:
+            return ext in valid_exts
+    return True  # no signature match → skip check (don't block unknown formats)
+
+
+def validate_upload(content: bytes, filename: str, content_type: str, max_size_mb: int) -> str | None:
+    """Validate file upload. Returns error message or None if valid."""
+    max_bytes = max_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        return f"File too large (max {max_size_mb} MB)"
+    from pathlib import PurePosixPath
+    ext = PurePosixPath(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return f"File type not allowed: {ext}"
+    if not _check_magic(content, ext):
+        return "File content does not match its extension"
+    return None
+
+
 class WorkflowsConfig(BaseModel):
     token_expiry_days: int = 30
     verification_code_expiry_minutes: int = 15
+    max_upload_size_mb: int = 10
     workflows: dict[str, WorkflowConfig] = {
         "vpn_access": WorkflowConfig(
             label="VPN Access Request",

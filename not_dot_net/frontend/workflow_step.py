@@ -14,6 +14,7 @@ async def render_step_form(
     on_save_draft=None,
     files: dict | None = None,
     on_file_upload=None,
+    max_upload_size_mb: int = 10,
 ):
     """Render a form step's fields. Returns dict of field name -> ui element."""
     fields = {}
@@ -49,6 +50,7 @@ async def render_step_form(
                 ui.upload(
                     label=f"{label}{req_mark}",
                     auto_upload=True,
+                    max_file_size=max_upload_size_mb * 1024 * 1024,
                     on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
                 ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
             else:

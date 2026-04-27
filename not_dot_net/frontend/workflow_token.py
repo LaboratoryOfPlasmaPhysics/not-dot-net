@@ -12,6 +12,7 @@ from not_dot_net.backend.workflow_service import (
     get_request_by_token,
     save_draft,
     submit_step,
+    validate_upload,
     workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config
@@ -108,6 +109,12 @@ def setup():
                     filename = upload.name
                     content_type = upload.content_type or "application/octet-stream"
 
+                    wf_cfg = await workflows_config.get()
+                    error = validate_upload(content, filename, content_type, wf_cfg.max_upload_size_mb)
+                    if error:
+                        ui.notify(error, color="negative")
+                        return
+
                     if field_name in encrypted_fields:
                         enc_file = await store_encrypted(
                             content, filename, content_type, uploaded_by=None,
@@ -156,6 +163,7 @@ def setup():
                     await save_draft(request.id, data=data, actor_token=tok)
                     ui.notify(t("draft_saved"), color="positive")
 
+                wf_cfg_form = await workflows_config.get()
                 await render_step_form(
                     step,
                     request.data,
@@ -163,6 +171,7 @@ def setup():
                     on_save_draft=handle_save_draft if step.partial_save else None,
                     files=uploaded_files,
                     on_file_upload=handle_file_upload,
+                    max_upload_size_mb=wf_cfg_form.max_upload_size_mb,
                 )
 
             with container:
