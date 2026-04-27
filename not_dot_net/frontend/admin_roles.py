@@ -3,6 +3,8 @@
 from nicegui import ui
 from sqlalchemy import select, func
 
+from not_dot_net.frontend import safe_timer
+
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import check_permission, get_permissions, MANAGE_ROLES
 from not_dot_net.backend.roles import RoleDefinition, roles_config
@@ -18,7 +20,7 @@ async def render(user):
     async def refresh():
         await _render_roles(container, user)
 
-    ui.timer(0, refresh, once=True)
+    safe_timer(0, refresh, once=True)
 
 
 async def _user_count_by_role() -> dict[str, int]:

@@ -5,6 +5,8 @@ from typing import Optional
 from fastapi import Depends
 from nicegui import app, ui
 
+from not_dot_net.frontend import safe_timer
+
 from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.users import current_active_user_optional
@@ -131,14 +133,10 @@ def setup():
                     title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
                     await ui.run_javascript(f"document.title = {title!r}")
                 except RuntimeError:
-                    badge_timer.active = False
+                    pass
 
-            badge_timer = ui.timer(60, update_badge)
-            init_timer = ui.timer(0, update_badge, once=True)
-            def _on_disconnect():
-                badge_timer.deactivate()
-                init_timer.deactivate()
-            app.on_disconnect(_on_disconnect)
+            safe_timer(60, update_badge)
+            safe_timer(0, update_badge, once=True)
 
         return None
 

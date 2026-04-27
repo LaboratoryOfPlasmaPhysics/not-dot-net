@@ -2,6 +2,8 @@
 
 from nicegui import ui
 
+from not_dot_net.frontend import safe_timer
+
 from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_service import (
@@ -35,7 +37,7 @@ def render(user: User):
             await _render_my_requests(my_requests_container, user)
             await _render_actionable(actionable_container, user)
 
-    ui.timer(0, refresh, once=True)
+    safe_timer(0, refresh, once=True)
 
 
 async def _render_pages_section(container):
