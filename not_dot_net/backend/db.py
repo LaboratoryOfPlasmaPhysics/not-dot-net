@@ -74,6 +74,7 @@ async def create_db_and_tables() -> None:
     import not_dot_net.backend.audit  # noqa: F401 — register models with Base
     import not_dot_net.backend.app_config  # noqa: F401 — register AppSetting with Base
     import not_dot_net.backend.page_models  # noqa: F401 — register Page with Base
+    import not_dot_net.backend.encrypted_storage  # noqa: F401 — register EncryptedFile with Base
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
