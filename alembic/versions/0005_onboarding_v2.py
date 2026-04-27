@@ -24,6 +24,7 @@ def upgrade() -> None:
         sa.Column("uploaded_by", sa.Uuid(), sa.ForeignKey("user.id", ondelete="SET NULL"), nullable=True),
         sa.Column("uploaded_at", sa.DateTime(), server_default=sa.func.now()),
         sa.Column("retained_until", sa.DateTime(), nullable=True),
+        if_not_exists=True,
     )
 
     with op.batch_alter_table("workflow_request") as batch_op:
