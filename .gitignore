@@ -120,3 +120,4 @@ tests/failles_securite_intranet.md
 
 .codex
 *.key
+data/encrypted/

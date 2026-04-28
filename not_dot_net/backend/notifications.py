@@ -90,7 +90,9 @@ async def resolve_recipients(
                 emails.add(email)
         elif target == "target_person" and request.target_email:
             emails.add(request.target_email)
-        elif target.startswith("permission:") and get_users_by_permission:
+        elif target.startswith("permission:"):
+            if get_users_by_permission is None:
+                continue
             perm = target.split(":", 1)[1]
             users = await get_users_by_permission(perm)
             for user in users:

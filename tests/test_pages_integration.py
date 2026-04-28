@@ -66,6 +66,15 @@ async def test_public_page_route_shows_published_content(user: User):
     await user.should_see("Visible to everyone.")
 
 
+async def test_public_page_route_missing_page_shows_not_found(user: User):
+    await _ensure_no_page("missing-public-page")
+
+    await user.open("/pages/missing-public-page")
+
+    await user.should_see(t("app_name"))
+    await user.should_see(t("page_not_found"))
+
+
 async def test_public_page_route_hides_draft_content(user: User):
     await _ensure_no_page("private-draft")
     await create_page(
@@ -78,7 +87,24 @@ async def test_public_page_route_hides_draft_content(user: User):
 
     await user.open("/pages/private-draft")
     await user.should_see(t("page_not_found"))
+    await user.should_not_see("Private Draft")
     await user.should_not_see("This should stay hidden.")
+
+
+async def test_public_page_route_does_not_normalize_slug(user: User):
+    await _ensure_no_page("case-sensitive-page")
+    await create_page(
+        title="Case Sensitive",
+        slug="case-sensitive-page",
+        content="Only exact lowercase slug should resolve.",
+        author_id=None,
+        published=True,
+    )
+
+    await user.open("/pages/Case-Sensitive-Page")
+
+    await user.should_see(t("page_not_found"))
+    await user.should_not_see("Only exact lowercase slug should resolve.")
 
 
 async def test_public_page_route_reflects_publish_and_unpublish(user: User):
@@ -103,6 +129,39 @@ async def test_public_page_route_reflects_publish_and_unpublish(user: User):
     await user.open("/pages/release-notes-public")
     await user.should_see(t("page_not_found"))
     await user.should_not_see("Deployment window tonight.")
+
+
+async def test_public_page_route_reflects_slug_rename(user: User):
+    await _ensure_no_page("old-public-slug")
+    await _ensure_no_page("new-public-slug")
+    page = await create_page(
+        title="Renamed Public Page",
+        slug="old-public-slug",
+        content="Content after rename.",
+        author_id=None,
+        published=True,
+    )
+
+    await user.open("/pages/old-public-slug")
+    await user.should_see("Renamed Public Page")
+
+    await update_page(page.id, slug="new-public-slug")
+
+    await user.open("/pages/old-public-slug")
+    await user.should_see(t("page_not_found"))
+    await user.should_not_see("Content after rename.")
+
+    await user.open("/pages/new-public-slug")
+    await user.should_see("Renamed Public Page")
+    await user.should_see("Content after rename.")
+
+
+def test_slugify_generates_valid_page_slug():
+    from not_dot_net.frontend.pages import _slugify
+
+    assert _slugify("  My New Page!  ") == "my-new-page"
+    assert _slugify("LPP_Intranet   FAQ") == "lpp-intranet-faq"
+    assert _slugify("---Already---Dashed---") == "already-dashed"
 
 
 async def test_manage_pages_permission_exists():

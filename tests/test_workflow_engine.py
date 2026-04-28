@@ -1,6 +1,7 @@
 import pytest
 from not_dot_net.backend.workflow_engine import (
     get_current_step_config,
+    get_step_progress,
     get_available_actions,
     compute_next_step,
     can_user_act,
@@ -88,9 +89,25 @@ def test_get_available_actions_completed_request():
     assert actions == []
 
 
+@pytest.mark.parametrize("status", ["rejected", "cancelled"])
+def test_get_available_actions_terminal_requests(status: str):
+    req = FakeRequest(current_step="approve", status=status)
+    assert get_available_actions(req, TWO_STEP_WORKFLOW) == []
+
+
+def test_get_available_actions_unknown_step_returns_empty():
+    req = FakeRequest(current_step="missing")
+    assert get_available_actions(req, TWO_STEP_WORKFLOW) == []
+
+
 def test_compute_next_step_submit_advances():
     result = compute_next_step(TWO_STEP_WORKFLOW, "form1", "submit")
     assert result == ("approve", "in_progress")
+
+
+def test_compute_next_step_save_draft_stays_on_current_step():
+    result = compute_next_step(TWO_STEP_WORKFLOW, "form1", "save_draft")
+    assert result == ("form1", "in_progress")
 
 
 def test_compute_next_step_approve_last_completes():
@@ -101,6 +118,31 @@ def test_compute_next_step_approve_last_completes():
 def test_compute_next_step_reject_terminates():
     result = compute_next_step(TWO_STEP_WORKFLOW, "approve", "reject")
     assert result == (None, "rejected")
+
+
+def test_compute_next_step_custom_action_advances_like_submit():
+    result = compute_next_step(TWO_STEP_WORKFLOW, "form1", "complete")
+    assert result == ("approve", "in_progress")
+
+
+def test_get_step_progress_in_progress():
+    req = FakeRequest(current_step="approve")
+    assert get_step_progress(req, TWO_STEP_WORKFLOW) == (2, 2)
+
+
+def test_get_step_progress_completed_returns_total():
+    req = FakeRequest(current_step="approve", status="completed")
+    assert get_step_progress(req, TWO_STEP_WORKFLOW) == (2, 2)
+
+
+def test_get_step_progress_rejected_stays_on_current_step():
+    req = FakeRequest(current_step="form1", status="rejected")
+    assert get_step_progress(req, TWO_STEP_WORKFLOW) == (1, 2)
+
+
+def test_get_step_progress_unknown_step_returns_zero():
+    req = FakeRequest(current_step="missing")
+    assert get_step_progress(req, TWO_STEP_WORKFLOW) == (0, 2)
 
 
 async def _setup_roles():
@@ -170,6 +212,58 @@ async def test_can_user_act_requester():
     assert not await can_user_act(other, req, requester_wf)
 
 
+async def test_can_user_act_permission_takes_precedence_over_role():
+    await _setup_roles()
+    wf = WorkflowConfig(
+        label="Permission First",
+        steps=[
+            WorkflowStepConfig(
+                key="review",
+                type="approval",
+                assignee_role="director",
+                assignee_permission="approve_workflows",
+                actions=["approve"],
+            ),
+        ],
+    )
+    req = FakeRequest(current_step="review")
+
+    assert await can_user_act(FakeUser("director"), req, wf)
+    assert not await can_user_act(FakeUser("staff"), req, wf)
+
+
+async def test_can_user_act_role_only_step():
+    wf = WorkflowConfig(
+        label="Role Only",
+        steps=[
+            WorkflowStepConfig(
+                key="review",
+                type="approval",
+                assignee_role="director",
+                actions=["approve"],
+            ),
+        ],
+    )
+    req = FakeRequest(current_step="review")
+
+    assert await can_user_act(FakeUser("director"), req, wf)
+    assert not await can_user_act(FakeUser("staff"), req, wf)
+
+
+async def test_can_user_act_unassigned_step_denied():
+    wf = WorkflowConfig(
+        label="Unassigned",
+        steps=[WorkflowStepConfig(key="open", type="form", actions=["submit"])],
+    )
+    req = FakeRequest(current_step="open")
+
+    assert not await can_user_act(FakeUser("admin"), req, wf)
+
+
+async def test_can_user_act_unknown_step_denied():
+    assert not await can_user_act(FakeUser("admin"), FakeRequest("missing"), TWO_STEP_WORKFLOW)
+
+
 def test_get_available_actions_partial_save_includes_save_draft():
     req = FakeRequest(current_step="info")
     actions = get_available_actions(req, PARTIAL_SAVE_WORKFLOW)
@@ -199,6 +293,17 @@ def test_completion_status_complete():
     step = PARTIAL_SAVE_WORKFLOW.steps[0]
     status = get_completion_status(req, step, files={"doc": True})
     assert status["phone"] is True
+    assert status["doc"] is True
+
+
+@pytest.mark.parametrize("empty_value", ["", None, 0, False])
+def test_completion_status_treats_empty_required_values_as_missing(empty_value):
+    req = FakeRequest(current_step="info", data={"phone": empty_value})
+    step = PARTIAL_SAVE_WORKFLOW.steps[0]
+
+    status = get_completion_status(req, step, files={"doc": True})
+
+    assert status["phone"] is False
     assert status["doc"] is True
 
 
@@ -281,3 +386,19 @@ def test_request_corrections_without_target_raises():
     )
     with pytest.raises(ValueError, match="corrections_target"):
         compute_next_step(wf, "validation", "request_corrections")
+
+
+def test_request_corrections_target_is_not_validated_by_engine():
+    wf = WorkflowConfig(
+        label="Test",
+        steps=[
+            WorkflowStepConfig(
+                key="validation", type="approval",
+                actions=["request_corrections"],
+                corrections_target="missing-step",
+            ),
+        ],
+    )
+    next_step, status = compute_next_step(wf, "validation", "request_corrections")
+    assert next_step == "missing-step"
+    assert status == "in_progress"

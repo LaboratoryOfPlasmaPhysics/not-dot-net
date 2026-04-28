@@ -36,6 +36,32 @@ async def test_directory_shows_search(user: User) -> None:
 from not_dot_net.frontend.directory import classify_updates
 
 
+async def test_load_people_returns_only_active_users():
+    from not_dot_net.backend.db import User
+    from not_dot_net.frontend.directory import _load_people
+
+    async with session_scope() as session:
+        active = User(
+            email="active-directory@test.com",
+            hashed_password="x",
+            is_active=True,
+            full_name="Active User",
+        )
+        inactive = User(
+            email="inactive-directory@test.com",
+            hashed_password="x",
+            is_active=False,
+            full_name="Inactive User",
+        )
+        session.add_all([active, inactive])
+        await session.commit()
+
+    people = await _load_people()
+    emails = {person.email for person in people}
+    assert "active-directory@test.com" in emails
+    assert "inactive-directory@test.com" not in emails
+
+
 def test_classify_updates_splits_ad_and_local_fields():
     updates = {
         "phone": "+33999",
@@ -64,6 +90,19 @@ def test_classify_updates_empty_input():
     assert classify_updates({}) == ({}, {})
 
 
+def test_classify_updates_maps_all_ad_synced_fields():
+    from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
+
+    updates = {field: f"value-for-{field}" for field in AD_ATTR_MAP}
+    ad_changes, local_updates = classify_updates(updates)
+
+    assert local_updates == {}
+    assert ad_changes == {
+        ad_attr: f"value-for-{field}"
+        for field, ad_attr in AD_ATTR_MAP.items()
+    }
+
+
 SELF_EDITABLE_AD_FIELDS = {"phone", "office"}
 ADMIN_EDITABLE_AD_FIELDS = {"phone", "office", "full_name", "title", "team", "email"}
 
@@ -79,6 +118,12 @@ def test_self_editable_ad_fields_map_to_valid_ad_attributes():
 
 
 from not_dot_net.frontend.directory import compute_update_diff
+
+
+def test_compute_update_diff_treats_empty_string_as_no_change_when_current_is_none():
+    current = {"phone": None}
+    submitted = {"phone": ""}
+    assert compute_update_diff(current, submitted) == {}
 
 
 def test_compute_update_diff_returns_only_changed():
@@ -97,11 +142,46 @@ def test_compute_update_diff_no_changes_returns_empty():
     assert compute_update_diff({"phone": "+33111"}, {"phone": "+33111"}) == {}
 
 
+def test_compute_update_diff_preserves_date_values():
+    from datetime import date
+
+    current = {"start_date": date(2026, 1, 1)}
+    submitted = {"start_date": date(2026, 2, 1)}
+    assert compute_update_diff(current, submitted) == {"start_date": date(2026, 2, 1)}
+
+
+def test_is_ad_writable_allows_everything_without_ad_restrictions():
+    from not_dot_net.frontend.directory import _is_ad_writable
+
+    assert _is_ad_writable("phone", None) is True
+    assert _is_ad_writable("employment_status", None) is True
+
+
+def test_is_ad_writable_allows_local_fields_even_when_ad_restricted():
+    from not_dot_net.frontend.directory import _is_ad_writable
+
+    assert _is_ad_writable("employment_status", set()) is True
+    assert _is_ad_writable("start_date", set()) is True
+
+
+def test_is_ad_writable_blocks_ad_field_not_reported_writable():
+    from not_dot_net.frontend.directory import _is_ad_writable
+
+    assert _is_ad_writable("phone", {"physicalDeliveryOfficeName"}) is False
+
+
+def test_is_ad_writable_allows_ad_field_reported_writable():
+    from not_dot_net.frontend.directory import _is_ad_writable
+
+    assert _is_ad_writable("phone", {"telephoneNumber"}) is True
+
+
 async def test_self_edit_phone_writes_to_ad_and_local_db():
     from not_dot_net.backend.db import User, AuthMethod, session_scope
     from not_dot_net.backend.auth.ldap import (
         ldap_config, set_ldap_connect, ldap_modify_user,
     )
+    from not_dot_net.frontend.directory import _update_user
     from tests.test_ldap_modify import _make_mutable_fake, LDAP_CFG, USER_DN
 
     fake_connect, ad_state = _make_mutable_fake({"telephoneNumber": "+33OLD"})
@@ -117,6 +197,7 @@ async def test_self_edit_phone_writes_to_ad_and_local_db():
         )
         session.add(user)
         await session.commit()
+        user_id = user.id
 
     cfg = await ldap_config.get()
     ldap_modify_user(
@@ -125,4 +206,10 @@ async def test_self_edit_phone_writes_to_ad_and_local_db():
         bind_username="jdoe", bind_password="secret",
         ldap_cfg=cfg, connect=fake_connect,
     )
+    await _update_user(user_id, {"phone": "+33NEW"})
+
     assert ad_state["telephoneNumber"] == "+33NEW"
+
+    async with session_scope() as session:
+        refreshed = await session.get(User, user_id)
+        assert refreshed.phone == "+33NEW"
