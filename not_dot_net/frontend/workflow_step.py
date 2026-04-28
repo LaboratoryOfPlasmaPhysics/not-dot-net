@@ -40,6 +40,91 @@ async def _nominatim_search(query: str) -> list[dict]:
         return []
 
 
+async def _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, width_class):
+    label = t(field_cfg.label) if field_cfg.label else field_cfg.name
+    value = data.get(field_cfg.name, "")
+
+    if field_cfg.type == "textarea":
+        fields[field_cfg.name] = ui.textarea(
+            label=label, value=value
+        ).props("outlined dense").classes(width_class)
+    elif field_cfg.type == "date":
+        with ui.input(label=label, value=value).props("outlined dense").classes(width_class) as inp:
+            with ui.menu().props("no-parent-event") as menu:
+                with ui.date(on_change=lambda e, i=inp, m=menu: _set_date(i, m, e)):
+                    pass
+            with inp.add_slot("append"):
+                ui.icon("edit_calendar").on("click", menu.open).classes("cursor-pointer")
+        fields[field_cfg.name] = inp
+    elif field_cfg.type == "select":
+        options = await _resolve_options(field_cfg.options_key)
+        fields[field_cfg.name] = ui.select(
+            label=label, options=options, value=value if value in options else None
+        ).props("outlined dense stack-label").classes(width_class)
+    elif field_cfg.type == "file":
+        uploaded = (files or {}).get(field_cfg.name)
+        if uploaded:
+            with ui.row().classes(f"{width_class} items-center gap-2"):
+                ui.icon("check_circle", color="positive", size="sm")
+                ui.label(f"{label}: {uploaded}").classes("text-positive text-sm")
+        elif on_file_upload:
+            req_mark = " *" if field_cfg.required else ""
+            ui.upload(
+                label=f"{label}{req_mark}",
+                auto_upload=True,
+                max_file_size=max_upload_size_mb * 1024 * 1024,
+                on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
+            ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes(width_class)
+        else:
+            ui.label(f"{label}: no upload available").classes("text-grey text-sm")
+        fields[field_cfg.name] = None
+    elif field_cfg.type == "location":
+        nominatim_results: list[dict] = []
+        loc_select = ui.select(
+            label=label,
+            options={value: value} if value else {},
+            value=value or None,
+            with_input=True,
+        ).props("outlined dense stack-label use-input hide-selected fill-input input-debounce=500").classes("w-full")
+        loc_map = ui.leaflet(center=(48.71, 2.21), zoom=4).classes("w-full rounded").style("height: 200px")
+        loc_marker = None
+
+        async def _on_input_value(e, sel=loc_select):
+            nonlocal nominatim_results
+            query = e.args if isinstance(e.args, str) else ""
+            if len(query) < 3:
+                return
+            nominatim_results = await _nominatim_search(query)
+            sel.set_options({r["display_name"]: r["display_name"] for r in nominatim_results})
+
+        def _on_select_change(e, sel=loc_select):
+            nonlocal loc_marker
+            chosen = sel.value
+            if not chosen:
+                return
+            match = next((r for r in nominatim_results if r["display_name"] == chosen), None)
+            if match:
+                coords = (match["lat"], match["lon"])
+                loc_map.set_center(coords)
+                loc_map.set_zoom(12)
+                if loc_marker is not None:
+                    loc_marker.move(coords[0], coords[1])
+                else:
+                    loc_marker = loc_map.marker(latlng=coords)
+
+        loc_select.on("input-value", lambda e: asyncio.ensure_future(_on_input_value(e)))
+        loc_select.on("update:model-value", _on_select_change)
+        fields[field_cfg.name] = loc_select
+    elif field_cfg.type == "email":
+        fields[field_cfg.name] = ui.input(
+            label=label, value=value, validation={t("invalid_email"): lambda v: "@" in v if v else True}
+        ).props("outlined dense type=email").classes(width_class)
+    else:
+        fields[field_cfg.name] = ui.input(
+            label=label, value=value
+        ).props("outlined dense").classes(width_class)
+
+
 async def render_step_form(
     step: WorkflowStepConfig,
     data: dict,
@@ -51,121 +136,26 @@ async def render_step_form(
 ):
     """Render a form step's fields. Returns dict of field name -> ui element."""
     fields = {}
-    row_ctx = None
-    row_count = 0
 
-    def _open_row_if_needed(field_cfg):
-        nonlocal row_ctx, row_count
-        if field_cfg.half_width:
-            if row_ctx is None:
-                row_ctx = ui.row().classes("w-full gap-4")
-                row_ctx.__enter__()
-                row_count = 0
-            row_count += 1
-        else:
-            _close_row()
-
-    def _close_row():
-        nonlocal row_ctx, row_count
-        if row_ctx is not None:
-            row_ctx.__exit__(None, None, None)
-            row_ctx = None
-            row_count = 0
-
-    def _close_row_if_full():
-        if row_count >= 2:
-            _close_row()
-
+    # Group consecutive half_width fields into pairs for row layout
+    groups: list[list] = []
     for field_cfg in step.fields:
-        label = t(field_cfg.label) if field_cfg.label else field_cfg.name
-        value = data.get(field_cfg.name, "")
-        width_class = "flex-1 min-w-[200px]" if field_cfg.half_width else "w-full"
-
-        _open_row_if_needed(field_cfg)
-
-        if field_cfg.type == "textarea":
-            fields[field_cfg.name] = ui.textarea(
-                label=label, value=value
-            ).props("outlined dense").classes(width_class)
-        elif field_cfg.type == "date":
-            with ui.input(label=label, value=value).props("outlined dense").classes(width_class) as inp:
-                with ui.menu().props("no-parent-event") as menu:
-                    with ui.date(on_change=lambda e, i=inp, m=menu: _set_date(i, m, e)):
-                        pass
-                with inp.add_slot("append"):
-                    ui.icon("edit_calendar").on("click", menu.open).classes("cursor-pointer")
-            fields[field_cfg.name] = inp
-        elif field_cfg.type == "select":
-            options = await _resolve_options(field_cfg.options_key)
-            fields[field_cfg.name] = ui.select(
-                label=label, options=options, value=value if value in options else None
-            ).props("outlined dense stack-label").classes(width_class)
-        elif field_cfg.type == "file":
-            uploaded = (files or {}).get(field_cfg.name)
-            if uploaded:
-                with ui.row().classes(f"{width_class} items-center gap-2"):
-                    ui.icon("check_circle", color="positive", size="sm")
-                    ui.label(f"{label}: {uploaded}").classes("text-positive text-sm")
-            elif on_file_upload:
-                req_mark = " *" if field_cfg.required else ""
-                ui.upload(
-                    label=f"{label}{req_mark}",
-                    auto_upload=True,
-                    max_file_size=max_upload_size_mb * 1024 * 1024,
-                    on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
-                ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes(width_class)
+        if field_cfg.half_width:
+            if groups and isinstance(groups[-1], list) and len(groups[-1]) < 2 and groups[-1][0].half_width:
+                groups[-1].append(field_cfg)
             else:
-                ui.label(f"{label}: no upload available").classes("text-grey text-sm")
-            fields[field_cfg.name] = None
-        elif field_cfg.type == "location":
-            nominatim_results: list[dict] = []
-            loc_select = ui.select(
-                label=label,
-                options={value: value} if value else {},
-                value=value or None,
-                with_input=True,
-            ).props("outlined dense stack-label use-input hide-selected fill-input input-debounce=500").classes("w-full")
-            loc_map = ui.leaflet(center=(48.71, 2.21), zoom=4).classes("w-full rounded").style("height: 200px")
-            loc_marker = None
-
-            async def _on_input_value(e, sel=loc_select):
-                nonlocal nominatim_results
-                query = e.args if isinstance(e.args, str) else ""
-                if len(query) < 3:
-                    return
-                nominatim_results = await _nominatim_search(query)
-                sel.set_options({r["display_name"]: r["display_name"] for r in nominatim_results})
-
-            def _on_select_change(e, sel=loc_select):
-                nonlocal loc_marker
-                chosen = sel.value
-                if not chosen:
-                    return
-                match = next((r for r in nominatim_results if r["display_name"] == chosen), None)
-                if match:
-                    coords = (match["lat"], match["lon"])
-                    loc_map.set_center(coords)
-                    loc_map.set_zoom(12)
-                    if loc_marker is not None:
-                        loc_marker.move(coords[0], coords[1])
-                    else:
-                        loc_marker = loc_map.marker(latlng=coords)
-
-            loc_select.on("input-value", lambda e: asyncio.ensure_future(_on_input_value(e)))
-            loc_select.on("update:model-value", _on_select_change)
-            fields[field_cfg.name] = loc_select
-        elif field_cfg.type == "email":
-            fields[field_cfg.name] = ui.input(
-                label=label, value=value, validation={t("invalid_email"): lambda v: "@" in v if v else True}
-            ).props("outlined dense type=email").classes(width_class)
+                groups.append([field_cfg])
         else:
-            fields[field_cfg.name] = ui.input(
-                label=label, value=value
-            ).props("outlined dense").classes(width_class)
+            groups.append([field_cfg])
 
-        _close_row_if_full()
-
-    _close_row()
+    for group in groups:
+        is_pair = len(group) == 2 and group[0].half_width
+        if is_pair:
+            with ui.row().classes("w-full gap-4"):
+                for field_cfg in group:
+                    await _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, "flex-1 min-w-[200px]")
+        else:
+            await _render_field(group[0], data, fields, files, on_file_upload, max_upload_size_mb, "w-full")
 
     # Date-pair: show duration when both departure_date and return_date are set
     if "departure_date" in fields and "return_date" in fields:
