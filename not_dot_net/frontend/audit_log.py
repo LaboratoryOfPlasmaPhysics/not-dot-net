@@ -25,7 +25,7 @@ def _since_from_period(period_key: str) -> datetime | None:
     days = TIME_PERIOD_DAYS.get(period_key)
     if days is None:
         return None
-    return datetime.now(timezone.utc) - timedelta(days=days)
+    return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
 
 def render():

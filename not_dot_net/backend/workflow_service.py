@@ -436,7 +436,7 @@ async def submit_step(
             if next_step_config and next_step_config.assignee == "target_person":
                 req.token = str(uuid.uuid4())
                 cfg = await workflows_config.get()
-                req.token_expires_at = datetime.now(timezone.utc) + timedelta(days=cfg.token_expiry_days)
+                req.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=cfg.token_expiry_days)
 
         await session.commit()
         await session.refresh(req)
@@ -771,7 +771,7 @@ async def resend_notification(
 
         req.token = str(uuid.uuid4())
         cfg = await workflows_config.get()
-        req.token_expires_at = datetime.now(timezone.utc) + timedelta(days=cfg.token_expiry_days)
+        req.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=cfg.token_expiry_days)
 
         req.verification_code_hash = None
         req.code_expires_at = None

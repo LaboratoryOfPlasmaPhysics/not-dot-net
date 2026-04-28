@@ -148,13 +148,13 @@ async def mark_for_retention(file_id: uuid.UUID, days: int) -> None:
         enc_file = await session.get(EncryptedFile, file_id)
         if enc_file is None:
             return
-        enc_file.retained_until = datetime.now(timezone.utc) + timedelta(days=days)
+        enc_file.retained_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=days)
         await session.commit()
 
 
 async def delete_expired() -> int:
     """Delete encrypted files past their retention date. Returns count deleted."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     deleted = 0
     async with session_scope() as session:
         result = await session.execute(

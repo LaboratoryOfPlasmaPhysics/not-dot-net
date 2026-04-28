@@ -41,7 +41,7 @@ async def generate_verification_code(request_id: uuid.UUID) -> str | None:
 
         code = f"{secrets.randbelow(1_000_000):06d}"
         req.verification_code_hash = _hash_code(code)
-        req.code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=wf_cfg.verification_code_expiry_minutes)
+        req.code_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=wf_cfg.verification_code_expiry_minutes)
         req.code_attempts = 0
         await session.commit()
 
