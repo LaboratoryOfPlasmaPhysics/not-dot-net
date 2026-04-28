@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from ldap3 import Server, ServerPool, Connection, ALL, Tls, MODIFY_REPLACE, ROUND_ROBIN
@@ -34,6 +35,7 @@ AD_ATTR_MAP: dict[str, str] = {
 _AD_READ_ONLY = [
     "givenName", "sn", "userPrincipalName", "sAMAccountName",
     "memberOf", "thumbnailPhoto", "uidNumber", "gidNumber",
+    "userAccountControl", "accountExpires",
 ]
 
 _AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + _AD_READ_ONLY
@@ -84,6 +86,33 @@ ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 
 
+_ACCOUNTDISABLE = 0x2
+_ACCOUNT_EXPIRES_NEVER = {0, 9223372036854775807}
+_FILETIME_EPOCH = datetime(1601, 1, 1)
+
+
+def _ad_account_active(entry) -> bool:
+    """Check userAccountControl + accountExpires to determine if the AD account is active."""
+    uac = _attr_int(entry, "userAccountControl")
+    if uac is not None and uac & _ACCOUNTDISABLE:
+        return False
+    attr = getattr(entry, "accountExpires", None)
+    if attr is not None:
+        val = attr.value
+        if val is not None:
+            if isinstance(val, datetime):
+                # ldap3 auto-converts to datetime; naive means "never"
+                now = datetime.now(timezone.utc)
+                expires = val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+                if expires < now:
+                    return False
+            elif isinstance(val, int) and val not in _ACCOUNT_EXPIRES_NEVER:
+                expires_dt = _FILETIME_EPOCH + timedelta(microseconds=val // 10)
+                if expires_dt < datetime.now(timezone.utc).replace(tzinfo=None):
+                    return False
+    return True
+
+
 @dataclass(frozen=True)
 class LdapUserInfo:
     email: str
@@ -103,6 +132,7 @@ class LdapUserInfo:
     photo: bytes | None = None
     uid_number: int | None = None
     gid_number: int | None = None
+    is_active: bool = True
 
 
 def _discover_servers_from_dns(domain: str, tls_mode: TlsMode) -> list[str]:
@@ -221,30 +251,10 @@ def ldap_authenticate(
             conn.unbind()
             return None
         entry = conn.entries[0]
-        email = (
-            _attr_value(entry, "mail")
-            or _attr_value(entry, "userPrincipalName")
-            or f"{username}@{ldap_cfg.domain}"
-        )
-        info = LdapUserInfo(
-            email=email,
-            dn=entry.entry_dn,
-            sam_account_name=_attr_value(entry, "sAMAccountName") or username,
-            full_name=_attr_value(entry, "displayName"),
-            given_name=_attr_value(entry, "givenName"),
-            surname=_attr_value(entry, "sn"),
-            phone=_attr_value(entry, "telephoneNumber"),
-            office=_attr_value(entry, "physicalDeliveryOfficeName"),
-            title=_attr_value(entry, "title"),
-            department=_attr_value(entry, "department"),
-            company=_attr_value(entry, "company"),
-            description=_attr_value(entry, "description"),
-            webpage=_attr_value(entry, "wWWHomePage"),
-            member_of=_attr_list(entry, "memberOf"),
-            photo=_attr_bytes(entry, "thumbnailPhoto"),
-            uid_number=_attr_int(entry, "uidNumber"),
-            gid_number=_attr_int(entry, "gidNumber"),
-        )
+        info = _entry_to_user_info(entry, fallback_email=f"{username}@{ldap_cfg.domain}")
+        if info is None:
+            conn.unbind()
+            return None
         return info, conn
     except Exception:
         conn.unbind()
@@ -477,6 +487,7 @@ async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
         for info_field, user_field in _INFO_TO_USER.items():
             setattr(user, user_field, getattr(info, info_field))
         user.ldap_dn = info.dn
+        user.is_active = info.is_active
         await session.commit()
 
 
@@ -497,10 +508,125 @@ async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "Us
             auth_method=AuthMethod.LDAP,
             ldap_dn=user_info.dn,
             role=default_role,
-            is_active=True,
+            is_active=user_info.is_active,
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
         logger.info("Auto-provisioned LDAP user '%s' with role '%s'", user.email, default_role)
         return user
+
+
+def _entry_to_user_info(entry, fallback_email: str | None = None) -> LdapUserInfo | None:
+    """Parse a single ldap3 search entry into LdapUserInfo. Returns None if no email."""
+    email = (
+        _attr_value(entry, "mail")
+        or _attr_value(entry, "userPrincipalName")
+        or fallback_email
+    )
+    if not email:
+        return None
+    return LdapUserInfo(
+        email=email,
+        dn=entry.entry_dn,
+        sam_account_name=_attr_value(entry, "sAMAccountName"),
+        full_name=_attr_value(entry, "displayName"),
+        given_name=_attr_value(entry, "givenName"),
+        surname=_attr_value(entry, "sn"),
+        phone=_attr_value(entry, "telephoneNumber"),
+        office=_attr_value(entry, "physicalDeliveryOfficeName"),
+        title=_attr_value(entry, "title"),
+        department=_attr_value(entry, "department"),
+        company=_attr_value(entry, "company"),
+        description=_attr_value(entry, "description"),
+        webpage=_attr_value(entry, "wWWHomePage"),
+        member_of=_attr_list(entry, "memberOf"),
+        photo=_attr_bytes(entry, "thumbnailPhoto"),
+        uid_number=_attr_int(entry, "uidNumber"),
+        gid_number=_attr_int(entry, "gidNumber"),
+        is_active=_ad_account_active(entry),
+    )
+
+
+@dataclass
+class SyncResult:
+    synced: int = 0
+    provisioned: int = 0
+    skipped: int = 0
+    errors: list[str] = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+
+
+async def sync_all_from_ldap(
+    bind_username: str,
+    bind_password: str,
+) -> SyncResult:
+    """Search AD for all users and sync/provision them locally.
+
+    Returns counts of synced, provisioned, and skipped entries.
+    """
+    from not_dot_net.backend.db import User, AuthMethod, session_scope
+    from not_dot_net.backend.roles import roles_config
+    from sqlalchemy import select
+
+    cfg = await ldap_config.get()
+    conn = _ldap_bind(bind_username, bind_password, cfg, _ldap_connect)
+
+    search_filter = cfg.user_filter or "(&(objectCategory=person)(objectClass=user))"
+    try:
+        conn.search(
+            cfg.base_dn,
+            search_filter,
+            attributes=_AD_ATTRIBUTES,
+            paged_size=500,
+        )
+    except LDAPException as e:
+        conn.unbind()
+        raise LdapModifyError(f"LDAP search failed: {e}") from e
+
+    entries = list(conn.entries)
+
+    cookie = conn.result.get("controls", {}).get("1.2.840.113556.1.4.319", {}).get("value", {}).get("cookie")
+    while cookie:
+        conn.search(
+            cfg.base_dn,
+            search_filter,
+            attributes=_AD_ATTRIBUTES,
+            paged_size=500,
+            paged_cookie=cookie,
+        )
+        entries.extend(conn.entries)
+        cookie = conn.result.get("controls", {}).get("1.2.840.113556.1.4.319", {}).get("value", {}).get("cookie")
+
+    conn.unbind()
+
+    async with session_scope() as session:
+        existing = await session.execute(select(User))
+        users_by_email = {u.email.lower(): u for u in existing.scalars().all()}
+
+    roles_cfg = await roles_config.get()
+    default_role = roles_cfg.default_role or ""
+    result = SyncResult()
+
+    for entry in entries:
+        info = _entry_to_user_info(entry)
+        if info is None:
+            result.skipped += 1
+            continue
+        try:
+            existing_user = users_by_email.get(info.email.lower())
+            if existing_user is not None:
+                await sync_user_from_ldap(existing_user.id, info)
+                result.synced += 1
+            else:
+                new_user = await provision_ldap_user(info, default_role)
+                users_by_email[info.email.lower()] = new_user
+                result.provisioned += 1
+        except Exception as e:
+            result.errors.append(f"{info.email}: {e}")
+            logger.warning("Failed to sync LDAP user '%s': %s", info.email, e)
+
+    return result

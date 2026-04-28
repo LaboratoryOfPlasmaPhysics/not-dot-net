@@ -50,9 +50,12 @@ def compute_update_diff(current: dict, submitted: dict) -> dict:
     return out
 
 
-async def _load_people() -> list[User]:
+async def _load_people(include_inactive: bool = False) -> list[User]:
     async with session_scope() as session:
-        result = await session.execute(select(User).where(User.is_active == True))  # noqa: E712
+        query = select(User)
+        if not include_inactive:
+            query = query.where(User.is_active == True)  # noqa: E712
+        result = await session.execute(query)
         return result.scalars().all()
 
 
@@ -76,9 +79,13 @@ async def _delete_user(user_id):
 
 
 def render(current_user: User):
-    search = ui.input(placeholder=t("search_placeholder")).props(
-        "outlined dense clearable"
-    ).classes("w-full mb-4")
+    is_admin = False
+
+    with ui.row().classes("items-center gap-4 w-full mb-4"):
+        search = ui.input(placeholder=t("search_placeholder")).props(
+            "outlined dense clearable"
+        ).classes("flex-grow")
+        show_inactive = ui.switch(t("show_inactive"), value=False).classes("ml-auto")
 
     card_container = ui.element("div").classes(
         "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full"
@@ -87,7 +94,10 @@ def render(current_user: User):
     state = {"expanded_id": None, "details": {}}
 
     async def refresh():
-        people = await _load_people()
+        nonlocal is_admin
+        is_admin = await has_permissions(current_user, "manage_users")
+        show_inactive.set_visibility(is_admin)
+        people = await _load_people(include_inactive=is_admin and show_inactive.value)
         state["expanded_id"] = None
         state["details"] = {}
         card_container.clear()
@@ -103,6 +113,7 @@ def render(current_user: User):
                 child.set_visibility(visible)
 
     search.on_value_change(lambda _: filter_cards())
+    show_inactive.on_value_change(lambda _: refresh())
 
     ui.timer(0, refresh, once=True)
 

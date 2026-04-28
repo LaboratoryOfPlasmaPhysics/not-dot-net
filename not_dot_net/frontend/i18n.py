@@ -20,6 +20,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "auth_error": "Auth server error",
         # Directory
         "search_placeholder": "Search by name, team, office, email...",
+        "show_inactive": "Show inactive accounts",
         "office": "Office",
         "phone": "Phone",
         "status": "Status",
@@ -44,6 +45,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ad_admin_username": "AD admin username",
         "ad_write_failed": "Active Directory update failed: {error}",
         "ad_bind_failed": "Incorrect password — try again",
+        "sync_ad_users": "Sync all AD users",
+        "sync_ad_help": "Pull all users from Active Directory. Existing users are updated, new users are provisioned.",
+        "sync_ad_running": "Synchronising with Active Directory…",
+        "sync_ad_result": "Synced: {synced}, Provisioned: {provisioned}, Skipped: {skipped}",
+        "sync_ad_errors": "{count} errors (see details)",
         "session_expired": "Session expired — please log in again",
         # Common
         "name": "Name",
@@ -263,6 +269,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "auth_error": "Erreur du serveur d'authentification",
         # Directory
         "search_placeholder": "Rechercher par nom, équipe, bureau, e-mail...",
+        "show_inactive": "Afficher les comptes inactifs",
         "office": "Bureau",
         "phone": "Téléphone",
         "status": "Statut",
@@ -287,6 +294,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ad_admin_username": "Nom d'utilisateur administrateur AD",
         "ad_write_failed": "Échec de la mise à jour de l'Active Directory : {error}",
         "ad_bind_failed": "Mot de passe incorrect — réessayez",
+        "sync_ad_users": "Synchroniser les utilisateurs AD",
+        "sync_ad_help": "Récupérer tous les utilisateurs depuis l'Active Directory. Les utilisateurs existants sont mis à jour, les nouveaux sont créés.",
+        "sync_ad_running": "Synchronisation avec l'Active Directory…",
+        "sync_ad_result": "Synchronisés : {synced}, Créés : {provisioned}, Ignorés : {skipped}",
+        "sync_ad_errors": "{count} erreurs (voir détails)",
         "session_expired": "Session expirée — veuillez vous reconnecter",
         # Common
         "name": "Nom",

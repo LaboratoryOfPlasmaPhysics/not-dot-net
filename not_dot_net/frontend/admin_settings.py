@@ -55,6 +55,9 @@ async def render(user):
             else:
                 await _render_form(prefix, cfg_section, current, user)
 
+            if prefix == "ldap":
+                _render_ldap_sync(user)
+
 
 async def _render_form(prefix, cfg_section, current, user):
     """Auto-generate form fields from Pydantic model."""
@@ -205,3 +208,58 @@ async def _handle_import_upload(e, *, replace: bool, user):
         actor_id=user.id, actor_email=user.email,
         detail=json.dumps(result),
     )
+
+
+def _render_ldap_sync(user):
+    """Sync all AD users button — placed inside the LDAP settings expansion."""
+    ui.separator().classes("my-3")
+    ui.label(t("sync_ad_help")).classes("text-sm text-grey mb-2")
+
+    def open_sync_dialog():
+        from not_dot_net.backend.auth.ldap import sync_all_from_ldap, LdapModifyError
+
+        dialog = ui.dialog()
+        with dialog, ui.card().classes("w-96"):
+            ui.label(t("sync_ad_users")).classes("text-h6")
+            username_input = ui.input(t("ad_admin_username")).props("outlined dense")
+            password_input = ui.input(t("password"), password=True).props("outlined dense")
+            error_label = ui.label("").classes("text-negative")
+            result_label = ui.label("").classes("text-sm")
+
+            async def do_sync():
+                bind_user = username_input.value.strip()
+                if not bind_user or not password_input.value:
+                    return
+                error_label.set_text("")
+                result_label.set_text(t("sync_ad_running"))
+                try:
+                    result = await sync_all_from_ldap(bind_user, password_input.value)
+                except LdapModifyError as e:
+                    msg = str(e)
+                    error_label.set_text(
+                        t("ad_bind_failed") if "bind" in msg.lower() else msg
+                    )
+                    result_label.set_text("")
+                    return
+                summary = t("sync_ad_result",
+                            synced=result.synced,
+                            provisioned=result.provisioned,
+                            skipped=result.skipped)
+                if result.errors:
+                    summary += f"\n{t('sync_ad_errors', count=len(result.errors))}"
+                result_label.set_text(summary)
+                ui.notify(summary, color="positive", multi_line=True)
+                await log_audit(
+                    "settings", "ldap_sync",
+                    actor_id=user.id, actor_email=user.email,
+                    detail=f"synced={result.synced} provisioned={result.provisioned} "
+                           f"skipped={result.skipped} errors={len(result.errors)}",
+                )
+
+            with ui.row():
+                ui.button(t("sync_ad_users"), on_click=do_sync).props("color=primary")
+                ui.button(t("cancel"), on_click=dialog.close).props("flat")
+
+        dialog.open()
+
+    ui.button(t("sync_ad_users"), icon="sync", on_click=open_sync_dialog).props("color=primary")
