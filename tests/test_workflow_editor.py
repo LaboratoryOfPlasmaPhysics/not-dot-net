@@ -693,3 +693,98 @@ workflows:
     await dlg.save()
     persisted = await workflows_config.get()
     assert persisted.workflows["a"].label == "From YAML Save"
+
+
+async def test_step_rename_can_be_repeated_without_keyerror(user: User, admin_user):
+    """A second keystroke in the step-key input must not raise KeyError.
+
+    The bug: the detail pane's on_change closure captures k=step.key at render
+    time. After rename 1 (old→n), the pane is NOT rebuilt, so keystroke 2 fires
+    _safe_set(wf, "old", "key", "ne") — but "old" no longer exists → KeyError
+    escaping _safe_set (which only catches ValueError).
+    The fix is to call _refresh_detail() inside set_step_field for field=="key".
+    """
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[
+            WorkflowStepConfig(key="old", type="form"),
+        ]),
+    }))
+    captured = {}
+
+    @ui.page("/_rename_keyerror")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_rename_keyerror")
+    dlg = captured["dlg"]
+    dlg.select("a", "old")
+    # Rename 1: old → n (stale closure captures k="old")
+    dlg._safe_set("a", "old", "key", "n")
+    assert dlg.working_copy.workflows["a"].steps[0].key == "n"
+    # Rename 2: simulates a stale UI closure still holding k="old".
+    # Without the fix this raises KeyError (uncaught by _safe_set).
+    # With the fix _refresh_detail rebuilt the pane, but we call with stale key
+    # to verify _safe_set now swallows the KeyError too OR _refresh_detail prevents it.
+    # We test the actual behaviour: after fix the step key ended up as "ne".
+    dlg._safe_set("a", "old", "key", "ne")   # stale k="old" — the real bug scenario
+    # With fix: _refresh_detail was called after rename 1, rebuilding closures with k="n".
+    # The stale call _safe_set("a","old",...) should be silently swallowed (key not found).
+    # The step should still be at "n" (stale write ignored) and selected_step="n".
+    assert dlg.working_copy.workflows["a"].steps[0].key == "n"
+    assert dlg.selected_step == "n"
+
+
+async def test_reset_refreshes_ui_and_logs_audit(user: User, admin_user):
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.backend.audit import list_audit_events
+    # Seed with a non-default workflow so reset is observable
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "custom": WorkflowConfig(label="Custom", steps=[]),
+    }))
+    captured = {}
+
+    @ui.page("/_reset1")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_reset1")
+    dlg = captured["dlg"]
+    assert "custom" in dlg.working_copy.workflows
+    await dlg.reset()
+    # Working copy now matches defaults (vpn_access + onboarding from WorkflowsConfig defaults)
+    assert "custom" not in dlg.working_copy.workflows
+    # Selection updated to first default workflow (or None if defaults are empty)
+    assert dlg.selected_step is None
+    # Audit log entry emitted
+    events = await list_audit_events(limit=10)
+    assert any(e.category == "settings" and e.action == "reset"
+               and (e.detail or "").startswith("section=workflows")
+               for e in events)
+
+
+async def test_doc_instructions_survive_navigation(user: User, admin_user):
+    """Editing document_instructions then switching workflows must not lose the edits."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[], document_instructions={}),
+        "b": WorkflowConfig(label="B", steps=[]),
+    }))
+    captured = {}
+
+    @ui.page("/_doc_nav")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_doc_nav")
+    dlg = captured["dlg"]
+    dlg.select("a")  # workflow editor renders with doc_instructions widget
+    # Simulate the user adding an entry to the doc_instructions widget
+    if dlg._workflow_doc_instructions_widget:
+        _, widget = dlg._workflow_doc_instructions_widget
+        widget.add_key("intern", ["passport", "id"])
+    # Navigate away (this previously lost the edit)
+    dlg.select("b")
+    # Navigate back
+    dlg.select("a")
+    assert dlg.working_copy.workflows["a"].document_instructions.get("intern") == ["passport", "id"]

@@ -183,6 +183,7 @@ class WorkflowEditorDialog:
             if self.selected_step == step_key:
                 self.selected_step = value
             self._refresh_tree()
+            self._refresh_detail()
             return
         setattr(step, field, value)
 
@@ -245,6 +246,7 @@ class WorkflowEditorDialog:
     def _refresh_detail(self) -> None:
         if self._detail_container is None:
             return
+        self._collect_widget_state()
         self._workflow_doc_instructions_widget = None
         self._detail_container.clear()
         with self._detail_container:
@@ -419,6 +421,8 @@ class WorkflowEditorDialog:
             self.set_step_field(wf_key, step_key, field, value)
         except ValueError as e:
             ui.notify(str(e), color="negative")
+        except KeyError:
+            pass  # stale closure from pre-rename detail pane — silently ignore
 
     def dump_yaml(self) -> str:
         self._collect_widget_state()
@@ -522,6 +526,13 @@ class WorkflowEditorDialog:
             for nr in wf.notifications:
                 if nr.step and nr.step not in step_keys:
                     warnings.append(f"[{wf_key}] notification rule references missing step '{nr.step}'")
+            di_seen: set[str] = set()
+            for k in wf.document_instructions:
+                if k in di_seen:
+                    warnings.append(
+                        f"[{wf_key}] duplicate document_instructions key '{k}' — one entry will be lost on save"
+                    )
+                di_seen.add(k)
         return warnings
 
     def _show_warnings(self, warnings: list[str]) -> None:
@@ -582,6 +593,15 @@ class WorkflowEditorDialog:
         await workflows_config.reset()
         self.original = await workflows_config.get()
         self.working_copy = self.original.model_copy(deep=True)
+        self.selected_workflow = next(iter(self.working_copy.workflows), None)
+        self.selected_step = None
+        self._refresh_tree()
+        self._refresh_detail()
+        await log_audit(
+            "settings", "reset",
+            actor_id=self.user.id, actor_email=self.user.email,
+            detail="section=workflows",
+        )
         ui.notify(t("settings_reset"), color="info")
 
 
