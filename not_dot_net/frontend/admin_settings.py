@@ -56,7 +56,17 @@ async def render(user):
         schema = cfg_section.schema
 
         with ui.expansion(cfg_section.label, icon="settings").classes("w-full"):
-            if _is_complex(schema):
+            if prefix == "workflows":
+                from not_dot_net.frontend.workflow_editor import open_workflow_editor
+                wf_count = len(current.workflows)
+                step_count = sum(len(w.steps) for w in current.workflows.values())
+                ui.label(f"{wf_count} workflows, {step_count} steps").classes("text-sm text-grey mb-2")
+                ui.button(
+                    t("edit_workflows"),
+                    icon="edit",
+                    on_click=lambda u=user: open_workflow_editor(u),
+                ).props("color=primary")
+            elif _is_complex(schema):
                 await _render_yaml_editor(prefix, cfg_section, current, user)
             else:
                 await _render_form(prefix, cfg_section, current, user)

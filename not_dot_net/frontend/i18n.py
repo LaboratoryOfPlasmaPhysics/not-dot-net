@@ -253,6 +253,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "last_90_days": "Last 90 days",
         "last_year": "Last year",
         "all_time": "All time",
+        # Workflow editor
+        "workflows_editor": "Workflows editor",
+        "edit_workflows": "Edit workflows…",
     },
     "fr": {
         # Shell / nav
@@ -502,6 +505,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "last_90_days": "90 derniers jours",
         "last_year": "Dernière année",
         "all_time": "Tout",
+        # Workflow editor
+        "workflows_editor": "Éditeur de workflows",
+        "edit_workflows": "Éditer les workflows…",
     },
 }
 
