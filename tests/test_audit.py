@@ -131,9 +131,11 @@ async def test_resolves_actor_and_user_target_without_overwriting_ids():
     assert len(events) == 1
     event = events[0]
     assert event.actor_id == str(user_id)
-    assert event.actor_email == "Resolved User"
+    # Persisted actor_email left untouched; resolved name is in actor_display.
+    assert event.actor_email is None
+    assert event.actor_display == "Resolved User"
     assert event.target_id == str(user_id)
-    assert event._target_display == "Resolved User"
+    assert event.target_display == "Resolved User"
 
 
 async def test_resolves_resource_target_without_overwriting_id():
@@ -153,7 +155,7 @@ async def test_resolves_resource_target_without_overwriting_id():
     assert len(events) == 1
     event = events[0]
     assert event.target_id == str(resource_id)
-    assert event._target_display == "Audit Room"
+    assert event.target_display == "Audit Room"
 
 
 async def test_log_does_not_include_metadata_values_in_python_logs(caplog):

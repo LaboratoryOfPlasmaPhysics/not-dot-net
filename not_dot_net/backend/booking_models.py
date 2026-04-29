@@ -12,7 +12,7 @@ from not_dot_net.backend.db import Base
 class Resource(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "resource"
 
-    name: Mapped[str] = mapped_column(String(200))
+    name: Mapped[str] = mapped_column(String(200), unique=True)
     resource_type: Mapped[str] = mapped_column(String(50))  # desktop, laptop
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

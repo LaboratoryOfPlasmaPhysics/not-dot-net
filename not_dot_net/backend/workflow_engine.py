@@ -5,6 +5,16 @@ from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
 
 
+def _email_eq(a: str | None, b: str | None) -> bool:
+    """Case-insensitive email comparison.
+
+    AD often returns mixed-case `mail`; users may type `Alice@LPP.fr`.
+    """
+    if not a or not b:
+        return False
+    return a.strip().lower() == b.strip().lower()
+
+
 def get_current_step_config(request, workflow: WorkflowConfig) -> WorkflowStepConfig | None:
     """Get the step config for the request's current step."""
     for step in workflow.steps:
@@ -74,7 +84,7 @@ async def can_user_act(user, request, workflow: WorkflowConfig) -> bool:
         return False
 
     if step.assignee == "target_person":
-        return user.email == request.target_email
+        return _email_eq(user.email, request.target_email)
     if step.assignee == "requester":
         return str(user.id) == str(request.created_by)
     if step.assignee_permission:

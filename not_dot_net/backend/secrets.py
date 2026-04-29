@@ -1,10 +1,13 @@
-"""Secrets file management — read, write, generate."""
+"""Secrets file management — read, write, generate.
+
+Library-style: errors are raised, not exited. The CLI surface (`cli.py`,
+`app.py`) is responsible for translating these into user-facing exits.
+"""
 
 import json
 import logging
 import os
 import secrets
-import sys
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -33,8 +36,7 @@ def generate_secrets_file(path: Path) -> AppSecrets:
 
 def read_secrets_file(path: Path) -> AppSecrets:
     if not path.exists():
-        logger.error("Secrets file not found: %s", path)
-        sys.exit(1)
+        raise FileNotFoundError(f"Secrets file not found: {path}")
     data = json.loads(path.read_text())
     return AppSecrets.model_validate(data)
 
@@ -49,11 +51,11 @@ def load_or_create(path: Path, dev_mode: bool) -> AppSecrets:
                 os.chmod(path, 0o600)
                 logger.info("Generated missing file_encryption_key in %s", path)
             else:
-                logger.error("file_encryption_key missing in secrets file: %s", path)
-                sys.exit(1)
+                raise RuntimeError(
+                    f"file_encryption_key missing in secrets file: {path}"
+                )
         return app_secrets
     if dev_mode:
         logger.info("Dev mode: generating secrets file %s", path)
         return generate_secrets_file(path)
-    logger.error("Secrets file not found in production mode: %s", path)
-    sys.exit(1)
+    raise FileNotFoundError(f"Secrets file not found in production mode: {path}")

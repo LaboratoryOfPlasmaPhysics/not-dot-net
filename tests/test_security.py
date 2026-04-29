@@ -42,20 +42,27 @@ class TestOpenRedirect:
 
 
 class TestAuditResolveNames:
-    def test_target_id_not_mutated(self):
-        """_resolve_names should not overwrite target_id with display name (#4)."""
-        from not_dot_net.backend.audit import AuditEvent
+    async def test_resolved_view_does_not_touch_persisted_row(self):
+        """list_audit_events returns AuditEventView DTOs; the underlying
+        AuditEvent rows must keep their column values intact."""
+        from sqlalchemy import select
+        from not_dot_net.backend.audit import AuditEvent, list_audit_events, log_audit
+        from not_dot_net.backend.db import session_scope
 
-        ev = AuditEvent(
-            category="test", action="test",
+        await log_audit(
+            "test", "test",
             target_type="user", target_id="some-uuid-string",
         )
-        # Before resolution, _target_display should not exist
-        assert not hasattr(ev, "_target_display")
-        # After resolution sets _target_display, target_id should remain a UUID string
-        ev._target_display = "John Doe"
-        assert ev.target_id == "some-uuid-string"
-        assert ev._target_display == "John Doe"
+        views = await list_audit_events(category="test")
+        assert len(views) == 1
+        # View has resolved fields:
+        assert views[0].target_id == "some-uuid-string"
+        # Persisted column was not overwritten by the resolve step.
+        async with session_scope() as session:
+            row = (await session.execute(
+                select(AuditEvent.target_id).where(AuditEvent.category == "test")
+            )).scalar_one()
+        assert row == "some-uuid-string"
 
 
 class TestNoPublicRestApi:

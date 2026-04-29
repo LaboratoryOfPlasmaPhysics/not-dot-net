@@ -4,6 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.booking_models import Booking, Resource
 from not_dot_net.backend.db import session_scope
@@ -48,7 +49,11 @@ async def create_resource(name: str, resource_type: str, description: str = "",
             specs=specs,
         )
         session.add(resource)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            raise ValueError(f"Resource name '{name}' already exists") from exc
         await session.refresh(resource)
 
     from not_dot_net.backend.audit import log_audit
@@ -74,7 +79,11 @@ async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resou
             if key not in _RESOURCE_MUTABLE:
                 raise ValueError(f"Cannot update field '{key}'")
             setattr(resource, key, value)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            raise ValueError("Resource update violates a uniqueness constraint") from exc
         await session.refresh(resource)
         return resource
 

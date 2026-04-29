@@ -58,7 +58,7 @@ def test_read_accepts_legacy_file_without_encryption_key(tmp_secrets):
 
 def test_read_missing_file_raises(tmp_secrets):
     from not_dot_net.backend.secrets import read_secrets_file
-    with pytest.raises(SystemExit):
+    with pytest.raises(FileNotFoundError):
         read_secrets_file(tmp_secrets)
 
 
@@ -80,7 +80,7 @@ def test_load_or_create_reads_on_subsequent_run(tmp_secrets):
 
 def test_load_or_create_prod_mode_refuses_if_missing(tmp_secrets):
     from not_dot_net.backend.secrets import load_or_create
-    with pytest.raises(SystemExit):
+    with pytest.raises(FileNotFoundError):
         load_or_create(tmp_secrets, dev_mode=False)
 
 
@@ -98,7 +98,7 @@ def test_load_or_create_prod_mode_refuses_if_deleted(tmp_secrets):
     from not_dot_net.backend.secrets import load_or_create
     load_or_create(tmp_secrets, dev_mode=True)
     tmp_secrets.unlink()
-    with pytest.raises(SystemExit):
+    with pytest.raises(FileNotFoundError):
         load_or_create(tmp_secrets, dev_mode=False)
 
 
@@ -130,7 +130,7 @@ def test_load_or_create_prod_mode_refuses_missing_encryption_key(tmp_secrets):
         "storage_secret": "legacy-storage-secret",
     }))
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(RuntimeError, match=r"(?i)file_encryption_key"):
         load_or_create(tmp_secrets, dev_mode=False)
 
 

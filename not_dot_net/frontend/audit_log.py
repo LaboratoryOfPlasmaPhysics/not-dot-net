@@ -99,8 +99,8 @@ async def _render_log(container, category=None, actor_email=None, period="last_3
                 "time": ev.created_at.strftime("%Y-%m-%d %H:%M:%S") if ev.created_at else "",
                 "category": ev.category,
                 "action": ev.action,
-                "actor": ev.actor_email or ev.actor_id or "—",
-                "target": f"{ev.target_type}: {getattr(ev, '_target_display', ev.target_id)}" if ev.target_type and ev.target_id else "—",
+                "actor": ev.actor_display or "—",
+                "target": f"{ev.target_type}: {ev.target_display}" if ev.target_type and ev.target_display else "—",
                 "detail": ev.detail or "",
             }
             for ev in events

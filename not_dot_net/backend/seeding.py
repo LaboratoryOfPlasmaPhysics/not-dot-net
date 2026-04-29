@@ -1,6 +1,7 @@
 """Dev data seeding — fake users, workflow requests, and resource bookings."""
 
 import logging
+import os
 import random as _random
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -12,8 +13,24 @@ from not_dot_net.backend.users import get_user_manager
 logger = logging.getLogger("not_dot_net.seeding")
 
 
+def _refuse_in_production() -> None:
+    """Refuse to seed fake users on a real deployment.
+
+    Dev mode is identified the same way `app.py` does it: the absence of an
+    explicit `DATABASE_URL`. In production the operator must export it; on
+    a developer's laptop it stays unset and we fall back to local SQLite.
+    """
+    if "DATABASE_URL" in os.environ:
+        raise RuntimeError(
+            "Refusing to seed fake users in production "
+            "(DATABASE_URL is set). Seeding is a dev-only workflow — "
+            "100 users with password 'dev' would be created."
+        )
+
+
 async def seed_fake_users() -> None:
     """Seed ~100 fake users + ~20 workflows for development."""
+    _refuse_in_production()
     from not_dot_net.backend.seed_data import get_fake_users
     from fastapi_users.exceptions import UserAlreadyExists
 

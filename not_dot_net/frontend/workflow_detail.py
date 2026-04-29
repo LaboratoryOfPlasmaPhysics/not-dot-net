@@ -207,7 +207,7 @@ def _render_timeline(events, actor_names, files_by_step, user, field_labels):
                 )
 
                 ts = ev.created_at.strftime("%Y-%m-%d %H:%M") if ev.created_at else ""
-                actor = actor_names.get(ev.actor_id, t("via_token") if ev.actor_token else "")
+                actor = actor_names.get(ev.actor_id, t("via_token") if ev.actor_id is None else "")
                 ui.label(ts).classes("text-[11px] text-grey")
                 ui.label(f"{actor} — {ev.step_key}: {ev.action}").classes("font-semibold text-sm")
 
@@ -246,9 +246,13 @@ def _render_timeline(events, actor_names, files_by_step, user, field_labels):
                                     f"📎 {f.filename}", on_click=download_encrypted,
                                 ).props("flat dense size=sm")
                         else:
-                            from pathlib import Path
                             async def download_plain(fp=f.storage_path, fname=f.filename):
-                                path = Path(fp)
+                                from not_dot_net.backend.workflow_service import _safe_upload_path
+                                try:
+                                    path = _safe_upload_path(fp)
+                                except ValueError:
+                                    ui.notify(t("access_denied"), color="negative")
+                                    return
                                 if path.exists():
                                     ui.download(path.read_bytes(), fname)
                             with ui.row().classes("items-center gap-1"):

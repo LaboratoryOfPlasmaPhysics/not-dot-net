@@ -8,7 +8,7 @@ WORKFLOW_REQUEST_FIELDS = [
 
 WORKFLOW_EVENT_FIELDS = [
     "id", "request_id", "step_key", "action", "actor_id",
-    "actor_token", "data_snapshot", "comment", "created_at",
+    "data_snapshot", "comment", "created_at",
 ]
 
 WORKFLOW_FILE_FIELDS = [

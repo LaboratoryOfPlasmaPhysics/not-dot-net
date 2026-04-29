@@ -3,6 +3,27 @@
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+UPLOAD_ROOT = Path("data/uploads")
+
+
+def _safe_upload_path(stored_path: str, root: Path | None = None) -> Path:
+    """Resolve a WorkflowFile.storage_path and confirm it sits under the
+    upload root. Defends against corrupted DB rows pointing outside the
+    expected directory.
+
+    Returns the resolved absolute Path. Raises ValueError otherwise.
+    """
+    base = (root or UPLOAD_ROOT).resolve()
+    candidate = Path(stored_path).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError as exc:
+        raise ValueError(
+            f"Refusing to serve file outside upload root: {stored_path!r}"
+        ) from exc
+    return candidate
 
 from pydantic import BaseModel
 from sqlalchemy import select, or_, and_
@@ -304,10 +325,12 @@ async def create_request(
     wf = await _get_workflow_config(workflow_type)
     first_step = wf.steps[0].key
 
-    # Resolve target_email from data if configured
+    # Resolve target_email from data if configured. Normalize case so that
+    # `user.email == target_email` works regardless of how the value was typed.
     target_email = None
     if wf.target_email_field:
-        target_email = data.get(wf.target_email_field)
+        raw = data.get(wf.target_email_field)
+        target_email = raw.strip().lower() if isinstance(raw, str) and raw else None
 
     async with session_scope() as session:
         req = WorkflowRequest(
@@ -437,6 +460,11 @@ async def submit_step(
                 req.token = str(uuid.uuid4())
                 cfg = await workflows_config.get()
                 req.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=cfg.token_expiry_days)
+                # Reset verification code state — old code must not be reusable
+                # against the freshly minted token URL.
+                req.verification_code_hash = None
+                req.code_expires_at = None
+                req.code_attempts = 0
 
         await session.commit()
         await session.refresh(req)
@@ -467,8 +495,12 @@ async def submit_step(
                     elif req.target_email:
                         async with session_scope() as tenure_session:
                             from not_dot_net.backend.db import User as UserModel
+                            from sqlalchemy import func as sa_func
                             result = await tenure_session.execute(
-                                select(UserModel).where(UserModel.email == req.target_email)
+                                select(UserModel).where(
+                                    sa_func.lower(UserModel.email)
+                                    == req.target_email.strip().lower()
+                                )
                             )
                             target_user = result.scalar_one_or_none()
                             if target_user:
@@ -569,7 +601,6 @@ async def save_draft(
             step_key=req.current_step,
             action="save_draft",
             actor_id=actor_id,
-            actor_token=actor_token,
             data_snapshot=data,
         )
         session.add(event)
@@ -584,6 +615,8 @@ async def get_request_by_id(request_id: uuid.UUID) -> WorkflowRequest | None:
 
 
 async def get_request_by_token(token: str) -> WorkflowRequest | None:
+    if not token:
+        return None
     async with session_scope() as session:
         result = await session.execute(
             select(WorkflowRequest).where(
@@ -687,7 +720,9 @@ def compute_step_age_days(events: list[WorkflowEvent], current_step: str) -> int
 
 async def _build_actionable_filters(user, cfg):
     """Build SQL OR-conditions for steps where user can act."""
+    from sqlalchemy import func as sa_func
     filters = []
+    user_email_lc = (user.email or "").strip().lower()
     for wf_type, wf in cfg.workflows.items():
         for step in wf.steps:
             step_match = and_(
@@ -699,7 +734,10 @@ async def _build_actionable_filters(user, cfg):
             elif step.assignee_role and user.role == step.assignee_role:
                 filters.append(step_match)
             elif step.assignee == "target_person":
-                filters.append(and_(step_match, WorkflowRequest.target_email == user.email))
+                filters.append(and_(
+                    step_match,
+                    sa_func.lower(WorkflowRequest.target_email) == user_email_lc,
+                ))
             elif step.assignee == "requester":
                 filters.append(and_(step_match, WorkflowRequest.created_by == user.id))
     return filters

@@ -7,7 +7,7 @@ from nicegui import app, ui
 from not_dot_net.backend.db import init_db, create_db_and_tables
 from not_dot_net.backend.migrate import run_upgrade
 from not_dot_net.backend.secrets import load_or_create
-from not_dot_net.backend.users import init_user_secrets, ensure_default_admin
+from not_dot_net.backend.users import init_user_secrets, ensure_default_admin, set_dev_mode
 import not_dot_net.backend.auth.ldap  # noqa: F401 — register LdapConfig section
 from not_dot_net.frontend.login import setup as setup_login, login_router
 from not_dot_net.frontend.shell import setup as setup_shell
@@ -60,9 +60,14 @@ def create_app(
     init_db(database_url)
     logger.info("Database engine initialized")
 
-    secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
+    try:
+        secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
+    except (FileNotFoundError, RuntimeError) as exc:
+        logger.error("Cannot load secrets: %s", exc)
+        raise SystemExit(1) from exc
     init_user_secrets(secrets)
-    logger.info("Secrets loaded")
+    set_dev_mode(dev_mode)
+    logger.info("Secrets loaded (dev_mode=%s)", dev_mode)
 
     if not dev_mode:
         logger.info("Running migrations...")

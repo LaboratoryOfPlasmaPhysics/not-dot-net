@@ -106,7 +106,8 @@ def setup():
                 async def handle_file_upload(field_name, event):
                     upload = event.file
                     content = await upload.read()
-                    filename = upload.name
+                    # Basename only — never trust the client to provide a path.
+                    filename = Path(upload.name).name
                     content_type = upload.content_type or "application/octet-stream"
 
                     wf_cfg = await workflows_config.get()
@@ -131,7 +132,8 @@ def setup():
                             session.add(wf_file)
                             await session.commit()
                     else:
-                        upload_dir = Path("data/uploads") / str(request.id)
+                        from not_dot_net.backend.workflow_service import UPLOAD_ROOT
+                        upload_dir = UPLOAD_ROOT / str(request.id)
                         upload_dir.mkdir(parents=True, exist_ok=True)
                         dest = upload_dir / filename
                         dest.write_bytes(content)

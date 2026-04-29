@@ -50,7 +50,6 @@ class WorkflowEvent(MappedAsDataclass, Base, kw_only=True):
     actor_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None
     )
-    actor_token: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     data_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)

@@ -20,11 +20,21 @@ from not_dot_net.backend.secrets import AppSecrets
 
 
 _secrets: AppSecrets | None = None
+# Default true (safe production posture) until set explicitly. Tests and
+# `app.create_app` call `set_dev_mode` before any cookie is issued.
+_dev_mode: bool = False
 
 
 def init_user_secrets(secrets: AppSecrets) -> None:
     global _secrets
     _secrets = secrets
+
+
+def set_dev_mode(dev: bool) -> None:
+    """Toggle the cookie's Secure flag. Production must call set_dev_mode(False)."""
+    global _dev_mode
+    _dev_mode = dev
+    cookie_transport.cookie_secure = not dev
 
 
 def _get_secret() -> str:
@@ -65,7 +75,7 @@ bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 cookie_transport = CookieTransport(
     cookie_name="fastapiusersauth",
     cookie_max_age=3600,
-    cookie_secure="DATABASE_URL" in os.environ,
+    cookie_secure=True,  # production posture by default; set_dev_mode() flips it.
 )
 
 

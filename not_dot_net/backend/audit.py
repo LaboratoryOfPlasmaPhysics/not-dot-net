@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import JSON, String, Text, func, select
@@ -10,6 +11,27 @@ from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 from not_dot_net.backend.db import Base, session_scope
 
 logger = logging.getLogger("not_dot_net.audit")
+
+
+@dataclass
+class AuditEventView:
+    """Read-side view of an audit event with resolved display names.
+
+    Decoupled from the ORM row so consumers can render without risk of
+    dirty-writing the original actor_email or target_id columns back to disk.
+    """
+    id: uuid.UUID
+    category: str
+    action: str
+    actor_id: str | None
+    actor_email: str | None  # raw column value, untouched
+    actor_display: str | None  # resolved name (or actor_email fallback)
+    target_type: str | None
+    target_id: str | None
+    target_display: str | None
+    detail: str | None
+    metadata_json: dict | None
+    created_at: datetime | None
 
 
 class AuditEvent(MappedAsDataclass, Base, kw_only=True):
@@ -75,7 +97,9 @@ async def list_audit_events(
     since: datetime | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> list[AuditEvent]:
+) -> list[AuditEventView]:
+    """Return audit events with resolved display names. The persisted rows
+    are never mutated — see AuditEventView."""
     async with session_scope() as session:
         query = select(AuditEvent).order_by(AuditEvent.created_at.desc())
         if category:
@@ -89,58 +113,81 @@ async def list_audit_events(
         query = query.offset(offset).limit(limit)
         result = await session.execute(query)
         events = list(result.scalars().all())
-
-        # Resolve UUIDs to human-readable names
-        await _resolve_names(session, events)
-        return events
+        return await _to_views(session, events)
 
 
-async def _resolve_names(session, events: list[AuditEvent]) -> None:
-    """Enrich events with human-readable actor_email and target display names."""
+def _safe_uuid(value: str | None) -> uuid.UUID | None:
+    """Coerce string IDs to UUIDs, tolerating non-UUID values (B-3)."""
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _to_views(session, events: list[AuditEvent]) -> list[AuditEventView]:
+    """Build read-side views with resolved display names. Does not write."""
     from not_dot_net.backend.booking_models import Resource
     from not_dot_net.backend.db import User
 
-    actor_ids = {
-        ev.actor_id for ev in events if ev.actor_id and not ev.actor_email
-    }
-    target_user_ids = {
-        ev.target_id for ev in events if ev.target_type == "user" and ev.target_id
-    }
-    target_resource_ids = {
-        ev.target_id for ev in events if ev.target_type == "resource" and ev.target_id
-    }
+    user_ids_to_resolve: set[uuid.UUID] = set()
+    resource_ids_to_resolve: set[uuid.UUID] = set()
+    for ev in events:
+        actor_uuid = _safe_uuid(ev.actor_id)
+        if actor_uuid is not None:
+            user_ids_to_resolve.add(actor_uuid)
+        if ev.target_type == "user":
+            tu = _safe_uuid(ev.target_id)
+            if tu is not None:
+                user_ids_to_resolve.add(tu)
+        elif ev.target_type == "resource":
+            tr = _safe_uuid(ev.target_id)
+            if tr is not None:
+                resource_ids_to_resolve.add(tr)
 
-    user_ids_to_resolve = actor_ids | target_user_ids
     user_names: dict[str, str] = {}
     if user_ids_to_resolve:
         rows = await session.execute(
-            select(User.id, User.email, User.full_name).where(
-                User.id.in_([uuid.UUID(uid) for uid in user_ids_to_resolve])
-            )
+            select(User.id, User.email, User.full_name)
+            .where(User.id.in_(user_ids_to_resolve))
         )
         for uid, email, full_name in rows:
             user_names[str(uid)] = full_name or email
 
     resource_names: dict[str, str] = {}
-    if target_resource_ids:
+    if resource_ids_to_resolve:
         rows = await session.execute(
-            select(Resource.id, Resource.name).where(
-                Resource.id.in_([uuid.UUID(rid) for rid in target_resource_ids])
-            )
+            select(Resource.id, Resource.name)
+            .where(Resource.id.in_(resource_ids_to_resolve))
         )
         for rid, name in rows:
             resource_names[str(rid)] = name
 
+    views = []
     for ev in events:
-        if ev.actor_id and not ev.actor_email and ev.actor_id in user_names:
-            ev.actor_email = user_names[ev.actor_id]
-        # Store resolved display name separately to avoid corrupting the real ID
-        if ev.target_id:
-            if ev.target_type == "user" and ev.target_id in user_names:
-                ev._target_display = user_names[ev.target_id]
-            elif ev.target_type == "resource" and ev.target_id in resource_names:
-                ev._target_display = resource_names[ev.target_id]
-            else:
-                ev._target_display = ev.target_id
+        actor_display = ev.actor_email or user_names.get(ev.actor_id or "") or ev.actor_id
+        target_display: str | None
+        if not ev.target_id:
+            target_display = None
+        elif ev.target_type == "user":
+            target_display = user_names.get(ev.target_id, ev.target_id)
+        elif ev.target_type == "resource":
+            target_display = resource_names.get(ev.target_id, ev.target_id)
         else:
-            ev._target_display = None
+            target_display = ev.target_id
+        views.append(AuditEventView(
+            id=ev.id,
+            category=ev.category,
+            action=ev.action,
+            actor_id=ev.actor_id,
+            actor_email=ev.actor_email,
+            actor_display=actor_display,
+            target_type=ev.target_type,
+            target_id=ev.target_id,
+            target_display=target_display,
+            detail=ev.detail,
+            metadata_json=ev.metadata_json,
+            created_at=ev.created_at,
+        ))
+    return views
