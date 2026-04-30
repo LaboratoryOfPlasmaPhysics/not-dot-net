@@ -367,26 +367,41 @@ class WorkflowEditorDialog:
 
         ui.label(f"Workflow: {wf_key}").classes("text-h6")
 
-        ui.input(t("label"), value=wf.label,
-                 on_change=lambda e, k=wf_key: self.set_workflow_label(k, e.value)
-                 ).classes("w-full").props("dense outlined stack-label")
+        # --- Section 1: Basics (open by default) ---
+        with ui.expansion(t("wf_section_basics"), value=True, icon="info").classes("w-full"):
+            ui.input(t("wf_label"), value=wf.label,
+                     on_change=lambda e, k=wf_key: self.set_workflow_label(k, e.value)
+                     ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_label_help"))
 
-        ui.input("start_role", value=wf.start_role or "",
-                 on_change=lambda e, k=wf_key: self.set_workflow_field(k, "start_role", e.value)
-                 ).classes("w-full").props("dense outlined stack-label").tooltip(
-                     "Role key required to start this workflow")
+            ui.input(t("wf_start_role"), value=wf.start_role or "",
+                     on_change=lambda e, k=wf_key: self.set_workflow_field(k, "start_role", e.value)
+                     ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_start_role_help"))
 
-        ui.input("target_email_field", value=wf.target_email_field or "",
-                 on_change=lambda e, k=wf_key: self.set_workflow_field(k, "target_email_field", e.value or None)
-                 ).classes("w-full").props("dense outlined stack-label").tooltip(
-                     "Name of the field whose value is the target person's email")
+            with ui.expansion(t("wf_section_about_other"), icon="person_search").classes("w-full"):
+                field_names = sorted({f.name for s in wf.steps for f in s.fields if f.name})
+                if field_names:
+                    options = {None: "(none)", **{n: n for n in field_names}}
+                    ui.select(options, value=wf.target_email_field,
+                              label=t("wf_target_email"),
+                              on_change=lambda e, k=wf_key: self.set_workflow_field(k, "target_email_field", e.value or None)
+                              ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_target_email_help"))
+                else:
+                    ui.input(t("wf_target_email"), value=wf.target_email_field or "",
+                             on_change=lambda e, k=wf_key: self.set_workflow_field(k, "target_email_field", e.value or None)
+                             ).classes("w-full").props("dense outlined stack-label").tooltip(t("wf_target_email_help"))
 
-        ui.label("Document instructions").classes("text-subtitle2 q-mt-md")
-        di = keyed_chip_editor(wf.document_instructions or {}, key_label="status")
-        self._workflow_doc_instructions_widget = (wf_key, di)
+        # --- Section 2: Notifications (collapsed; show count) ---
+        n_notif = len(wf.notifications)
+        with ui.expansion(f"{t('wf_section_notifications')}  ({n_notif})", icon="notifications"
+                          ).classes("w-full"):
+            self._render_notification_table(wf_key, wf)
 
-        ui.label("Notification rules").classes("text-subtitle2 q-mt-md")
-        self._render_notification_table(wf_key, wf)
+        # --- Section 3: Document instructions (collapsed; show count) ---
+        n_di = len(wf.document_instructions or {})
+        with ui.expansion(f"{t('wf_section_doc_instructions')}  ({n_di})", icon="description"
+                          ).classes("w-full"):
+            di = keyed_chip_editor(wf.document_instructions or {}, key_label="status")
+            self._workflow_doc_instructions_widget = (wf_key, di)
 
     def _render_notification_table(self, wf_key: str, wf) -> None:
         step_keys = [s.key for s in wf.steps]

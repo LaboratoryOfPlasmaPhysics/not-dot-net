@@ -1018,3 +1018,20 @@ async def test_field_label_change_does_not_retype_locked_internal_name(user: Use
     field = dlg.working_copy.workflows["a"].steps[0].fields[0]
     assert field.label == "Work Email"
     assert field.name == "email"  # locked, unchanged
+
+
+async def test_workflow_editor_renders_three_sections(user: User, admin_user):
+    """The right pane's workflow editor should show three section headers."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "a": WorkflowConfig(label="A", steps=[]),
+    }))
+
+    @ui.page("/_sections")
+    async def _page():
+        await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_sections")
+    await user.should_see("Basics")
+    await user.should_see("Notifications")
+    await user.should_see("Document instructions")
