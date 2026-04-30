@@ -1,17 +1,25 @@
 """Import/export pages and booking resources as JSON."""
 
 import asyncio
-import json
-import uuid
 from datetime import datetime, UTC
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.booking_models import Resource
 from not_dot_net.backend.db import session_scope, User
 from not_dot_net.backend.page_models import Page
 from not_dot_net.backend.tenure_service import UserTenure
+
+
+def _iter_import_items(data) -> tuple[list[dict], int]:
+    if not isinstance(data, list):
+        return [], 1
+    skipped = sum(1 for item in data if not isinstance(item, dict))
+    return [item for item in data if isinstance(item, dict)], skipped
+
+
+def _clean_text(value) -> str:
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _serialize_page(p: Page) -> dict:
@@ -89,11 +97,13 @@ async def export_all() -> dict:
 
 
 async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, int]:
-    created, updated, skipped = 0, 0, 0
+    items, skipped = _iter_import_items(data)
+    created, updated = 0, 0
     async with session_scope() as session:
-        for item in data:
-            slug = item.get("slug", "").strip()
-            if not slug:
+        for item in items:
+            slug = _clean_text(item.get("slug"))
+            title = _clean_text(item.get("title"))
+            if not slug or not title:
                 skipped += 1
                 continue
             existing = (await session.execute(
@@ -122,10 +132,11 @@ async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, 
 
 
 async def import_resources(data: list[dict], *, replace: bool = False) -> dict[str, int]:
-    created, updated, skipped = 0, 0, 0
+    items, skipped = _iter_import_items(data)
+    created, updated = 0, 0
     async with session_scope() as session:
-        for item in data:
-            name = item.get("name", "").strip()
+        for item in items:
+            name = _clean_text(item.get("name"))
             if not name:
                 skipped += 1
                 continue
@@ -158,11 +169,14 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
 
 async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str, int]:
     from datetime import date as dt_date
-    created, skipped = 0, 0
+    from not_dot_net.backend.tenure_service import _ensure_no_overlap, _validate_tenure_dates
+
+    items, skipped = _iter_import_items(data)
+    created, updated = 0, 0
     async with session_scope() as session:
-        for item in data:
-            email = item.get("user_email", "").strip()
-            if not email:
+        for item in items:
+            email = _clean_text(item.get("user_email"))
+            if not email or not item.get("status") or not item.get("employer") or not item.get("start_date"):
                 skipped += 1
                 continue
             user_result = await session.execute(
@@ -172,17 +186,24 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
             if user is None:
                 skipped += 1
                 continue
-            session.add(UserTenure(
-                user_id=user.id,
-                status=item["status"],
-                employer=item["employer"],
-                start_date=dt_date.fromisoformat(item["start_date"]),
-                end_date=dt_date.fromisoformat(item["end_date"]) if item.get("end_date") else None,
-                notes=item.get("notes"),
-            ))
-            created += 1
+            try:
+                start_date = dt_date.fromisoformat(item["start_date"])
+                end_date = dt_date.fromisoformat(item["end_date"]) if item.get("end_date") else None
+                _validate_tenure_dates(start_date, end_date)
+                await _ensure_no_overlap(session, user.id, start_date, end_date)
+                session.add(UserTenure(
+                    user_id=user.id,
+                    status=item["status"],
+                    employer=item["employer"],
+                    start_date=start_date,
+                    end_date=end_date,
+                    notes=item.get("notes"),
+                ))
+                created += 1
+            except (TypeError, ValueError):
+                skipped += 1
         await session.commit()
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "updated": updated, "skipped": skipped}
 
 
 async def import_all(data: dict, *, replace: bool = False) -> dict:

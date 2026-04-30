@@ -24,6 +24,14 @@ ACCESS_PERSONAL_DATA = permission(
 ENCRYPTED_DIR = Path("data/encrypted")
 
 
+def _resolve_encrypted_blob_path(storage_path: str) -> Path:
+    encrypted_root = ENCRYPTED_DIR.resolve()
+    blob_path = Path(storage_path).resolve()
+    if not blob_path.is_relative_to(encrypted_root):
+        raise ValueError("Encrypted blob path is outside encrypted storage")
+    return blob_path
+
+
 class EncryptedFile(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "encrypted_file"
 
@@ -123,7 +131,7 @@ async def read_encrypted(
             raise ValueError(f"Encrypted file {file_id} not found")
 
         master_key = _get_master_key()
-        blob_path = Path(enc_file.storage_path)
+        blob_path = _resolve_encrypted_blob_path(enc_file.storage_path)
         if not blob_path.exists():
             raise ValueError(f"Encrypted blob not found on disk: {blob_path}")
 
@@ -164,7 +172,7 @@ async def delete_expired() -> int:
             )
         )
         for enc_file in result.scalars().all():
-            blob_path = Path(enc_file.storage_path)
+            blob_path = _resolve_encrypted_blob_path(enc_file.storage_path)
             if blob_path.exists():
                 blob_path.unlink()
             await session.delete(enc_file)

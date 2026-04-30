@@ -24,6 +24,30 @@ class UserTenure(MappedAsDataclass, Base, kw_only=True):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
 
 
+def _validate_tenure_dates(start_date: date, end_date: date | None) -> None:
+    if end_date is not None and end_date < start_date:
+        raise ValueError("Tenure end date cannot be before start date")
+
+
+async def _ensure_no_overlap(
+    session,
+    user_id: uuid.UUID,
+    start_date: date,
+    end_date: date | None,
+    exclude_id: uuid.UUID | None = None,
+) -> None:
+    new_end = end_date or date.max
+    result = await session.execute(
+        select(UserTenure).where(UserTenure.user_id == user_id)
+    )
+    for existing in result.scalars().all():
+        if exclude_id is not None and existing.id == exclude_id:
+            continue
+        existing_end = existing.end_date or date.max
+        if existing.start_date <= new_end and start_date <= existing_end:
+            raise ValueError("Tenure periods cannot overlap")
+
+
 async def add_tenure(
     user_id: uuid.UUID,
     status: str,
@@ -32,7 +56,9 @@ async def add_tenure(
     end_date: date | None = None,
     notes: str | None = None,
 ) -> UserTenure:
+    _validate_tenure_dates(start_date, end_date)
     async with session_scope() as session:
+        await _ensure_no_overlap(session, user_id, start_date, end_date)
         tenure = UserTenure(
             user_id=user_id,
             status=status,
@@ -52,6 +78,10 @@ async def close_tenure(tenure_id: uuid.UUID, end_date: date) -> UserTenure:
         tenure = await session.get(UserTenure, tenure_id)
         if tenure is None:
             raise ValueError(f"Tenure {tenure_id} not found")
+        _validate_tenure_dates(tenure.start_date, end_date)
+        await _ensure_no_overlap(
+            session, tenure.user_id, tenure.start_date, end_date, exclude_id=tenure.id,
+        )
         tenure.end_date = end_date
         await session.commit()
         await session.refresh(tenure)
@@ -129,6 +159,12 @@ async def update_tenure(
         tenure = await session.get(UserTenure, tenure_id)
         if tenure is None:
             raise ValueError(f"Tenure {tenure_id} not found")
+        new_start_date = start_date if start_date is not None else tenure.start_date
+        new_end_date = end_date if end_date is not ... else tenure.end_date
+        _validate_tenure_dates(new_start_date, new_end_date)
+        await _ensure_no_overlap(
+            session, tenure.user_id, new_start_date, new_end_date, exclude_id=tenure.id,
+        )
         if status is not None:
             tenure.status = status
         if employer is not None:

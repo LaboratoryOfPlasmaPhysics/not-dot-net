@@ -8,8 +8,10 @@ from not_dot_net.backend.workflow_service import (
     list_actionable,
     get_request_by_id,
 )
+from not_dot_net.backend.encrypted_storage import EncryptedFile
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.db import User, get_async_session
+from not_dot_net.backend.workflow_models import WorkflowFile
 from contextlib import asynccontextmanager
 
 
@@ -334,3 +336,136 @@ async def test_onboarding_v2_request_corrections():
     assert req.current_step == "newcomer_info"
     assert req.status == "in_progress"
     assert req.token is not None  # new token generated for target_person step
+
+
+async def test_onboarding_target_token_cannot_be_replayed_after_submit():
+    await _setup_roles()
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "newcomer@example.com", "status": "PhD"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    target_token = req.token
+    assert target_token is not None
+
+    req = await submit_step(
+        req.id,
+        actor_id=None,
+        action="submit",
+        data={"first_name": "Marie", "last_name": "Curie"},
+        actor_token=target_token,
+    )
+    assert req.current_step == "admin_validation"
+    assert req.token is None
+
+    with pytest.raises(PermissionError):
+        await save_draft(req.id, data={"phone": "replay"}, actor_token=target_token)
+
+
+async def test_onboarding_target_token_is_bound_to_its_request():
+    await _setup_roles()
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+
+    req_a = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "a@example.com", "status": "PhD"},
+        actor=initiator,
+    )
+    req_a = await submit_step(req_a.id, initiator.id, "submit", data={}, actor_user=initiator)
+    assert req_a.token is not None
+
+    req_b = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "b@example.com", "status": "CDD"},
+        actor=initiator,
+    )
+    req_b = await submit_step(req_b.id, initiator.id, "submit", data={}, actor_user=initiator)
+
+    with pytest.raises(PermissionError):
+        await save_draft(req_b.id, data={"phone": "wrong request"}, actor_token=req_a.token)
+
+
+async def test_onboarding_target_step_blocks_unrelated_user_without_token():
+    await _setup_roles()
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+    intruder = await _create_user(email="intruder@example.com", role="member")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "newcomer@example.com", "status": "PhD"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    assert req.current_step == "newcomer_info"
+
+    with pytest.raises(PermissionError):
+        await submit_step(
+            req.id,
+            intruder.id,
+            "submit",
+            data={"first_name": "Mallory", "last_name": "Evil"},
+            actor_user=intruder,
+        )
+
+
+async def test_onboarding_completion_marks_encrypted_files_for_retention():
+    await _setup_roles()
+    cfg = await roles_config.get()
+    cfg.roles["admin"].permissions.append("access_personal_data")
+    cfg.roles["admin"].permissions.append("manage_users")
+    await roles_config.set(cfg)
+
+    initiator = await _create_user(email="initiator@test.com", role="staff")
+    admin = await _create_user(email="admin@test.com", role="admin")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": "newcomer@example.com", "status": "PhD", "employer": "CNRS"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+
+    get_session = asynccontextmanager(get_async_session)
+    async with get_session() as session:
+        enc_file = EncryptedFile(
+            wrapped_dek=b"wrapped",
+            nonce=b"nonce",
+            storage_path="data/encrypted/test.enc",
+            original_filename="id.pdf",
+            content_type="application/pdf",
+        )
+        session.add(enc_file)
+        await session.flush()
+        session.add(WorkflowFile(
+            request_id=req.id,
+            step_key="newcomer_info",
+            field_name="id_document",
+            filename="id.pdf",
+            storage_path="encrypted",
+            encrypted_file_id=enc_file.id,
+        ))
+        await session.commit()
+        encrypted_file_id = enc_file.id
+
+    req = await submit_step(
+        req.id,
+        actor_id=None,
+        action="submit",
+        data={"first_name": "Marie", "last_name": "Curie"},
+        actor_token=req.token,
+    )
+    req = await submit_step(req.id, admin.id, "approve", data={}, actor_user=admin)
+    req = await submit_step(req.id, admin.id, "complete", data={}, actor_user=admin)
+    assert req.status == "completed"
+
+    async with get_session() as session:
+        enc_file = await session.get(EncryptedFile, encrypted_file_id)
+        assert enc_file.retained_until is not None

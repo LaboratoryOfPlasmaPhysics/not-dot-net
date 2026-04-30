@@ -53,6 +53,63 @@ async def test_add_open_tenure():
     assert tenure.end_date is None
 
 
+async def test_add_tenure_rejects_end_before_start():
+    user = await _create_user()
+    with pytest.raises(ValueError, match="end date"):
+        await add_tenure(
+            user_id=user.id,
+            status="Intern",
+            employer="CNRS",
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 8, 31),
+        )
+
+
+async def test_add_tenure_rejects_overlapping_period_for_same_user():
+    user = await _create_user()
+    await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+    )
+
+    with pytest.raises(ValueError, match="overlap"):
+        await add_tenure(
+            user_id=user.id, status="PhD", employer="Polytechnique",
+            start_date=date(2025, 8, 1), end_date=date(2026, 8, 31),
+        )
+
+
+async def test_add_tenure_allows_adjacent_period_for_same_user():
+    user = await _create_user()
+    await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+    )
+
+    tenure = await add_tenure(
+        user_id=user.id, status="PhD", employer="Polytechnique",
+        start_date=date(2025, 9, 1),
+    )
+
+    assert tenure.start_date == date(2025, 9, 1)
+
+
+async def test_add_tenure_allows_overlapping_periods_for_different_users():
+    user1 = await _create_user("overlap1@lpp.fr")
+    user2 = await _create_user("overlap2@lpp.fr")
+    await add_tenure(
+        user_id=user1.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+    )
+
+    tenure = await add_tenure(
+        user_id=user2.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+    )
+
+    assert tenure.user_id == user2.id
+
+
 async def test_current_tenure_returns_latest_open():
     user = await _create_user()
     await add_tenure(
@@ -86,6 +143,17 @@ async def test_close_tenure():
     )
     closed = await close_tenure(tenure.id, end_date=date(2026, 8, 31))
     assert closed.end_date == date(2026, 8, 31)
+
+
+async def test_close_tenure_rejects_end_before_start():
+    user = await _create_user()
+    tenure = await add_tenure(
+        user_id=user.id, status="PhD", employer="CNRS",
+        start_date=date(2025, 9, 1),
+    )
+
+    with pytest.raises(ValueError, match="end date"):
+        await close_tenure(tenure.id, end_date=date(2025, 8, 31))
 
 
 async def test_list_tenures_ordered():
@@ -139,6 +207,35 @@ async def test_update_tenure():
     assert updated.status == "PhD"
     assert updated.employer == "Polytechnique"
     assert updated.start_date == date(2025, 3, 1)
+
+
+async def test_update_tenure_can_clear_end_date_and_notes():
+    user = await _create_user("clear@lpp.fr")
+    tenure = await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+        notes="temporary",
+    )
+
+    updated = await update_tenure(tenure.id, end_date=None, notes=None)
+
+    assert updated.end_date is None
+    assert updated.notes is None
+
+
+async def test_update_tenure_rejects_overlap():
+    user = await _create_user("update-overlap@lpp.fr")
+    await add_tenure(
+        user_id=user.id, status="Intern", employer="CNRS",
+        start_date=date(2025, 3, 1), end_date=date(2025, 8, 31),
+    )
+    tenure = await add_tenure(
+        user_id=user.id, status="PhD", employer="Polytechnique",
+        start_date=date(2025, 9, 1),
+    )
+
+    with pytest.raises(ValueError, match="overlap"):
+        await update_tenure(tenure.id, start_date=date(2025, 8, 1))
 
 
 async def test_delete_tenure():

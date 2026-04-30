@@ -148,6 +148,12 @@ async def create_booking(
 
     async with session_scope() as session:
         async with session.begin():
+            resource = await session.get(Resource, resource_id)
+            if resource is None:
+                raise ValueError(f"Resource {resource_id} not found")
+            if not resource.active:
+                raise BookingValidationError("Resource is not active")
+
             # Lock overlapping rows to prevent concurrent double-booking.
             # with_for_update() is a no-op on SQLite but correct for PostgreSQL.
             conflicts = await session.execute(

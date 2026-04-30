@@ -1,4 +1,27 @@
+import string
+
 from not_dot_net.frontend.i18n import TRANSLATIONS, _parse_accept_language, t
+
+SECURITY_MESSAGE_KEYS = {
+    "invalid_credentials",
+    "auth_error",
+    "session_expired",
+    "token_expired",
+    "invalid_code",
+    "too_many_attempts",
+    "access_denied",
+    "permission_denied",
+    "import_invalid_json",
+    "import_failed",
+}
+
+
+def _placeholders(text: str) -> set[str]:
+    return {
+        field_name
+        for _, field_name, _, _ in string.Formatter().parse(text)
+        if field_name is not None
+    }
 
 
 def test_all_keys_present_in_both_locales():
@@ -11,6 +34,23 @@ def test_no_empty_translations():
     for locale, strings in TRANSLATIONS.items():
         for key, value in strings.items():
             assert value, f"{locale}.{key} is empty"
+
+
+def test_translation_placeholders_match_across_locales():
+    default_strings = TRANSLATIONS["en"]
+    for locale, strings in TRANSLATIONS.items():
+        for key, value in strings.items():
+            assert _placeholders(value) == _placeholders(default_strings[key]), (
+                f"{locale}.{key} placeholders differ from en"
+            )
+
+
+def test_security_messages_do_not_interpolate_runtime_details():
+    for locale, strings in TRANSLATIONS.items():
+        for key in SECURITY_MESSAGE_KEYS:
+            assert _placeholders(strings[key]) == set(), (
+                f"{locale}.{key} should not expose runtime details"
+            )
 
 
 def test_parse_accept_language_french():

@@ -204,6 +204,10 @@ async def _handle_import_upload(e, *, replace: bool, user):
         logger.warning("Import: invalid JSON: %s", exc)
         ui.notify(t("import_invalid_json"), color="negative")
         return
+    if not isinstance(data, dict):
+        logger.warning("Import: invalid JSON root type: %s", type(data).__name__)
+        ui.notify(t("import_invalid_json"), color="negative")
+        return
     try:
         result = await import_all(data, replace=replace)
     except Exception:
@@ -214,7 +218,8 @@ async def _handle_import_upload(e, *, replace: bool, user):
         ui.notify(t("import_nothing"), color="warning")
         return
     ui.notify("; ".join(
-        f"{entity}: {c['created']} created, {c['updated']} updated, {c['skipped']} skipped"
+        f"{entity}: {c.get('created', 0)} created, "
+        f"{c.get('updated', 0)} updated, {c.get('skipped', 0)} skipped"
         for entity, c in result.items()
     ), color="positive", multi_line=True)
     await log_audit(

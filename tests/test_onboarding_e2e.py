@@ -54,6 +54,9 @@ async def test_full_onboarding_with_encrypted_files():
     req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
     assert req.current_step == "newcomer_info"
     assert req.token is not None
+    found_by_token = await get_request_by_token(req.token)
+    assert found_by_token is not None
+    assert found_by_token.id == req.id
 
     # Step 2: Verification code
     code = await generate_verification_code(req.id)
@@ -82,6 +85,9 @@ async def test_full_onboarding_with_encrypted_files():
     )
     assert req.current_step == "admin_validation"
 
+    actionable = await list_actionable(admin)
+    assert any(item.id == req.id for item in actionable)
+
     # Step 3: Admin can read encrypted file
     data, name, ctype = await read_encrypted(enc_file.id, actor_id=admin.id, actor_email=admin.email)
     assert data == b"fake ID document"
@@ -93,6 +99,10 @@ async def test_full_onboarding_with_encrypted_files():
     # Step 4: IT completes
     req = await submit_step(req.id, admin.id, "complete", data={"notes": "account: mcurie"}, actor_user=admin)
     assert req.status == "completed"
+
+    async with session_scope() as session:
+        retained_file = await session.get(EncryptedFile, enc_file.id)
+        assert retained_file.retained_until is not None
 
 
 @pytest.mark.asyncio

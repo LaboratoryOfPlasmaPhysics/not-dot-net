@@ -80,6 +80,14 @@ async def test_update_nonexistent_resource():
         await update_resource(uuid.uuid4(), name="X")
 
 
+async def test_update_resource_rejects_immutable_fields():
+    r = await _create_test_resource()
+    with pytest.raises(ValueError, match="Cannot update field"):
+        await update_resource(r.id, id=uuid.uuid4())
+    with pytest.raises(ValueError, match="Cannot update field"):
+        await update_resource(r.id, created_at=date.today())
+
+
 async def test_delete_resource():
     r = await _create_test_resource()
     await delete_resource(r.id)
@@ -114,6 +122,22 @@ async def test_create_booking_success():
     assert b.resource_id == r.id
     assert b.start_date == tomorrow
     assert b.end_date == end
+
+
+async def test_create_booking_rejects_missing_resource():
+    user = await _create_user()
+    tomorrow = date.today() + timedelta(days=1)
+    with pytest.raises(ValueError, match="not found"):
+        await create_booking(uuid.uuid4(), user.id, tomorrow, tomorrow + timedelta(days=1))
+
+
+async def test_create_booking_rejects_inactive_resource():
+    user = await _create_user()
+    r = await _create_test_resource()
+    r = await update_resource(r.id, active=False)
+    tomorrow = date.today() + timedelta(days=1)
+    with pytest.raises(BookingValidationError, match="not active"):
+        await create_booking(r.id, user.id, tomorrow, tomorrow + timedelta(days=1))
 
 
 async def test_booking_end_before_start():
@@ -244,6 +268,41 @@ async def test_booking_with_os_and_software():
     )
     assert b.os_choice == "Ubuntu"
     assert b.software_tags == ["Python", "GCC"]
+
+
+async def test_create_booking_actor_can_only_book_for_self():
+    await _setup_roles()
+    user1 = await _create_user(email="u1@test.com", role="staff")
+    user2 = await _create_user(email="u2@test.com", role="staff")
+    r = await _create_test_resource()
+    start = date.today() + timedelta(days=1)
+
+    with pytest.raises(PermissionError):
+        await create_booking(
+            r.id,
+            user2.id,
+            start,
+            start + timedelta(days=3),
+            actor=user1,
+        )
+
+
+async def test_create_booking_actor_manager_can_book_for_other_user():
+    await _setup_roles()
+    admin = await _create_user(email="admin-book@test.com", role="admin")
+    user = await _create_user(email="user-book@test.com", role="staff")
+    r = await _create_test_resource()
+    start = date.today() + timedelta(days=1)
+
+    booking = await create_booking(
+        r.id,
+        user.id,
+        start,
+        start + timedelta(days=3),
+        actor=admin,
+    )
+
+    assert booking.user_id == user.id
 
 
 # --- Permission enforcement ---

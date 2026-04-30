@@ -24,6 +24,15 @@ async def _create_user(email="staff@test.com", role="staff") -> User:
 async def _setup_roles():
     cfg = await roles_config.get()
     cfg.roles["staff"] = RoleDefinition(label="Staff", permissions=["create_workflows"])
+    cfg.roles["admin"] = RoleDefinition(
+        label="Admin",
+        permissions=[
+            "create_workflows",
+            "approve_workflows",
+            "access_personal_data",
+            "manage_users",
+        ],
+    )
     await roles_config.set(cfg)
 
 
@@ -135,3 +144,126 @@ async def test_create_tenure_skipped_without_employer():
     await _create_tenure_from_onboarding(req, user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 0
+
+
+async def test_create_tenure_skipped_without_status():
+    """No tenure created if status is missing from request data."""
+    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
+
+    user = await _create_user("newcomer4@test.com")
+
+    from not_dot_net.backend.db import session_scope
+    async with session_scope() as session:
+        req = WorkflowRequest(
+            type="onboarding",
+            current_step="it_account_creation",
+            status=RequestStatus.COMPLETED,
+            data={"employer": "CNRS"},
+            created_by=user.id,
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+
+    await _create_tenure_from_onboarding(req, user.id)
+    tenures = await list_tenures(user.id)
+    assert len(tenures) == 0
+
+
+async def test_create_tenure_from_onboarding_invalid_start_date_falls_back_to_today():
+    """Invalid start_date is ignored instead of crashing tenure creation."""
+    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
+
+    user = await _create_user("newcomer5@test.com")
+
+    from not_dot_net.backend.db import session_scope
+    async with session_scope() as session:
+        req = WorkflowRequest(
+            type="onboarding",
+            current_step="it_account_creation",
+            status=RequestStatus.COMPLETED,
+            data={"status": "PhD", "employer": "CNRS", "start_date": "not-a-date"},
+            created_by=user.id,
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+
+    await _create_tenure_from_onboarding(req, user.id)
+    tenures = await list_tenures(user.id)
+    assert len(tenures) == 1
+    assert tenures[0].start_date == date.today()
+
+
+async def test_onboarding_completion_creates_tenure_for_target_email_user():
+    await _setup_roles()
+    initiator = await _create_user("initiator@test.com", role="staff")
+    admin = await _create_user("admin@test.com", role="admin")
+    target = await _create_user("target-newcomer@test.com", role="staff")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={
+            "contact_email": target.email,
+            "status": "PhD",
+            "employer": "CNRS",
+            "start_date": "2026-09-01",
+        },
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    req = await submit_step(
+        req.id,
+        actor_id=None,
+        action="submit",
+        data={"first_name": "Marie", "last_name": "Curie"},
+        actor_token=req.token,
+    )
+    req = await submit_step(req.id, admin.id, "approve", data={}, actor_user=admin)
+    req = await submit_step(req.id, admin.id, "complete", data={}, actor_user=admin)
+
+    assert req.status == "completed"
+    tenures = await list_tenures(target.id)
+    assert len(tenures) == 1
+    assert tenures[0].status == "PhD"
+    assert tenures[0].employer == "CNRS"
+    assert tenures[0].start_date == date(2026, 9, 1)
+
+
+async def test_onboarding_completion_uses_returning_user_id_for_tenure_target():
+    await _setup_roles()
+    initiator = await _create_user("initiator-returning@test.com", role="staff")
+    admin = await _create_user("admin-returning@test.com", role="admin")
+    returning_user = await _create_user("returning@test.com", role="staff")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={
+            "contact_email": "external-contact@test.com",
+            "returning_user_id": str(returning_user.id),
+            "status": "CDD",
+            "employer": "Polytechnique",
+            "start_date": "2026-01-15",
+        },
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    req = await submit_step(
+        req.id,
+        actor_id=None,
+        action="submit",
+        data={"first_name": "Ada", "last_name": "Lovelace"},
+        actor_token=req.token,
+    )
+    req = await submit_step(req.id, admin.id, "approve", data={}, actor_user=admin)
+    req = await submit_step(req.id, admin.id, "complete", data={}, actor_user=admin)
+
+    assert req.status == "completed"
+    tenures = await list_tenures(returning_user.id)
+    assert len(tenures) == 1
+    assert tenures[0].status == "CDD"
+    assert tenures[0].employer == "Polytechnique"

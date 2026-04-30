@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -49,6 +50,25 @@ async def test_store_and_read_encrypted_roundtrip():
 
 
 @pytest.mark.asyncio
+async def test_read_encrypted_logs_personal_data_audit():
+    actor_id = uuid.uuid4()
+    actor_email = "admin@test.local"
+    enc_file = await store_encrypted(b"personal data", "rib.pdf", "application/pdf", None)
+
+    with patch("not_dot_net.backend.audit.log_audit", new_callable=AsyncMock) as audit:
+        await read_encrypted(enc_file.id, actor_id=actor_id, actor_email=actor_email)
+
+    audit.assert_awaited_once_with(
+        "personal_data", "download",
+        actor_id=actor_id,
+        actor_email=actor_email,
+        target_type="encrypted_file",
+        target_id=enc_file.id,
+        detail="filename=rib.pdf",
+    )
+
+
+@pytest.mark.asyncio
 async def test_encrypted_blob_is_not_plaintext():
     content = b"Super secret bank details RIB"
     enc_file = await store_encrypted(content, "rib.pdf", "application/pdf", None)
@@ -80,12 +100,15 @@ async def test_mark_for_retention():
 @pytest.mark.asyncio
 async def test_delete_expired_removes_past_retention():
     enc_file = await store_encrypted(b"old data", "old.pdf", "application/pdf", None)
+    blob_path = Path(enc_file.storage_path)
+    assert blob_path.exists()
     async with session_scope() as session:
         reloaded = await session.get(EncryptedFile, enc_file.id)
         reloaded.retained_until = datetime.now(timezone.utc) - timedelta(days=1)
         await session.commit()
     count = await delete_expired()
     assert count == 1
+    assert not blob_path.exists()
     async with session_scope() as session:
         assert await session.get(EncryptedFile, enc_file.id) is None
 
@@ -96,3 +119,47 @@ async def test_delete_expired_keeps_future_retention():
     await mark_for_retention(enc_file.id, days=30)
     count = await delete_expired()
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_read_encrypted_rejects_blob_path_outside_encrypted_storage(tmp_path):
+    outside = tmp_path / "outside.enc"
+    outside.write_bytes(b"not an encrypted blob")
+
+    async with session_scope() as session:
+        enc_file = EncryptedFile(
+            wrapped_dek=b"wrapped",
+            nonce=b"nonce",
+            storage_path=str(outside),
+            original_filename="outside.pdf",
+            content_type="application/pdf",
+        )
+        session.add(enc_file)
+        await session.commit()
+        file_id = enc_file.id
+
+    with pytest.raises(ValueError, match="outside encrypted storage"):
+        await read_encrypted(file_id, actor_id=uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_delete_expired_rejects_blob_path_outside_encrypted_storage(tmp_path):
+    outside = tmp_path / "do-not-delete.txt"
+    outside.write_text("keep me")
+
+    async with session_scope() as session:
+        enc_file = EncryptedFile(
+            wrapped_dek=b"wrapped",
+            nonce=b"nonce",
+            storage_path=str(outside),
+            original_filename="outside.pdf",
+            content_type="application/pdf",
+            retained_until=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+        session.add(enc_file)
+        await session.commit()
+
+    with pytest.raises(ValueError, match="outside encrypted storage"):
+        await delete_expired()
+
+    assert outside.exists()

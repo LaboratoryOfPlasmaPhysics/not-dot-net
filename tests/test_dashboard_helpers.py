@@ -51,6 +51,7 @@ async def _setup_roles():
         label="Director",
         permissions=["create_workflows", "approve_workflows"],
     )
+    cfg.roles["member"] = RoleDefinition(label="Member", permissions=[])
     await roles_config.set(cfg)
 
 
@@ -97,3 +98,37 @@ async def test_get_actionable_count_zero():
     )
     count = await get_actionable_count(member_user)
     assert count == 0
+
+
+async def test_get_actionable_count_excludes_completed_requests():
+    await _setup_roles()
+    staff = await _create_user(email="staff4@test.com", role="staff")
+    director = await _create_user(email="director4@test.com", role="director")
+    req = await create_request(
+        workflow_type="vpn_access",
+        created_by=staff.id,
+        data={"target_name": "A", "target_email": "a@test.com"},
+    )
+    req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
+    await submit_step(req.id, director.id, "approve", data={}, actor_user=director)
+
+    count = await get_actionable_count(director)
+
+    assert count == 0
+
+
+async def test_get_actionable_count_target_person_only_counts_matching_email():
+    await _setup_roles()
+    initiator = await _create_user(email="staff5@test.com", role="staff")
+    target = await _create_user(email="target5@test.com", role="member")
+    other = await _create_user(email="other5@test.com", role="member")
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": target.email, "status": "PhD"},
+        actor=initiator,
+    )
+    await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+
+    assert await get_actionable_count(target) == 1
+    assert await get_actionable_count(other) == 0
