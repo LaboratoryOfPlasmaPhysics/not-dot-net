@@ -52,3 +52,24 @@ async def test_sync_accepts_none_values():
     async with session_scope() as session:
         refreshed = await session.get(User, user_id)
         assert refreshed.phone is None
+
+
+async def test_sync_preserves_local_profile_photo():
+    async with session_scope() as session:
+        user = User(
+            email="photo@example.com",
+            hashed_password="x",
+            is_active=True,
+            auth_method=AuthMethod.LDAP,
+            photo=b"local-profile-photo",
+        )
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+
+    info = LdapUserInfo(email="photo@example.com", dn="cn=x,dc=example,dc=com")
+    await sync_user_from_ldap(user_id, info)
+
+    async with session_scope() as session:
+        refreshed = await session.get(User, user_id)
+        assert refreshed.photo == b"local-profile-photo"

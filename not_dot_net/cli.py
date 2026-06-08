@@ -192,7 +192,6 @@ async def _test_ldap(username: str, password: str):
     print(f"  uid_number: {info.uid_number}")
     print(f"  gid_number: {info.gid_number}")
     print(f"  member_of: {info.member_of}")
-    print(f"  photo: {'yes (' + str(len(info.photo)) + ' bytes)' if info.photo else 'no'}")
 
 
 @app.command

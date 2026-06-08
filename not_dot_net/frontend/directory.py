@@ -5,12 +5,21 @@ from nicegui import ui
 from sqlalchemy import func, select
 
 
+from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.db import User, AuthMethod, session_scope, get_user_db
+from not_dot_net.backend.profile_photo import (
+    profile_photo_data_uri,
+    profile_photo_max_bytes,
+    remove_profile_photo,
+    save_profile_photo,
+    validate_profile_photo_upload,
+)
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
 from not_dot_net.backend.permissions import permission, has_permissions
 from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
+from not_dot_net.config import files_config
 
 MANAGE_USERS = permission("manage_users", "Manage users", "Edit/delete users in directory")
 
@@ -151,10 +160,9 @@ def _person_card(person: User, current_user: User, state: dict):
 
         header = ui.row().classes("items-center gap-3 cursor-pointer w-full")
         with header:
-            if person.photo:
-                import base64
-                b64 = base64.b64encode(person.photo).decode()
-                ui.image(f"data:image/jpeg;base64,{b64}").classes(
+            photo_uri = profile_photo_data_uri(person.photo)
+            if photo_uri:
+                ui.image(photo_uri).classes(
                     "w-12 h-12 rounded-full object-cover"
                 )
             else:
@@ -319,7 +327,6 @@ def _render_ad_enable_disable_button(container, person: User, current_user: User
     bound admin's credentials, then updates local `is_active` for immediate
     UI feedback.
     """
-    from not_dot_net.backend.audit import log_audit
     from not_dot_net.backend.auth.ldap import (
         LdapModifyError, ldap_config, ldap_set_account_enabled,
     )
@@ -456,6 +463,83 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
         _add_field("description", t("description"), person.description or "")
         _add_field("webpage", t("webpage"), person.webpage or "")
 
+        files_cfg = await files_config.get()
+        photo_container = ui.column().classes("w-full gap-2")
+
+        async def render_photo_controls():
+            photo_container.clear()
+            with photo_container:
+                ui.label(t("photo")).classes("text-sm font-medium")
+                photo_uri = profile_photo_data_uri(person.photo)
+                if photo_uri:
+                    ui.image(photo_uri).classes("w-24 h-24 rounded-full object-cover")
+                else:
+                    ui.icon("person", size="xl").classes("rounded-full bg-gray-200 p-3")
+
+            def notify_photo_too_large():
+                ui.notify(
+                    t("profile_photo_too_large", max_size_mb=files_cfg.profile_photo_max_size_mb),
+                    color="negative",
+                )
+
+            async def handle_photo_upload(event):
+                upload = event.file
+                content = await upload.read()
+                filename = upload.name or ""
+                error = await validate_profile_photo_upload(content, filename)
+                if error:
+                    if error == "profile_photo_too_large":
+                        notify_photo_too_large()
+                    else:
+                        ui.notify(t(error), color="negative")
+                    return
+                saved_photo = await save_profile_photo(person.id, content)
+                if saved_photo is None:
+                    ui.notify(t("profile_photo_upload_failed"), color="negative")
+                    return
+                await log_audit(
+                    "user", "update",
+                    actor_id=current_user.id, actor_email=current_user.email,
+                    target_type="user", target_id=person.id,
+                    detail="fields=photo",
+                    metadata={"changes": {"photo": {"old": bool(person.photo), "new": True}}},
+                )
+                ui.notify(t("profile_photo_updated"), color="positive")
+                person.photo = saved_photo
+                await render_photo_controls()
+
+            ui.upload(
+                label=t("upload_profile_photo"),
+                auto_upload=True,
+                max_file_size=profile_photo_max_bytes(files_cfg.profile_photo_max_size_mb),
+                on_upload=handle_photo_upload,
+                on_rejected=notify_photo_too_large,
+            ).props("outlined flat accept='.jpg,.jpeg,.png'").classes("w-full max-w-sm")
+
+            if person.photo:
+                async def do_remove_photo():
+                    if not await remove_profile_photo(person.id):
+                        ui.notify(t("profile_photo_upload_failed"), color="negative")
+                        return
+                    await log_audit(
+                        "user", "update",
+                        actor_id=current_user.id, actor_email=current_user.email,
+                        target_type="user", target_id=person.id,
+                        detail="fields=photo",
+                        metadata={"changes": {"photo": {"old": True, "new": False}}},
+                    )
+                    ui.notify(t("profile_photo_removed"), color="positive")
+                    person.photo = None
+                    await render_photo_controls()
+
+                ui.button(
+                    t("remove_profile_photo"),
+                    icon="delete",
+                    on_click=do_remove_photo,
+                ).props("flat dense color=negative")
+
+        await render_photo_controls()
+
         async def _do_save(ad_conn=None):
             submitted = {}
             for k, v in fields.items():
@@ -499,7 +583,6 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                         return
 
             await _update_user(person.id, diff, actor_email=current_user.email)
-            from not_dot_net.backend.audit import log_audit
             current_values = {k: getattr(person, k) for k in diff}
             changes = {
                 k: {"old": _serialize_value(current_values.get(k)), "new": _serialize_value(v)}
@@ -576,7 +659,6 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
             async def do_delete(t_id=tenure.id):
                 from not_dot_net.backend.tenure_service import delete_tenure as _del
                 await _del(t_id)
-                from not_dot_net.backend.audit import log_audit
                 await log_audit(
                     "user", "delete_tenure",
                     actor_id=current_user.id, actor_email=current_user.email,
@@ -616,7 +698,6 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
                 end_date=end,
                 notes=notes_input.value or None,
             )
-            from not_dot_net.backend.audit import log_audit
             await log_audit(
                 "user", "add_tenure",
                 actor_id=current_user.id, actor_email=current_user.email,
@@ -667,7 +748,6 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
                 end_date=end,
                 notes=notes_input.value or None,
             )
-            from not_dot_net.backend.audit import log_audit
             await log_audit(
                 "user", "update_tenure",
                 actor_id=current_user.id, actor_email=current_user.email,

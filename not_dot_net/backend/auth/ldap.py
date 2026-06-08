@@ -34,7 +34,7 @@ AD_ATTR_MAP: dict[str, str] = {
 # Read-only AD attributes (not in AD_ATTR_MAP because users can't write them back)
 _AD_READ_ONLY = [
     "givenName", "sn", "userPrincipalName", "sAMAccountName",
-    "memberOf", "thumbnailPhoto", "uidNumber", "gidNumber",
+    "memberOf", "uidNumber", "gidNumber",
     "userAccountControl", "accountExpires", "lastLogonTimestamp",
 ]
 
@@ -131,7 +131,6 @@ class LdapUserInfo:
     description: str | None = None
     webpage: str | None = None
     member_of: list[str] | None = None
-    photo: bytes | None = None
     uid_number: int | None = None
     gid_number: int | None = None
     last_logon_timestamp: datetime | None = None
@@ -551,7 +550,6 @@ _INFO_TO_USER: dict[str, str] = {
     "description":       "description",
     "webpage":           "webpage",
     "member_of":         "member_of",
-    "photo":             "photo",
     "uid_number":        "uid_number",
     "gid_number":        "gid_number",
     "last_logon_timestamp": "last_ad_logon",
@@ -626,7 +624,6 @@ def _entry_to_user_info(entry, fallback_email: str | None = None) -> LdapUserInf
         description=_attr_value(entry, "description"),
         webpage=_attr_value(entry, "wWWHomePage"),
         member_of=_attr_list(entry, "memberOf"),
-        photo=_attr_bytes(entry, "thumbnailPhoto"),
         uid_number=_attr_int(entry, "uidNumber"),
         gid_number=_attr_int(entry, "gidNumber"),
         last_logon_timestamp=_attr_filetime(entry, "lastLogonTimestamp"),

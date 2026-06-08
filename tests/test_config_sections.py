@@ -45,6 +45,28 @@ async def test_org_config_registered():
     assert "org" in get_registry()
 
 
+# --- FilesConfig ---
+
+async def test_files_config_defaults():
+    from not_dot_net.config import files_config
+    cfg = await files_config.get()
+    assert cfg.profile_photo_max_size_mb == 2
+
+
+async def test_files_config_roundtrip():
+    from not_dot_net.config import files_config, FilesConfig
+    custom = FilesConfig(profile_photo_max_size_mb=5)
+    await files_config.set(custom)
+    result = await files_config.get()
+    assert result.profile_photo_max_size_mb == 5
+
+
+async def test_files_config_registered():
+    from not_dot_net.backend.app_config import get_registry
+    from not_dot_net.config import files_config  # noqa: F401
+    assert "files" in get_registry()
+
+
 # --- BookingsConfig ---
 
 async def test_bookings_config_defaults():

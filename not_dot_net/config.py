@@ -96,6 +96,18 @@ class OrgConfig(BaseModel):
 org_config = section("org", OrgConfig, label="Organization")
 
 
+# --- FilesConfig section ---
+
+DEFAULT_PROFILE_PHOTO_MAX_SIZE_MB = 2
+
+
+class FilesConfig(BaseModel):
+    profile_photo_max_size_mb: int = Field(default=DEFAULT_PROFILE_PHOTO_MAX_SIZE_MB, ge=1)
+
+
+files_config = section("files", FilesConfig, label="Files")
+
+
 # --- BookingsConfig section ---
 
 class BookingsConfig(BaseModel):

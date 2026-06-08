@@ -49,6 +49,7 @@ dependencies = [
     "cryptography",
     "phonenumbers",
     "apscheduler",
+    "pillow>=12.2.0",
 ]
 
 
