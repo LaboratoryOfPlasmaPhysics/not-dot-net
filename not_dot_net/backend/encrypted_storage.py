@@ -83,13 +83,13 @@ def _decrypt_file(encrypted_data: bytes, wrapped_dek: bytes, nonce: bytes, maste
     return AESGCM(dek).decrypt(nonce, encrypted_data, None)
 
 
-async def store_encrypted(
+def prepare_encrypted_file_record(
     data: bytes,
     filename: str,
     content_type: str,
     uploaded_by: uuid.UUID | None,
-) -> EncryptedFile:
-    """Encrypt and store a file. Returns the EncryptedFile record."""
+) -> tuple[EncryptedFile, Path]:
+    """Encrypt a file and return an unsaved EncryptedFile plus its blob path."""
     master_key = _get_master_key()
     encrypted_data, wrapped_dek, nonce = _encrypt_file(data, master_key)
 
@@ -98,8 +98,8 @@ async def store_encrypted(
     blob_path = ENCRYPTED_DIR / f"{file_id}.enc"
     blob_path.write_bytes(encrypted_data)
 
-    async with session_scope() as session:
-        enc_file = EncryptedFile(
+    return (
+        EncryptedFile(
             id=file_id,
             wrapped_dek=wrapped_dek,
             nonce=nonce,
@@ -107,11 +107,31 @@ async def store_encrypted(
             original_filename=filename,
             content_type=content_type,
             uploaded_by=uploaded_by,
-        )
-        session.add(enc_file)
-        await session.commit()
-        await session.refresh(enc_file)
-        return enc_file
+        ),
+        blob_path,
+    )
+
+
+async def store_encrypted(
+    data: bytes,
+    filename: str,
+    content_type: str,
+    uploaded_by: uuid.UUID | None,
+) -> EncryptedFile:
+    """Encrypt and store a file. Returns the EncryptedFile record."""
+    enc_file, blob_path = prepare_encrypted_file_record(
+        data, filename, content_type, uploaded_by,
+    )
+    try:
+        async with session_scope() as session:
+            session.add(enc_file)
+            await session.commit()
+            await session.refresh(enc_file)
+            return enc_file
+    except Exception:
+        if blob_path.exists():
+            blob_path.unlink()
+        raise
 
 
 async def read_encrypted(

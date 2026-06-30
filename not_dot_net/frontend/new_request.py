@@ -9,13 +9,14 @@ from nicegui import app, ui
 from sqlalchemy import delete as sa_delete, select, or_
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.encrypted_storage import EncryptedFile, _resolve_encrypted_blob_path, store_encrypted
+from not_dot_net.backend.encrypted_storage import EncryptedFile, _resolve_encrypted_blob_path
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowFile, WorkflowRequest
 from not_dot_net.backend.workflow_service import (
     UPLOAD_ROOT,
     create_request,
+    persist_workflow_upload,
     submit_step,
     validate_upload,
     workflows_config,
@@ -62,37 +63,17 @@ async def _persist_staged_uploads(
 
     resolved_fields = await resolve_step_fields(step)
     encrypted_fields = {f.name for f in resolved_fields if f.encrypted}
-    upload_dir = UPLOAD_ROOT / str(request_id)
-
-    async with session_scope() as session:
-        for field_name, (content, filename, content_type) in staged_uploads.items():
-            if field_name in encrypted_fields:
-                enc_file = await store_encrypted(
-                    content, filename, content_type, uploaded_by=uploaded_by,
-                )
-                wf_file = WorkflowFile(
-                    request_id=request_id,
-                    step_key=step.key,
-                    field_name=field_name,
-                    filename=filename,
-                    storage_path="encrypted",
-                    uploaded_by=uploaded_by,
-                    encrypted_file_id=enc_file.id,
-                )
-            else:
-                upload_dir.mkdir(parents=True, exist_ok=True)
-                dest = upload_dir / filename
-                dest.write_bytes(content)
-                wf_file = WorkflowFile(
-                    request_id=request_id,
-                    step_key=step.key,
-                    field_name=field_name,
-                    filename=filename,
-                    storage_path=str(dest),
-                    uploaded_by=uploaded_by,
-                )
-            session.add(wf_file)
-        await session.commit()
+    for field_name, (content, filename, content_type) in staged_uploads.items():
+        await persist_workflow_upload(
+            request_id=request_id,
+            step_key=step.key,
+            field_name=field_name,
+            content=content,
+            filename=filename,
+            content_type=content_type,
+            encrypted=field_name in encrypted_fields,
+            uploaded_by=uploaded_by,
+        )
 
 
 async def _discard_failed_request(request_id: uuid.UUID) -> None:

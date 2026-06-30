@@ -112,6 +112,8 @@ def setup():
                 }
                 resolved = await resolve_step_fields(step)
                 encrypted_fields = {f.name for f in resolved if f.encrypted}
+                wf_cfg_form = await workflows_config.get()
+                max_upload_size_mb = wf_cfg_form.max_upload_size_mb
 
                 async def handle_file_upload(field_name, event):
                     upload = event.file
@@ -120,8 +122,7 @@ def setup():
                     filename = Path(upload.name).name
                     content_type = upload.content_type or "application/octet-stream"
 
-                    wf_cfg = await workflows_config.get()
-                    error = validate_upload(content, filename, content_type, wf_cfg.max_upload_size_mb)
+                    error = validate_upload(content, filename, content_type, max_upload_size_mb)
                     if error:
                         ui.notify(error, color="negative")
                         return
@@ -154,7 +155,6 @@ def setup():
                     await save_draft(request.id, data=data, actor_token=tok)
                     ui.notify(t("draft_saved"), color="positive")
 
-                wf_cfg_form = await workflows_config.get()
                 await render_step_form(
                     step,
                     request.data,

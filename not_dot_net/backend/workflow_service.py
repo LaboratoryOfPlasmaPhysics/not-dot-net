@@ -93,6 +93,7 @@ def _safe_upload_path(stored_path: str, root: Path | None = None) -> Path:
         ) from exc
     return candidate
 
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, and_
 
@@ -187,30 +188,46 @@ async def persist_workflow_upload(
     never overwrites an earlier version's blob on disk. Encrypted files already
     get a unique blob per call via store_encrypted.
     """
-    from not_dot_net.backend.encrypted_storage import store_encrypted
-
     file_id = uuid.uuid4()
-    if encrypted:
-        enc_file = await store_encrypted(content, filename, content_type, uploaded_by=uploaded_by)
-        wf_file = WorkflowFile(
-            id=file_id, request_id=request_id, step_key=step_key,
-            field_name=field_name, filename=filename, storage_path="encrypted",
-            uploaded_by=uploaded_by, encrypted_file_id=enc_file.id,
-        )
-    else:
-        dest_dir = UPLOAD_ROOT / str(request_id) / str(file_id)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / filename
-        dest.write_bytes(content)
-        wf_file = WorkflowFile(
-            id=file_id, request_id=request_id, step_key=step_key,
-            field_name=field_name, filename=filename, storage_path=str(dest),
-            uploaded_by=uploaded_by,
-        )
+    written_paths: list[Path] = []
     async with session_scope() as session:
-        session.add(wf_file)
-        await session.commit()
-    return wf_file
+        try:
+            if encrypted:
+                from not_dot_net.backend.encrypted_storage import prepare_encrypted_file_record
+                enc_file, blob_path = prepare_encrypted_file_record(
+                    content, filename, content_type, uploaded_by,
+                )
+                written_paths.append(blob_path)
+                session.add(enc_file)
+                wf_file = WorkflowFile(
+                    id=file_id, request_id=request_id, step_key=step_key,
+                    field_name=field_name, filename=filename, storage_path="encrypted",
+                    uploaded_by=uploaded_by, encrypted_file_id=enc_file.id,
+                )
+            else:
+                dest_dir = UPLOAD_ROOT / str(request_id) / str(file_id)
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / filename
+                dest.write_bytes(content)
+                written_paths.append(dest)
+                wf_file = WorkflowFile(
+                    id=file_id, request_id=request_id, step_key=step_key,
+                    field_name=field_name, filename=filename, storage_path=str(dest),
+                    uploaded_by=uploaded_by,
+                )
+            session.add(wf_file)
+            await session.commit()
+            await session.refresh(wf_file)
+            return wf_file
+        except Exception:
+            await session.rollback()
+            for path in written_paths:
+                try:
+                    if path.exists():
+                        path.unlink()
+                except OSError:
+                    logger.exception("Failed to clean up workflow upload path %s", path)
+            raise
 
 
 class WorkflowsConfig(BaseModel):
