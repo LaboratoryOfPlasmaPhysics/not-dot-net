@@ -1,16 +1,18 @@
 """New Request tab — pick a workflow type and fill the first step."""
 
+import logging
+import shutil
 import uuid
 from pathlib import Path
 
 from nicegui import app, ui
-from sqlalchemy import select, or_
+from sqlalchemy import delete as sa_delete, select, or_
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.encrypted_storage import store_encrypted
+from not_dot_net.backend.encrypted_storage import EncryptedFile, _resolve_encrypted_blob_path, store_encrypted
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.permissions import has_permissions
-from not_dot_net.backend.workflow_models import WorkflowFile
+from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowFile, WorkflowRequest
 from not_dot_net.backend.workflow_service import (
     UPLOAD_ROOT,
     create_request,
@@ -25,6 +27,7 @@ from not_dot_net.frontend.workflow_step import render_step_form
 _CLONE_DATE_FIELDS = {"departure_date", "return_date", "start_date", "end_date"}
 
 StagedUpload = tuple[bytes, str, str]
+logger = logging.getLogger(__name__)
 
 
 async def _search_users(query: str) -> list[dict]:
@@ -92,6 +95,79 @@ async def _persist_staged_uploads(
         await session.commit()
 
 
+async def _discard_failed_request(request_id: uuid.UUID) -> None:
+    """Best-effort cleanup for a request created before upload/submit failed."""
+    blob_paths: list[Path] = []
+    try:
+        async with session_scope() as session:
+            files = (
+                await session.execute(
+                    select(WorkflowFile).where(WorkflowFile.request_id == request_id)
+                )
+            ).scalars().all()
+            encrypted_ids = [f.encrypted_file_id for f in files if f.encrypted_file_id]
+
+            await session.execute(sa_delete(WorkflowFile).where(WorkflowFile.request_id == request_id))
+            await session.execute(sa_delete(WorkflowEvent).where(WorkflowEvent.request_id == request_id))
+
+            for encrypted_id in encrypted_ids:
+                enc_file = await session.get(EncryptedFile, encrypted_id)
+                if enc_file is None:
+                    continue
+                try:
+                    blob_paths.append(_resolve_encrypted_blob_path(enc_file.storage_path))
+                except ValueError:
+                    logger.warning("Encrypted blob path outside storage root, row %s", encrypted_id)
+                await session.delete(enc_file)
+
+            req = await session.get(WorkflowRequest, request_id)
+            if req is not None:
+                await session.delete(req)
+            await session.commit()
+    finally:
+        upload_dir = UPLOAD_ROOT / str(request_id)
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir, ignore_errors=True)
+        for blob_path in blob_paths:
+            if blob_path.exists():
+                try:
+                    blob_path.unlink()
+                except OSError:
+                    logger.exception("Failed to remove encrypted blob %s", blob_path)
+
+
+async def _create_and_submit_request(
+    user: User,
+    workflow_type: str,
+    step: WorkflowStepConfig,
+    data: dict,
+    staged_uploads: dict[str, StagedUpload] | None = None,
+):
+    req = None
+    try:
+        req = await create_request(
+            workflow_type=workflow_type,
+            created_by=user.id,
+            data=data,
+            actor=user,
+        )
+        await _persist_staged_uploads(req.id, step, staged_uploads or {}, user.id)
+        return await submit_step(
+            request_id=req.id,
+            actor_id=user.id,
+            action="submit",
+            data=data,
+            actor_user=user,
+        )
+    except Exception:
+        if req is not None:
+            try:
+                await _discard_failed_request(req.id)
+            except Exception:
+                logger.exception("Failed to clean up workflow request %s after submit failure", req.id)
+        raise
+
+
 async def render(user: User):
     """Render the new request tab content."""
     cfg = await workflows_config.get()
@@ -119,20 +195,12 @@ async def render(user: User):
                 first_step = wf_config.steps[0]
 
                 async def handle_submit(data, key=wf_key, fc=form_container, step=first_step, staged_uploads=None):
-                    req = await create_request(
-                        workflow_type=key,
-                        created_by=user.id,
-                        data=data,
-                        actor=user,
-                    )
-                    await _persist_staged_uploads(req.id, step, staged_uploads or {}, user.id)
-                    await submit_step(
-                        request_id=req.id,
-                        actor_id=user.id,
-                        action="submit",
-                        data=data,
-                        actor_user=user,
-                    )
+                    try:
+                        await _create_and_submit_request(user, key, step, data, staged_uploads)
+                    except Exception:
+                        logger.exception("Failed to create workflow request %s", key)
+                        ui.notify(t("request_creation_failed"), color="negative")
+                        return
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
 
