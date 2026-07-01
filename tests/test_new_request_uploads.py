@@ -1,4 +1,5 @@
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -175,6 +176,79 @@ async def test_failed_request_cleanup_removes_encrypted_upload_blobs():
         assert await session.get(EncryptedFile, wf_file.encrypted_file_id) is None
 
     assert not Path(blob_path).exists()
+
+
+async def test_failed_request_cleanup_keeps_blobs_when_db_commit_fails(monkeypatch):
+    user_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+    step = WorkflowStepConfig(
+        key="newcomer_info",
+        type="form",
+        fields=[
+            FieldConfig(
+                name="id_document",
+                type="file",
+                label="ID document",
+                encrypted=True,
+            )
+        ],
+    )
+
+    async with session_scope() as session:
+        session.add(User(id=user_id, email="cleanup-fail@test.com", hashed_password="x"))
+        session.add(
+            WorkflowRequest(
+                id=request_id,
+                type="onboarding",
+                current_step="newcomer_info",
+                created_by=user_id,
+            )
+        )
+        await session.commit()
+
+    await new_request._persist_staged_uploads(
+        request_id,
+        step,
+        {"id_document": (b"%PDF secret", "id.pdf", "application/pdf")},
+        user_id,
+    )
+
+    async with session_scope() as session:
+        wf_file = (
+            await session.execute(
+                select(WorkflowFile).where(WorkflowFile.request_id == request_id)
+            )
+        ).scalar_one()
+        enc_file = await session.get(EncryptedFile, wf_file.encrypted_file_id)
+        blob_path = Path(enc_file.storage_path)
+
+    real_session_scope = new_request.session_scope
+
+    class FailingCommitSession:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def __getattr__(self, name):
+            return getattr(self._wrapped, name)
+
+        async def commit(self):
+            raise RuntimeError("cleanup commit failed")
+
+    @asynccontextmanager
+    async def failing_session_scope():
+        async with real_session_scope() as session:
+            yield FailingCommitSession(session)
+
+    monkeypatch.setattr(new_request, "session_scope", failing_session_scope)
+
+    with pytest.raises(RuntimeError, match="cleanup commit failed"):
+        await new_request._discard_failed_request(request_id)
+
+    async with session_scope() as session:
+        assert await session.get(WorkflowRequest, request_id) is not None
+        assert await session.get(EncryptedFile, wf_file.encrypted_file_id) is not None
+
+    assert blob_path.exists()
 
 
 async def test_new_request_cleans_created_request_when_upload_persist_fails(monkeypatch):

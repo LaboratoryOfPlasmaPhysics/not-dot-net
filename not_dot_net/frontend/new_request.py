@@ -79,6 +79,7 @@ async def _persist_staged_uploads(
 async def _discard_failed_request(request_id: uuid.UUID) -> None:
     """Best-effort cleanup for a request created before upload/submit failed."""
     blob_paths: list[Path] = []
+    db_cleanup_committed = False
     try:
         async with session_scope() as session:
             files = (
@@ -105,16 +106,18 @@ async def _discard_failed_request(request_id: uuid.UUID) -> None:
             if req is not None:
                 await session.delete(req)
             await session.commit()
+            db_cleanup_committed = True
     finally:
-        upload_dir = UPLOAD_ROOT / str(request_id)
-        if upload_dir.exists():
-            shutil.rmtree(upload_dir, ignore_errors=True)
-        for blob_path in blob_paths:
-            if blob_path.exists():
-                try:
-                    blob_path.unlink()
-                except OSError:
-                    logger.exception("Failed to remove encrypted blob %s", blob_path)
+        if db_cleanup_committed:
+            upload_dir = UPLOAD_ROOT / str(request_id)
+            if upload_dir.exists():
+                shutil.rmtree(upload_dir, ignore_errors=True)
+            for blob_path in blob_paths:
+                if blob_path.exists():
+                    try:
+                        blob_path.unlink()
+                    except OSError:
+                        logger.exception("Failed to remove encrypted blob %s", blob_path)
 
 
 async def _create_and_submit_request(
