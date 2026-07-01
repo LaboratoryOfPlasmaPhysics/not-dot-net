@@ -149,6 +149,7 @@ async def _create_and_submit_request(
 async def render(user: User):
     """Render the new request tab content."""
     cfg = await workflows_config.get()
+    max_upload_size_mb = cfg.max_upload_size_mb
     clone = app.storage.user.pop("clone_prefill", None)
     container = ui.column().classes("w-full")
 
@@ -207,8 +208,7 @@ async def render(user: User):
                             content = await upload.read()
                             filename = Path(upload.name).name
                             content_type = upload.content_type or "application/octet-stream"
-                            wf_cfg = await workflows_config.get()
-                            error = validate_upload(content, filename, content_type, wf_cfg.max_upload_size_mb)
+                            error = validate_upload(content, filename, content_type, max_upload_size_mb)
                             if error:
                                 ui.notify(error, color="negative")
                                 return
@@ -224,7 +224,6 @@ async def render(user: User):
                                 merged["returning_user_id"] = selection["returning_user_id"]
                             await _submit(merged, staged_uploads=staged_uploads)
 
-                        wf_cfg_form = await workflows_config.get()
                         rendered_fields.update(
                             await render_step_form(
                                 step,
@@ -232,7 +231,7 @@ async def render(user: User):
                                 on_submit=submit_with_selection,
                                 files=uploaded_files,
                                 on_file_upload=handle_file_upload,
-                                max_upload_size_mb=wf_cfg_form.max_upload_size_mb,
+                                max_upload_size_mb=max_upload_size_mb,
                             )
                         )
 
