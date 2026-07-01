@@ -237,7 +237,8 @@ async def test_submit_post_commit_audit_failure_keeps_submitted_request(monkeypa
     async def fail_audit(*_args, **_kwargs):
         raise RuntimeError("audit unavailable")
 
-    monkeypatch.setattr("not_dot_net.backend.audit.log_audit", fail_audit)
+    import not_dot_net.backend.audit as audit_module
+    monkeypatch.setattr(audit_module, "log_audit", fail_audit)
 
     updated = await workflow_service.submit_step(
         req.id,

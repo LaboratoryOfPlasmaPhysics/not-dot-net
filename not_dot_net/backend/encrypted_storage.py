@@ -126,7 +126,6 @@ async def store_encrypted(
         async with session_scope() as session:
             session.add(enc_file)
             await session.commit()
-            await session.refresh(enc_file)
             return enc_file
     except Exception:
         if blob_path.exists():
