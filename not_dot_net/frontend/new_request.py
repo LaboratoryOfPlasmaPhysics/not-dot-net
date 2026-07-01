@@ -9,7 +9,7 @@ from nicegui import app, ui
 from sqlalchemy import delete as sa_delete, select, or_
 
 from not_dot_net.backend.db import User, session_scope
-from not_dot_net.backend.encrypted_storage import EncryptedFile, _resolve_encrypted_blob_path
+from not_dot_net.backend.encrypted_storage import delete_encrypted_by_id, unlink_encrypted_blob
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowFile, WorkflowRequest
@@ -93,14 +93,9 @@ async def _discard_failed_request(request_id: uuid.UUID) -> None:
             await session.execute(sa_delete(WorkflowEvent).where(WorkflowEvent.request_id == request_id))
 
             for encrypted_id in encrypted_ids:
-                enc_file = await session.get(EncryptedFile, encrypted_id)
-                if enc_file is None:
-                    continue
-                try:
-                    blob_paths.append(_resolve_encrypted_blob_path(enc_file.storage_path))
-                except ValueError:
-                    logger.warning("Encrypted blob path outside storage root, row %s", encrypted_id)
-                await session.delete(enc_file)
+                blob_path = await delete_encrypted_by_id(session, encrypted_id)
+                if blob_path is not None:
+                    blob_paths.append(blob_path)
 
             req = await session.get(WorkflowRequest, request_id)
             if req is not None:
@@ -113,11 +108,10 @@ async def _discard_failed_request(request_id: uuid.UUID) -> None:
             if upload_dir.exists():
                 shutil.rmtree(upload_dir, ignore_errors=True)
             for blob_path in blob_paths:
-                if blob_path.exists():
-                    try:
-                        blob_path.unlink()
-                    except OSError:
-                        logger.exception("Failed to remove encrypted blob %s", blob_path)
+                try:
+                    unlink_encrypted_blob(blob_path)
+                except OSError:
+                    logger.exception("Failed to remove encrypted blob %s", blob_path)
 
 
 async def _create_and_submit_request(

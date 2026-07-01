@@ -179,6 +179,31 @@ async def mark_for_retention(file_id: uuid.UUID, days: int) -> None:
         await session.commit()
 
 
+async def delete_encrypted(session, enc_file: EncryptedFile) -> Path:
+    """Stage an encrypted row deletion and return its blob path.
+
+    The caller must unlink the returned path only after the surrounding DB
+    transaction has committed.
+    """
+    blob_path = _resolve_encrypted_blob_path(enc_file.storage_path)
+    await session.delete(enc_file)
+    return blob_path
+
+
+async def delete_encrypted_by_id(session, file_id: uuid.UUID) -> Path | None:
+    """Stage deletion of an encrypted row by id and return its blob path."""
+    enc_file = await session.get(EncryptedFile, file_id)
+    if enc_file is None:
+        return None
+    return await delete_encrypted(session, enc_file)
+
+
+def unlink_encrypted_blob(blob_path: Path) -> None:
+    """Delete an encrypted blob file if it still exists."""
+    if blob_path.exists():
+        blob_path.unlink()
+
+
 async def run_retention_purge_job() -> None:
     """APScheduler entrypoint for purging encrypted files past retention."""
     try:
@@ -193,6 +218,7 @@ async def delete_expired() -> int:
     """Delete encrypted files past their retention date. Returns count deleted."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     deleted = 0
+    blob_paths: list[Path] = []
     async with session_scope() as session:
         result = await session.execute(
             select(EncryptedFile).where(
@@ -201,10 +227,9 @@ async def delete_expired() -> int:
             )
         )
         for enc_file in result.scalars().all():
-            blob_path = _resolve_encrypted_blob_path(enc_file.storage_path)
-            if blob_path.exists():
-                blob_path.unlink()
-            await session.delete(enc_file)
+            blob_paths.append(await delete_encrypted(session, enc_file))
             deleted += 1
         await session.commit()
+    for blob_path in blob_paths:
+        unlink_encrypted_blob(blob_path)
     return deleted
