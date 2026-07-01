@@ -213,3 +213,42 @@ async def test_new_request_cleans_created_request_when_upload_persist_fails(monk
         ).scalars().all()
 
     assert rows == []
+
+
+async def test_submit_post_commit_audit_failure_keeps_submitted_request(monkeypatch):
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        email="audit-fail@test.com",
+        hashed_password="x",
+        is_superuser=True,
+    )
+    async with session_scope() as session:
+        session.add(user)
+        await session.commit()
+
+    req = await workflow_service.create_request(
+        workflow_type="vpn_access",
+        created_by=user.id,
+        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        actor=user,
+    )
+
+    async def fail_audit(*_args, **_kwargs):
+        raise RuntimeError("audit unavailable")
+
+    monkeypatch.setattr("not_dot_net.backend.audit.log_audit", fail_audit)
+
+    updated = await workflow_service.submit_step(
+        req.id,
+        user.id,
+        "submit",
+        data={},
+        actor_user=user,
+    )
+
+    assert updated.current_step == "approval"
+    async with session_scope() as session:
+        stored = await session.get(WorkflowRequest, req.id)
+    assert stored is not None
+    assert stored.current_step == "approval"

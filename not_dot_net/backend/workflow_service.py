@@ -577,22 +577,28 @@ async def submit_step(
 
         # Audit. Token submissions have no logged-in actor (actor_id is None);
         # attribute them to the target person's email so the trail isn't blank.
-        from not_dot_net.backend.audit import log_audit
-        await log_audit(
-            "workflow", action,
-            actor_id=actor_id,
-            actor_email=req.target_email if actor_token is not None else None,
-            target_type="request", target_id=req.id,
-            detail=f"step={event.step_key} status={new_status}",
-        )
+        try:
+            from not_dot_net.backend.audit import log_audit
+            await log_audit(
+                "workflow", action,
+                actor_id=actor_id,
+                actor_email=req.target_email if actor_token is not None else None,
+                target_type="request", target_id=req.id,
+                detail=f"step={event.step_key} status={new_status}",
+            )
+        except Exception:
+            logger.exception("Failed to write workflow audit event for request %s", req.id)
 
         # Fire any AD effects declared on the step for this action.
         if getattr(step_cfg, "effects", None):
-            from not_dot_net.backend.workflow_effects import run_effects
-            await run_effects(
-                request=req, step=step_cfg, action=action,
-                ad_creds=ad_creds, actor=actor_user,
-            )
+            try:
+                from not_dot_net.backend.workflow_effects import run_effects
+                await run_effects(
+                    request=req, step=step_cfg, action=action,
+                    ad_creds=ad_creds, actor=actor_user,
+                )
+            except Exception:
+                logger.exception("Failed to run workflow effects for request %s", req.id)
 
         # Fire notifications (after commit, best-effort)
         try:
