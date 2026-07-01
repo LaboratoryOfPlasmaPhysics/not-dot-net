@@ -214,10 +214,9 @@ async def persist_workflow_upload(
                     id=file_id, request_id=request_id, step_key=step_key,
                     field_name=field_name, filename=filename, storage_path=str(dest),
                     uploaded_by=uploaded_by,
-                )
+            )
             session.add(wf_file)
             await session.commit()
-            await session.refresh(wf_file)
             return wf_file
         except Exception:
             await session.rollback()
