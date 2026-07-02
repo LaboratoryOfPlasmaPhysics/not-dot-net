@@ -503,6 +503,27 @@ async def test_compute_warnings_flags_unknown_options_key(user: User, admin_user
     assert any("options_key 'ghost'" in w for w in captured["dlg"].compute_warnings())
 
 
+async def test_compute_warnings_flags_encrypted_non_file_field(user: User, admin_user):
+    """Encryption is only implemented for file uploads; an encrypted=True text
+    field silently stores cleartext in WorkflowRequest.data, so the editor must
+    warn instead of letting the admin believe the value is protected."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    await workflows_config.set(WorkflowsConfig(workflows={"wf": WorkflowConfig(
+        label="WF", steps=[WorkflowStepConfig(key="s", type="form", fields=[
+            FieldConfig(name="ssn", type="text", encrypted=True),
+            FieldConfig(name="doc", type="file", encrypted=True)])])}))
+    captured = {}
+
+    @ui.page("/_vk3")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_vk3")
+    warnings = captured["dlg"].compute_warnings()
+    assert any("[wf/s/ssn]" in w and "cleartext" in w for w in warnings)
+    assert not any("[wf/s/doc]" in w for w in warnings)
+
+
 async def test_yaml_dump_reflects_working_copy(user: User, admin_user):
     from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
     await workflows_config.set(WorkflowsConfig(workflows={

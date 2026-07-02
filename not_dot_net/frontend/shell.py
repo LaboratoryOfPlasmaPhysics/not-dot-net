@@ -56,14 +56,16 @@ def setup():
         users_label = t("user_management")
 
         can_create = await has_permissions(effective_user, "create_workflows") if logged_in else False
+        can_audit = await has_permissions(effective_user, "view_audit_log") if logged_in else False
         is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
         is_superuser = bool(getattr(effective_user, "is_superuser", False))
 
         available_tabs = [dashboard_label, people_label, bookings_label, pages_label]
         if can_create:
             available_tabs.append(new_request_label)
-        if is_admin:
+        if can_audit:
             available_tabs.append(audit_label)
+        if is_admin:
             available_tabs.append(settings_label)
             available_tabs.append(ad_accounts_label)
         if is_superuser:
@@ -103,8 +105,9 @@ def setup():
                 ui.tab(pages_label, icon="article")
                 if can_create:
                     ui.tab(new_request_label, icon="add_circle")
-                if is_admin:
+                if can_audit:
                     ui.tab(audit_label, icon="policy")
+                if is_admin:
                     ui.tab(settings_label, icon="settings")
                     ui.tab(ad_accounts_label, icon="manage_accounts")
                 if is_superuser:
@@ -158,9 +161,10 @@ def setup():
             if can_create:
                 with ui.tab_panel(new_request_label):
                     await render_new_request(effective_user)
-            if is_admin:
+            if can_audit:
                 with ui.tab_panel(audit_label):
                     refreshers[audit_label] = render_audit()
+            if is_admin:
                 with ui.tab_panel(settings_label):
                     await render_settings(effective_user)
                 with ui.tab_panel(ad_accounts_label):

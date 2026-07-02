@@ -276,7 +276,10 @@ def create_user(
         init_db(database_url)
         secrets = load_or_create(Path(secrets_file), dev_mode=dev_mode)
         init_user_secrets(secrets)
-        await create_db_and_tables()
+        if dev_mode:
+            # Production schemas are Alembic-managed; create_all here would
+            # pre-create new tables and make the pending migration fail.
+            await create_db_and_tables()
 
         async with session_scope() as session:
             async with asynccontextmanager(get_user_db)(session) as user_db:
@@ -329,7 +332,10 @@ async def _import_personnel_csv(path: str, dry_run: bool):
 
     database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
     init_db(database_url)
-    await create_db_and_tables()
+    if "DATABASE_URL" not in os.environ:
+        # Production schemas are Alembic-managed; create_all here would
+        # pre-create new tables and make the pending migration fail.
+        await create_db_and_tables()
     print(await import_personnel(records))
 
 

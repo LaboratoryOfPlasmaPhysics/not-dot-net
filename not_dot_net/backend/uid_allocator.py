@@ -20,12 +20,14 @@ class UidAllocation(MappedAsDataclass, Base, kw_only=True):
 
     uid: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False)  # 'allocated' | 'seeded_from_ad'
+    # index=True on user_id/acquired_at mirrors migration 0013 so fresh-bootstrap
+    # (create_all) schemas match migrated ones.
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None,
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None, index=True,
     )
     sam_account: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     acquired_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), default=None,
+        DateTime(timezone=True), nullable=False, server_default=func.now(), default=None, index=True,
     )
     note: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 

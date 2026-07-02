@@ -5,6 +5,17 @@ from not_dot_net.backend.email_templates import (
 )
 
 
+def test_render_tolerates_content_context_key():
+    """A context key named "content" must not collide with the layout's body
+    slot: the old `render(content=..., **context)` raised TypeError, which
+    bypassed render_email's TemplateError fallback and crashed the send site."""
+    tmpl = EmailTemplate(subject="s", body="<p>{{ workflow_label }}</p>")
+    ctx = {"app_name": "LPP", "app_url": "http://x/", "recipient_name": "A",
+           "workflow_label": "VPN", "content": "context-content-value"}
+    _, body = _render(tmpl, DEFAULT_LAYOUT, ctx)
+    assert "<p>VPN</p>" in body
+
+
 def test_render_interpolates_and_wraps_in_layout():
     tmpl = EmailTemplate(subject="Hi {{ recipient_name }}", body="<p>{{ workflow_label }}</p>")
     ctx = {"app_name": "LPP", "app_url": "http://x/", "recipient_name": "Alex",

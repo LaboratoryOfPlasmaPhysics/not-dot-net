@@ -340,3 +340,73 @@ async def test_import_pages_coerces_malformed_scalar_fields():
     assert rows["p1"].sort_order == 0
     assert isinstance(rows["p1"].published, bool)
     assert rows["p2"].sort_order == 3
+
+
+async def test_import_pages_tolerates_null_string_fields():
+    """An explicit JSON null in content (or a non-string title) must not abort
+    the batch — on PostgreSQL the NOT NULL violation at the single commit rolls
+    back every row of the import."""
+    from not_dot_net.backend.data_io import import_pages
+
+    data = [
+        {"slug": "null-content", "title": "Has Null", "content": None},
+        {"slug": "good", "title": "Good", "content": "body"},
+    ]
+    result = await import_pages(data)
+
+    assert result["created"] == 2
+    async with session_scope() as session:
+        rows = {p.slug: p for p in (await session.execute(select(Page))).scalars().all()}
+    assert rows["null-content"].content == ""
+    assert rows["good"].content == "body"
+
+
+async def test_import_pages_replace_tolerates_null_content():
+    from not_dot_net.backend.data_io import import_pages
+
+    await import_pages([{"slug": "p", "title": "P", "content": "original"}])
+    result = await import_pages([{"slug": "p", "title": "P2", "content": None}], replace=True)
+
+    assert result["updated"] == 1
+    async with session_scope() as session:
+        page = (await session.execute(select(Page))).scalars().one()
+    assert page.title == "P2"
+    assert page.content == "original"
+
+
+async def test_import_resources_tolerates_non_string_type():
+    from not_dot_net.backend.data_io import import_resources
+
+    result = await import_resources([
+        {"name": "R1", "resource_type": 123},
+        {"name": "R2", "resource_type": "laptop"},
+    ])
+
+    assert result["created"] == 2
+    async with session_scope() as session:
+        rows = {r.name: r for r in (await session.execute(select(Resource))).scalars().all()}
+    assert rows["R1"].resource_type == "desktop"
+    assert rows["R2"].resource_type == "laptop"
+
+
+async def test_import_tenures_matches_email_case_insensitively():
+    """AD-provisioned users keep whatever case AD returned; a lowercase email
+    in the import file must still attach the tenure."""
+    from not_dot_net.backend.data_io import import_tenures
+    from not_dot_net.backend.tenure_service import UserTenure
+
+    async with session_scope() as session:
+        user = User(id=uuid.uuid4(), email="John.Doe@Lab.FR", hashed_password="x", role="")
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+
+    result = await import_tenures([{
+        "user_email": "john.doe@lab.fr", "status": "CDD",
+        "employer": "CNRS", "start_date": "2024-01-01",
+    }])
+
+    assert result["created"] == 1
+    async with session_scope() as session:
+        tenure = (await session.execute(select(UserTenure))).scalars().one()
+    assert tenure.user_id == user_id

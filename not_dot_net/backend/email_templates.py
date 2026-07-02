@@ -224,7 +224,9 @@ _subject_env = SandboxedEnvironment(autoescape=False)
 def _render(template: EmailTemplate, layout: str, context: dict) -> tuple[str, str]:
     subject = _subject_env.from_string(template.subject).render(**context)
     inner = _env.from_string(template.body).render(**context)
-    body_html = _env.from_string(layout).render(content=Markup(inner), **context)
+    # Merge instead of a `content=` kwarg: a context key named "content" would
+    # raise TypeError, which bypasses render_email's TemplateError fallback.
+    body_html = _env.from_string(layout).render({**context, "content": Markup(inner)})
     return subject, body_html
 
 

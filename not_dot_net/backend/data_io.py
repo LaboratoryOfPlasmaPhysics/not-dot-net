@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, UTC
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from not_dot_net.backend.booking_models import Resource
 from not_dot_net.backend.db import session_scope, User
@@ -32,6 +32,15 @@ def _as_int(value, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _as_str(value, default):
+    """Coerce a JSON scalar to str; fall back to `default` on null/garbage.
+
+    Same rationale as _as_int: an explicit null or a non-string in a NOT NULL
+    string column aborts the whole batch at commit on PostgreSQL.
+    """
+    return value if isinstance(value, str) else default
 
 
 def _as_bool(value, default: bool) -> bool:
@@ -133,8 +142,8 @@ async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, 
             )).scalar_one_or_none()
             if existing:
                 if replace:
-                    existing.title = item.get("title", existing.title)
-                    existing.content = item.get("content", existing.content)
+                    existing.title = title
+                    existing.content = _as_str(item.get("content"), existing.content)
                     existing.sort_order = _as_int(item.get("sort_order", existing.sort_order), existing.sort_order)
                     existing.published = _as_bool(item.get("published", existing.published), existing.published)
                     updated += 1
@@ -142,9 +151,9 @@ async def import_pages(data: list[dict], *, replace: bool = False) -> dict[str, 
                     skipped += 1
             else:
                 session.add(Page(
-                    title=item["title"],
+                    title=title,
                     slug=slug,
-                    content=item.get("content", ""),
+                    content=_as_str(item.get("content"), ""),
                     sort_order=_as_int(item.get("sort_order", 0), 0),
                     published=_as_bool(item.get("published", False), False),
                 ))
@@ -167,10 +176,10 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
             )).scalar_one_or_none()
             if existing:
                 if replace:
-                    existing.resource_type = item.get("resource_type", existing.resource_type)
-                    existing.description = item.get("description", existing.description)
-                    existing.location = item.get("location", existing.location)
-                    existing.specs = item.get("specs", existing.specs)
+                    existing.resource_type = _as_str(item.get("resource_type"), existing.resource_type)
+                    existing.description = _as_str(item.get("description"), existing.description)
+                    existing.location = _as_str(item.get("location"), existing.location)
+                    existing.specs = _as_str(item.get("specs"), existing.specs)
                     existing.active = _as_bool(item.get("active", existing.active), existing.active)
                     updated += 1
                 else:
@@ -178,10 +187,10 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
             else:
                 session.add(Resource(
                     name=name,
-                    resource_type=item.get("resource_type", "desktop"),
-                    description=item.get("description"),
-                    location=item.get("location"),
-                    specs=item.get("specs"),
+                    resource_type=_as_str(item.get("resource_type"), "desktop"),
+                    description=_as_str(item.get("description"), None),
+                    location=_as_str(item.get("location"), None),
+                    specs=_as_str(item.get("specs"), None),
                     active=_as_bool(item.get("active", True), True),
                 ))
                 created += 1
@@ -198,11 +207,14 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
     async with session_scope() as session:
         for item in items:
             email = _clean_text(item.get("user_email"))
-            if not email or not item.get("status") or not item.get("employer") or not item.get("start_date"):
+            status = _as_str(item.get("status"), "")
+            employer = _as_str(item.get("employer"), "")
+            if not email or not status or not employer or not item.get("start_date"):
                 skipped += 1
                 continue
+            # Case-insensitive: AD-provisioned users keep whatever case AD returned.
             user_result = await session.execute(
-                select(User).where(User.email == email)
+                select(User).where(func.lower(User.email) == email.lower())
             )
             user = user_result.scalar_one_or_none()
             if user is None:
@@ -215,11 +227,11 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
                 await _ensure_no_overlap(session, user.id, start_date, end_date)
                 session.add(UserTenure(
                     user_id=user.id,
-                    status=item["status"],
-                    employer=item["employer"],
+                    status=status,
+                    employer=employer,
                     start_date=start_date,
                     end_date=end_date,
-                    notes=item.get("notes"),
+                    notes=_as_str(item.get("notes"), None),
                 ))
                 created += 1
             except (TypeError, ValueError):

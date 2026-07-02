@@ -1118,6 +1118,11 @@ class WorkflowEditorDialog:
                         warnings.append(
                             f"[{wf_key}/{step.key}/{f.name}] options_key '{f.options_key}' is not a known vocabulary"
                         )
+                    if f.encrypted and f.type != "file":
+                        warnings.append(
+                            f"[{wf_key}/{step.key}/{f.name}] encrypted only applies to file fields — "
+                            f"a '{f.type}' value is stored in cleartext"
+                        )
                 checkbox_names = {f.name for f in resolved if f.type == "checkbox"}
                 for f in resolved:
                     if not f.visible_when:

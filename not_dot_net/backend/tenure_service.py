@@ -12,8 +12,10 @@ from not_dot_net.backend.db import Base, session_scope
 class UserTenure(MappedAsDataclass, Base, kw_only=True):
     __tablename__ = "user_tenure"
 
+    # index=True mirrors migration 0007 so fresh-bootstrap (create_all) schemas
+    # match migrated ones.
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE")
+        ForeignKey("user.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(String(100))
     employer: Mapped[str] = mapped_column(String(200))
