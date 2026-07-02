@@ -145,6 +145,19 @@ DEFAULT_TEMPLATES: dict[str, EmailTemplate] = {
         "</table>"
         "<p><a href=\"{{ bookings_url }}\">View your bookings</a></p>",
     ),
+    "booking_migrated": _t(
+        "[{{ app_name }}] Your booking was moved to {{ new_resource_name }}",
+        "<p>Hello {{ recipient_name }},</p>"
+        "<p>Your booking has been moved to another resource.</p>"
+        "<table>"
+        "<tr><td><strong>Previous resource</strong></td><td>{{ old_resource_name }}</td></tr>"
+        "<tr><td><strong>New resource</strong></td><td>{{ new_resource_name }}</td></tr>"
+        "<tr><td><strong>Location</strong></td><td>{{ location }}</td></tr>"
+        "<tr><td><strong>Start date</strong></td><td>{{ start_date }}</td></tr>"
+        "<tr><td><strong>Last usage day</strong></td><td>{{ last_day }}</td></tr>"
+        "</table>"
+        "<p><a href=\"{{ bookings_url }}\">View your bookings</a></p>",
+    ),
     "resource_out_of_service": _t(
         "[{{ app_name }}] Resource out of service: {{ resource_name }}",
         "<p>Hello {{ recipient_name }},</p>"
@@ -202,6 +215,12 @@ EMAIL_EVENTS: list[EmailEvent] = [
                 "headline": "Your booked resource is ready for pickup.",
                 "resource_name": "Laptop-07", "location": "Room 12",
                 "bookings_url": "http://x/?tab=bookings"}),
+    EmailEvent("booking_migrated", "Booking", "Booking migrated to another resource",
+               ["old_resource_name", "new_resource_name", "location", "start_date",
+                "last_day", "bookings_url"],
+               {"old_resource_name": "Laptop-07", "new_resource_name": "Laptop-09",
+                "location": "Room 12", "start_date": "2026-07-10",
+                "last_day": "2026-07-14", "bookings_url": "http://x/?tab=bookings"}),
     EmailEvent("resource_out_of_service", "Booking", "Resource out of service",
                ["headline", "resource_name", "location", "bookings_url"],
                {"headline": "Laptop-07 has been marked out of service.",

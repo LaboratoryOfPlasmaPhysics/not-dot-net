@@ -16,6 +16,7 @@ from not_dot_net.backend.booking_service import (
     list_bookings_for_resource,
     list_bookings_for_user,
     list_resources,
+    migrate_booking,
     restore_resource,
     set_resource_status,
     update_resource,
@@ -590,6 +591,10 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                     await _render_bookings(outer_container, user)
 
                 async def do_delete():
+                    upcoming = await list_bookings_for_resource(res.id, from_date=date.today())
+                    if upcoming:
+                        await _show_migration_dialog(outer_container, user, res, upcoming)
+                        return
                     with ui.dialog() as dlg, ui.card():
                         ui.label(t("delete_confirm"))
 
@@ -614,6 +619,52 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                 ui.button(t("delete"), icon="delete", on_click=do_delete).props(
                     "flat dense color=negative"
                 )
+
+
+async def _show_migration_dialog(outer_container, user, res, upcoming):
+    """Deleting a resource with upcoming bookings: one row per booking with a
+    target-resource select; everything must be migrated before the delete runs."""
+    others = [r for r in await list_resources(active_only=True) if r.id != res.id]
+    if not others:
+        ui.notify(t("migrate_no_target"), color="negative")
+        return
+    options = {str(r.id): (f"{r.name} ({r.location})" if r.location else r.name)
+               for r in others}
+    names = await resolve_user_names([bk.user_id for bk in upcoming])
+
+    with ui.dialog() as dlg, ui.card().classes("w-[36rem]"):
+        ui.label(t("migrate_bookings_title").format(name=res.name)).classes("text-h6")
+        ui.label(t("migrate_bookings_hint")).classes("text-sm text-grey-8")
+
+        selects = {}
+        for bk in upcoming:
+            with ui.row().classes("w-full items-center no-wrap"):
+                who = names.get(bk.user_id, str(bk.user_id))
+                ui.label(f"{who} — {_format_booking_period(bk.start_date, bk.end_date)}") \
+                    .classes("grow text-sm")
+                selects[bk.id] = ui.select(
+                    options, label=t("migrate_target"),
+                ).props("outlined dense stack-label").classes("w-56")
+
+        async def confirm():
+            if any(sel.value is None for sel in selects.values()):
+                ui.notify(t("migrate_select_all"), color="negative")
+                return
+            try:
+                for bk_id, sel in selects.items():
+                    await migrate_booking(bk_id, uuid.UUID(sel.value), actor=user)
+                await delete_resource(res.id, actor=user)
+            except (BookingConflictError, BookingValidationError) as e:
+                ui.notify(str(e), color="negative")
+                return
+            dlg.close()
+            ui.notify(t("bookings_migrated_resource_deleted"), color="positive")
+            await _render_bookings(outer_container, user)
+
+        with ui.row():
+            ui.button(t("cancel"), on_click=dlg.close).props("flat")
+            ui.button(t("migrate_and_delete"), on_click=confirm).props("color=negative")
+    dlg.open()
 
 
 async def _show_resource_dialog(outer_container, user, resource=None):

@@ -120,6 +120,17 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
             raise ValueError(f"Resource {resource_id} not found")
         if resource.active:
             raise BookingValidationError("Retire the resource before deleting it")
+        upcoming = await session.execute(
+            select(Booking).where(
+                Booking.resource_id == resource_id,
+                Booking.end_date >= date.today(),
+            ).limit(1)
+        )
+        if upcoming.scalars().first() is not None:
+            # The FK would CASCADE-delete them silently; force an explicit choice.
+            raise BookingValidationError(
+                "Resource has upcoming bookings — migrate or cancel them first"
+            )
         deleted_name = resource.name
         await session.delete(resource)
         await session.commit()
@@ -409,6 +420,79 @@ async def cancel_booking(booking_id: uuid.UUID, actor=None) -> None:
         target_type="resource", target_id=resource_id,
         detail=f"booking={booking_id}",
     )
+
+
+async def migrate_booking(booking_id: uuid.UUID, new_resource_id: uuid.UUID,
+                          actor=None) -> Booking:
+    """Move a booking to another resource (e.g. before deleting the old one).
+
+    Conflict-checked against the target with the same setup buffer as
+    create_booking; the booking's user is notified by email."""
+    if actor is not None:
+        await check_permission(actor, MANAGE_BOOKINGS)
+    cfg = await bookings_config.get()
+    buffer_days = timedelta(days=cfg.resource_setup_buffer_days)
+    async with session_scope() as session:
+        async with session.begin():
+            booking = await session.get(Booking, booking_id)
+            if booking is None:
+                raise ValueError("Booking not found")
+            if booking.resource_id == new_resource_id:
+                raise BookingValidationError("Booking is already on this resource")
+            # Same lock as create_booking: serialize bookings per target resource.
+            target = await session.get(Resource, new_resource_id, with_for_update=True)
+            if target is None:
+                raise ValueError(f"Resource {new_resource_id} not found")
+            if not target.active:
+                raise BookingValidationError("Target resource is not active")
+            old_resource = await session.get(Resource, booking.resource_id)
+            conflicts = await session.execute(
+                select(Booking).where(
+                    Booking.resource_id == new_resource_id,
+                    Booking.id != booking.id,
+                    Booking.start_date < booking.end_date + buffer_days,
+                    Booking.end_date > booking.start_date - buffer_days,
+                )
+            )
+            if conflicts.scalars().first():
+                raise BookingConflictError(
+                    f"'{target.name}' is already booked or within the setup buffer in that period"
+                )
+            user = await session.get(User, booking.user_id)
+            old_name = old_resource.name if old_resource else "?"
+            booking.resource_id = new_resource_id
+        await session.refresh(booking)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "booking", "migrate",
+        actor_id=(actor.id if actor else None),
+        target_type="resource", target_id=new_resource_id,
+        detail=f"booking={booking_id} {old_name} → {target.name}",
+    )
+    await _notify_booking_migrated(booking, old_name, target, user)
+    return booking
+
+
+async def _notify_booking_migrated(booking: Booking, old_name: str,
+                                   target: Resource, user: User | None) -> None:
+    if user is None or not user.email:
+        return
+    from not_dot_net.backend.email_templates import render_email
+    app_name, bookings_url, app_url = await _booking_email_env()
+    ctx = {
+        "recipient_name": user.full_name or user.email,
+        "old_resource_name": old_name,
+        "new_resource_name": target.name,
+        "location": target.location or "-",
+        "start_date": booking.start_date.isoformat(),
+        "last_day": booking_last_day(booking.end_date).isoformat(),
+        "bookings_url": bookings_url,
+        "app_name": app_name,
+        "app_url": app_url,
+    }
+    subject, body = await render_email("booking_migrated", ctx)
+    await send_mail(user.email, subject, body)
 
 
 async def get_resource_by_id(resource_id: uuid.UUID) -> Resource | None:
