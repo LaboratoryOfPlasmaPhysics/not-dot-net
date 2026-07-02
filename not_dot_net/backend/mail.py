@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from not_dot_net.backend.app_config import section
 from not_dot_net.backend.db import session_scope
@@ -31,8 +31,12 @@ class MailConfig(BaseModel):
     smtp_user: str = ""
     smtp_password: str = ""
     from_address: str = "noreply@not-dot-net.dev"
-    dev_mode: bool = True
-    dev_catch_all: str = ""
+    dev_mode: bool = Field(
+        True, description="Log emails instead of sending them. Turn OFF in production."
+    )
+    dev_catch_all: str = Field(
+        "", description="Staging mailbox receiving ALL mail while dev mode is on. Ignored in production."
+    )
 
     @model_validator(mode="before")
     @classmethod

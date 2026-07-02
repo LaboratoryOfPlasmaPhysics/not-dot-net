@@ -54,16 +54,15 @@ class MailOutbox(MappedAsDataclass, Base, kw_only=True):
 
 
 async def _smtp_send(to: str, subject: str, body_html: str, mail_cfg) -> None:
-    """Send one mail via aiosmtplib. Raises on SMTP error.
+    """Send one mail via aiosmtplib to `to` exactly. Raises on SMTP error.
 
-    Honors `dev_catch_all` (overrides `to`). Does NOT honor `dev_mode` —
-    the caller decides whether to short-circuit for dev mode.
+    Does NOT honor `dev_mode`/`dev_catch_all` — the caller decides both.
     """
     from not_dot_net.backend.mail import SmtpTlsMode
 
     msg = EmailMessage()
     msg["From"] = mail_cfg.from_address
-    msg["To"] = mail_cfg.dev_catch_all or to
+    msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body_html, subtype="html")
     mode = mail_cfg.smtp_tls_mode
@@ -79,19 +78,22 @@ async def _smtp_send(to: str, subject: str, body_html: str, mail_cfg) -> None:
 
 
 async def _send_one(row: MailOutbox, mail_cfg) -> None:
-    """Attempt to deliver one row. Mutates `row` in place; the caller commits."""
+    """Attempt to deliver one row. Mutates `row` in place; the caller commits.
+
+    dev_mode without a catch-all logs instead of sending; dev_mode WITH a
+    catch-all really sends — everything to the catch-all mailbox (staging).
+    Production always sends to the real recipient: a leftover catch-all must
+    never reroute token links or approvals.
+    """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if mail_cfg.dev_mode:
-        effective_to = mail_cfg.dev_catch_all or row.to_address
-        logger.info(
-            "[MAIL dev] To: %s (original: %s) Subject: %s",
-            effective_to, row.to_address, row.subject,
-        )
+    if mail_cfg.dev_mode and not mail_cfg.dev_catch_all:
+        logger.info("[MAIL dev] To: %s Subject: %s", row.to_address, row.subject)
         row.sent_at = now
         return
 
+    to = mail_cfg.dev_catch_all if mail_cfg.dev_mode else row.to_address
     try:
-        await _smtp_send(row.to_address, row.subject, row.body_html, mail_cfg)
+        await _smtp_send(to, row.subject, row.body_html, mail_cfg)
         row.sent_at = now
     except Exception as exc:
         row.attempts += 1

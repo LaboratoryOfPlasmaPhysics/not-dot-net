@@ -173,12 +173,12 @@ async def test_send_one_dev_mode_does_not_leak_body_or_tokens(caplog):
     assert row.sent_at is not None
 
 
-async def test_send_one_dev_catch_all_redirect(caplog):
-    """Dev-mode catch_all should redirect logs to the catch-all address
-    while preserving the original recipient in the log line."""
+async def test_send_one_dev_catch_all_sends_to_catch_all():
+    """Dev-mode with a catch-all really SENDS via SMTP — to the catch-all
+    mailbox — so a staging operator can see every outgoing email."""
+    from unittest.mock import AsyncMock, patch
     from not_dot_net.backend.mail_outbox import _send_one, MailOutbox
     from not_dot_net.backend.mail import MailConfig
-    import logging
 
     cfg = MailConfig(dev_mode=True, dev_catch_all="catch@test.local")
     row = MailOutbox(
@@ -188,12 +188,14 @@ async def test_send_one_dev_catch_all_redirect(caplog):
         next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
-    with caplog.at_level(logging.INFO, logger="not_dot_net.mail_outbox"):
+    with patch(
+        "not_dot_net.backend.mail_outbox.aiosmtplib.send",
+        new=AsyncMock(),
+    ) as mock_send:
         await _send_one(row, cfg)
 
-    log_text = "\n".join(r.message for r in caplog.records)
-    assert "catch@test.local" in log_text
-    assert "real-user@test.local" in log_text
+    msg = mock_send.await_args.args[0]
+    assert msg["To"] == "catch@test.local"
     assert row.sent_at is not None
 
 
@@ -324,8 +326,9 @@ async def test_send_one_production_constructs_html_message():
     assert "<b>world</b>" in body_part.get_content()
 
 
-async def test_send_one_production_dev_catch_all_overrides_recipient():
-    """In production with dev_catch_all set, msg['To'] becomes the catch-all."""
+async def test_send_one_production_ignores_dev_catch_all():
+    """A leftover catch-all from staging must never reroute production mail:
+    token links and approvals go to their real recipients."""
     from unittest.mock import AsyncMock, patch
     from not_dot_net.backend.mail_outbox import _send_one, MailOutbox
     from not_dot_net.backend.mail import MailConfig
@@ -345,7 +348,7 @@ async def test_send_one_production_dev_catch_all_overrides_recipient():
         await _send_one(row, cfg)
 
     msg = mock_send.await_args.args[0]
-    assert msg["To"] == "qa@test.local"
+    assert msg["To"] == "real-user@example.com"
 
 
 async def test_run_outbox_worker_processes_pending_then_sleeps():
