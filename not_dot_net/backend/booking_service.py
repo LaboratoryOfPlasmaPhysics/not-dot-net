@@ -26,8 +26,12 @@ ALLOWED_TRANSITIONS: dict[ResourceStatus, set[ResourceStatus]] = {
 
 
 def available_transitions(status: str) -> list[str]:
-    """Legal next status values from the given status, sorted for stable UI."""
-    nexts = ALLOWED_TRANSITIONS[ResourceStatus(status)]
+    """Legal next status values from the given status, sorted for stable UI.
+    Unknown (legacy/corrupt) statuses yield no transitions instead of crashing."""
+    try:
+        nexts = ALLOWED_TRANSITIONS[ResourceStatus(status)]
+    except ValueError:
+        return []
     return sorted(s.value for s in nexts)
 
 
@@ -182,12 +186,13 @@ def _resource_status_context(*, user, resource, subject_line, headline, bookings
 
 
 async def _current_booking_user(session, resource_id: uuid.UUID, today: date) -> User | None:
-    """The user of the active booking (start ≤ today < end); else the nearest
-    not-yet-ended upcoming booking; else None."""
+    """The user of the active booking (start ≤ today ≤ end — end_date is the
+    hand-back day, so its user is still current then); else the nearest
+    upcoming booking; else None."""
     result = await session.execute(
         select(Booking, User)
         .join(User, Booking.user_id == User.id)
-        .where(Booking.resource_id == resource_id, Booking.end_date > today)
+        .where(Booking.resource_id == resource_id, Booking.end_date >= today)
         .order_by(Booking.start_date)
     )
     rows = list(result.all())
@@ -338,20 +343,21 @@ async def create_booking(
 
     async with session_scope() as session:
         async with session.begin():
-            resource = await session.get(Resource, resource_id)
+            # Lock the resource row so concurrent create_booking calls serialize:
+            # FOR UPDATE on the conflicts query alone can't stop a phantom insert
+            # when no conflicting rows exist yet. No-op on SQLite, real on PostgreSQL.
+            resource = await session.get(Resource, resource_id, with_for_update=True)
             if resource is None:
                 raise ValueError(f"Resource {resource_id} not found")
             if not resource.active:
                 raise BookingValidationError("Resource is not active")
 
-            # Lock overlapping rows to prevent concurrent double-booking.
-            # with_for_update() is a no-op on SQLite but correct for PostgreSQL.
             conflicts = await session.execute(
                 select(Booking).where(
                     Booking.resource_id == resource_id,
                     Booking.start_date < end_date + timedelta(days=setup_buffer_days),
                     Booking.end_date > start_date - timedelta(days=setup_buffer_days),
-                ).with_for_update()
+                )
             )
             if conflicts.scalars().first():
                 raise BookingConflictError(
@@ -373,7 +379,7 @@ async def create_booking(
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "booking", "create",
-        actor_id=user_id,
+        actor_id=(actor.id if actor is not None else user_id),
         target_type="resource", target_id=resource_id,
         detail=f"{start_date} → {end_date}",
     )
