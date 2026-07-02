@@ -121,3 +121,83 @@ async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch)
         "File was stored CLEARTEXT — FieldRef.encrypted=None was not resolved from its definition. "
         "Fix: use resolve_step_fields() in workflow_token.py."
     )
+
+
+async def test_stale_tab_cannot_upload_after_token_cleared(user: User, monkeypatch):
+    """Uploads must re-validate the token server-side: a tab left open while the
+    request advances past target_person (token cleared) or completes must not be
+    able to attach new files — they would displace the reviewed 'current' file."""
+    import not_dot_net.frontend.workflow_token as wt_mod
+
+    await field_definitions_config.set(FieldDefinitionsConfig(definitions={
+        "passport": FieldDefinition(key="passport", type="file", encrypted=False),
+    }))
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "doc_wf": WorkflowConfig(label="Docs", steps=[
+            WorkflowStepConfig(
+                key="docs", type="form", assignee="target_person",
+                fields=[FieldRef(ref="passport")], actions=["submit"],
+            ),
+        ]),
+    }))
+
+    tok = str(uuid.uuid4())
+    expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)
+    async with session_scope() as s:
+        row = WorkflowRequest(type="doc_wf", current_step="docs",
+                              token=tok, token_expires_at=expiry)
+        s.add(row)
+        await s.commit()
+        await s.refresh(row)
+        req_id = row.id
+
+    async def _true(*_a, **_kw):
+        return True
+
+    async def _false(*_a, **_kw):
+        return False
+
+    monkeypatch.setattr(wt_mod, "is_locked_out", _false)
+    monkeypatch.setattr(wt_mod, "has_valid_code", _true)
+    monkeypatch.setattr(wt_mod, "verify_code", _true)
+    monkeypatch.setattr(wt_mod, "send_mail", _true)
+    monkeypatch.setattr(wt_mod, "validate_upload", lambda *a, **kw: None)
+
+    captured: dict = {}
+
+    async def _capturing_render(step, data, *, on_submit, on_save_draft=None,
+                                files=None, on_file_upload=None,
+                                max_upload_size_mb=10):
+        captured["on_file_upload"] = on_file_upload
+        ui.label("FORM_RENDERED")
+
+    monkeypatch.setattr(wt_mod, "render_step_form", _capturing_render)
+
+    await user.open(f"/workflow/token/{tok}")
+    user.find("Verify").click()
+    await user.should_see("FORM_RENDERED")
+
+    # The request moves on: token cleared (what every non-draft action does).
+    async with session_scope() as s:
+        row = await s.get(WorkflowRequest, req_id)
+        row.token = None
+        row.token_expires_at = None
+        await s.commit()
+
+    class _MockFile:
+        name = "passport.pdf"
+        content_type = "application/pdf"
+
+        async def read(self):
+            return b"%PDF fake"
+
+    class _MockEvent:
+        file = _MockFile()
+
+    await captured["on_file_upload"]("passport", _MockEvent())
+
+    async with session_scope() as s:
+        rows = (await s.execute(
+            select(WorkflowFile).where(WorkflowFile.request_id == req_id)
+        )).scalars().all()
+    assert rows == [], "Stale tab uploaded into a request whose token was cleared"

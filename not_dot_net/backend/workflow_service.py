@@ -517,8 +517,10 @@ async def submit_step(
             req.token = None
             req.token_expires_at = None
 
-        # Generate token if next step is for target_person
-        if next_step and new_status == RequestStatus.IN_PROGRESS:
+        # Generate token if next step is for target_person. Never on save_draft:
+        # the request stays on the same step, and rotating the token here would
+        # silently invalidate the URL the target person is actively using.
+        if next_step and new_status == RequestStatus.IN_PROGRESS and action != "save_draft":
             next_step_config = None
             for s in wf.steps:
                 if s.key == next_step:
@@ -622,7 +624,10 @@ async def cancel_request(
 ) -> WorkflowRequest:
     """Cancel a request. Only the creator can cancel their own in-progress requests."""
     async with session_scope() as session:
-        req = await session.get(WorkflowRequest, request_id)
+        # Row lock: the terminal-status check must not race a concurrent
+        # submit_step holding this row (a cancel landing after a final
+        # approve would flip a completed request to cancelled).
+        req = await session.get(WorkflowRequest, request_id, with_for_update=True)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
         if str(req.created_by) != str(actor_id):
@@ -642,7 +647,6 @@ async def cancel_request(
         )
         session.add(event)
         await session.commit()
-        await session.refresh(req)
 
         from not_dot_net.backend.audit import log_audit
         await log_audit(
@@ -939,7 +943,9 @@ async def resend_notification(
     Only works when the current step is assigned to target_person.
     """
     async with session_scope() as session:
-        req = await session.get(WorkflowRequest, request_id)
+        # Row lock: the status/assignee checks must not race a concurrent token
+        # submit, or a fresh token could be minted on a non-target_person step.
+        req = await session.get(WorkflowRequest, request_id, with_for_update=True)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
         if req.status != RequestStatus.IN_PROGRESS:

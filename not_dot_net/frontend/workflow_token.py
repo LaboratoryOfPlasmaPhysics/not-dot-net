@@ -116,6 +116,12 @@ def setup():
                 max_upload_size_mb = wf_cfg_form.max_upload_size_mb
 
                 async def handle_file_upload(field_name, event):
+                    # Re-validate server-side: a stale tab must not upload into a
+                    # request that advanced or completed since the page was opened
+                    # (the new file would displace the reviewed "current" version).
+                    if await get_request_by_token(token) is None:
+                        ui.notify(t("token_expired"), color="negative")
+                        return
                     upload = event.file
                     content = await upload.read()
                     # Basename only — never trust the client to provide a path.

@@ -215,7 +215,10 @@ async def run_retention_purge_job() -> None:
 
 
 async def delete_expired() -> int:
-    """Delete encrypted files past their retention date. Returns count deleted."""
+    """Delete encrypted files past their retention date. Returns count deleted.
+
+    A row whose blob path fails containment is skipped (left for manual repair)
+    so one corrupt/legacy row can't abort the purge for everything else."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     deleted = 0
     blob_paths: list[Path] = []
@@ -227,7 +230,15 @@ async def delete_expired() -> int:
             )
         )
         for enc_file in result.scalars().all():
-            blob_paths.append(await delete_encrypted(session, enc_file))
+            try:
+                blob_paths.append(await delete_encrypted(session, enc_file))
+            except ValueError:
+                logger.warning(
+                    "Retention purge skipped encrypted file %s: blob path %r "
+                    "is outside encrypted storage",
+                    enc_file.id, enc_file.storage_path,
+                )
+                continue
             deleted += 1
         await session.commit()
     for blob_path in blob_paths:

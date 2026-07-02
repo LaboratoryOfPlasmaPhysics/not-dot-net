@@ -149,12 +149,18 @@ async def test_read_encrypted_rejects_blob_path_outside_encrypted_storage(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_delete_expired_rejects_blob_path_outside_encrypted_storage(tmp_path):
+async def test_delete_expired_skips_bad_row_and_purges_the_rest(tmp_path):
+    """One corrupt/legacy row (path outside encrypted storage) must not abort
+    the whole purge: it is skipped (never unlinked), the rest is deleted."""
     outside = tmp_path / "do-not-delete.txt"
     outside.write_text("keep me")
 
+    good = await store_encrypted(b"old data", "old.pdf", "application/pdf", None)
+    good_blob = Path(good.storage_path)
     async with session_scope() as session:
-        enc_file = EncryptedFile(
+        reloaded = await session.get(EncryptedFile, good.id)
+        reloaded.retained_until = datetime.now(timezone.utc) - timedelta(days=1)
+        bad = EncryptedFile(
             wrapped_dek=b"wrapped",
             nonce=b"nonce",
             storage_path=str(outside),
@@ -162,10 +168,15 @@ async def test_delete_expired_rejects_blob_path_outside_encrypted_storage(tmp_pa
             content_type="application/pdf",
             retained_until=datetime.now(timezone.utc) - timedelta(days=1),
         )
-        session.add(enc_file)
+        session.add(bad)
         await session.commit()
+        bad_id = bad.id
 
-    with pytest.raises(ValueError, match="outside encrypted storage"):
-        await delete_expired()
+    count = await delete_expired()
 
+    assert count == 1
     assert outside.exists()
+    assert not good_blob.exists()
+    async with session_scope() as session:
+        assert await session.get(EncryptedFile, good.id) is None
+        assert await session.get(EncryptedFile, bad_id) is not None
