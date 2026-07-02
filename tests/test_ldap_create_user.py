@@ -129,6 +129,19 @@ def test_ldap_create_user_happy_path():
     assert uac_changes["userAccountControl"][0][1] == ["512"]  # 0x200
 
 
+def test_ldap_create_user_escapes_rdn_special_chars():
+    """A legitimate display name containing a comma must not break the DN
+    (unescaped, 'Diaz, PhD' nests the object in a nonexistent sub-container)."""
+    from not_dot_net.backend.auth.ldap import ldap_create_user, NewAdUser, LdapConfig
+
+    conn = _FakeConn()
+    cfg = LdapConfig(base_dn="DC=x,DC=y")
+    new_user = NewAdUser(**_new_user_kwargs(display_name="Diaz, PhD"))
+
+    dn = ldap_create_user(new_user, "admin", "pw", cfg, _fake_connect_returning(conn))
+    assert dn == "CN=Diaz\\, PhD,OU=Users,DC=x,DC=y"
+
+
 def test_ldap_create_user_add_failure_raises_before_password():
     from not_dot_net.backend.auth.ldap import (
         ldap_create_user, NewAdUser, LdapConfig, LdapModifyError,

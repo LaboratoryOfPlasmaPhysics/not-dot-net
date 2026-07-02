@@ -37,9 +37,9 @@ def _lock_socketio_cors():
     from nicegui import core
     allowed = os.environ.get("ALLOWED_ORIGINS", "").split(",")
     allowed = [o.strip() for o in allowed if o.strip()]
-    if not allowed:
-        allowed = []
-    core.sio.eio.cors_allowed_origins = allowed
+    # None = engineio's same-origin default (built from Host/X-Forwarded-*).
+    # NEVER []: engineio treats [] as "skip origin validation entirely".
+    core.sio.eio.cors_allowed_origins = allowed or None
     logger.info("Socket.IO CORS locked to: %s", allowed or "(same-origin only)")
 
 

@@ -137,6 +137,12 @@ async def _render_form(prefix, cfg_section, current, user):
         inputs[field_name] = widget
 
     async def save():
+        from not_dot_net.backend.permissions import check_permission
+        try:
+            await check_permission(user, "manage_settings")
+        except PermissionError:
+            ui.notify(t("permission_denied"), color="negative")
+            return
         try:
             update = {}
             for field_name, field_info in schema.model_fields.items():
@@ -158,10 +164,17 @@ async def _render_form(prefix, cfg_section, current, user):
             await cfg_section.set(new_config)
             await log_audit("settings", "update", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
             ui.notify(t("settings_saved"), color="positive")
-        except (ValueError, ValidationError) as e:
+        except (TypeError, ValueError, ValidationError) as e:
+            # TypeError: int(None) when a cleared ui.number submits None.
             ui.notify(str(e), color="negative")
 
     async def reset():
+        from not_dot_net.backend.permissions import check_permission
+        try:
+            await check_permission(user, "manage_settings")
+        except PermissionError:
+            ui.notify(t("permission_denied"), color="negative")
+            return
         await cfg_section.reset()
         await log_audit("settings", "reset", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
         ui.notify(t("settings_reset"), color="info")

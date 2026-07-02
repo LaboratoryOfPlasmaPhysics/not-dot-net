@@ -52,6 +52,11 @@ async def _render_roles(container, user):
             new_label = ui.input(t("role_label")).props("outlined dense").classes("w-48")
 
             async def add_role():
+                try:
+                    await check_permission(user, MANAGE_ROLES)
+                except PermissionError:
+                    ui.notify(t("permission_denied"), color="negative")
+                    return
                 key = new_key.value.strip().lower()
                 label = new_label.value.strip()
                 if not key or not label:
@@ -78,6 +83,11 @@ async def _render_roles(container, user):
         ).props("outlined dense").classes("w-48")
 
         async def save_default():
+            try:
+                await check_permission(user, MANAGE_ROLES)
+            except PermissionError:
+                ui.notify(t("permission_denied"), color="negative")
+                return
             cfg_now = await roles_config.get()
             cfg_now.default_role = default_select.value
             await roles_config.set(cfg_now)
@@ -100,6 +110,11 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
 
     with ui.row().classes("mt-2 gap-2"):
         async def save():
+            try:
+                await check_permission(user, MANAGE_ROLES)
+            except PermissionError:
+                ui.notify(t("permission_denied"), color="negative")
+                return
             cfg = await roles_config.get()
             selected = [k for k, cb in checkboxes.items() if cb.value]
             cfg.roles[role_key].permissions = selected
@@ -116,6 +131,11 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
         ui.button(t("save"), on_click=save).props("color=primary")
 
         async def delete():
+            try:
+                await check_permission(user, MANAGE_ROLES)
+            except PermissionError:
+                ui.notify(t("permission_denied"), color="negative")
+                return
             current_count = (await _user_count_by_role()).get(role_key, 0)
             if current_count > 0:
                 ui.notify(

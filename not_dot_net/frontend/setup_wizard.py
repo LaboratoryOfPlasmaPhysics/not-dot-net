@@ -17,6 +17,15 @@ async def has_superuser() -> bool:
         return result.scalar_one_or_none() is not None
 
 
+async def complete_setup(email: str, password: str) -> bool:
+    """Create the bootstrap super-user; refuse if one appeared since the page
+    loaded (a stale /setup tab must not mint a second superuser)."""
+    if await has_superuser():
+        return False
+    await ensure_default_admin(email, password)
+    return True
+
+
 def setup():
     @ui.page("/setup")
     async def setup_page():
@@ -32,7 +41,9 @@ def setup():
             if not email.value or not password.value:
                 ui.notify(t("setup_email_password_required"), color="negative")
                 return
-            await ensure_default_admin(email.value, password.value)
+            if not await complete_setup(email.value, password.value):
+                ui.navigate.to("/login")
+                return
             if app_name.value:
                 cfg = await org_config.get()
                 await org_config.set(cfg.model_copy(update={"app_name": app_name.value}))

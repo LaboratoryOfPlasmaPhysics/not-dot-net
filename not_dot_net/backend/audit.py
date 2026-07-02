@@ -50,13 +50,16 @@ class AuditEvent(MappedAsDataclass, Base, kw_only=True):
 
 
 def request_ip(request) -> str | None:
-    """Best-effort client IP from a Starlette/FastAPI request, honoring
-    X-Forwarded-For (the app runs behind HAProxy in production)."""
+    """Best-effort client IP from a Starlette/FastAPI request.
+
+    X-Forwarded-For is client-suppliable; HAProxy APPENDS the real client IP,
+    so only the LAST element is trustworthy — taking the first would let an
+    attacker choose the IP recorded in audit rows and security alerts."""
     if request is None:
         return None
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip() or None
+        return forwarded_for.rsplit(",", 1)[-1].strip() or None
     client = getattr(request, "client", None)
     return getattr(client, "host", None)
 

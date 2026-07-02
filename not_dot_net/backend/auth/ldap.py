@@ -763,7 +763,10 @@ def ldap_create_user(
     Order: add disabled → set password → optionally set pwdLastSet=0 → enable account.
     Raises LdapModifyError on any failure.
     """
-    dn = f"CN={new_user.display_name},{new_user.ou_dn}"
+    from ldap3.utils.dn import escape_rdn
+
+    # RFC 4514: a legitimate name like "Diaz, PhD" would otherwise split the RDN.
+    dn = f"CN={escape_rdn(new_user.display_name)},{new_user.ou_dn}"
     object_class = ["top", "person", "organizationalPerson", "user"]
     attrs = {
         "sAMAccountName": new_user.sam_account,
