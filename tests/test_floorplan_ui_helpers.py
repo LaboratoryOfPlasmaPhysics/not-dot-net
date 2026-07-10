@@ -40,3 +40,12 @@ def test_points_svg_highlights_matching_point():
     other = MapPoint(floor_plan_id=uuid.uuid4(), label="Room 102", kind="room", x=90, y=60)
     svg = _points_svg([target, other], highlight_id=target.id)
     assert svg.count('stroke="black"') == 1
+
+
+def test_pin_kind_options_cover_all_kind_colors():
+    """The kind dropdown offered in the add-pin dialog must stay in sync with
+    the colors _points_svg knows how to render — a kind with no color entry
+    silently renders grey, which would be confusing in the picker."""
+    from not_dot_net.frontend.floorplan import _KIND_COLOR, PIN_KINDS
+
+    assert set(PIN_KINDS) == set(_KIND_COLOR)
