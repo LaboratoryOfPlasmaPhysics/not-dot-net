@@ -1,6 +1,13 @@
 import uuid
+from io import BytesIO
 
+from nicegui import ui
+from nicegui.testing import User
+from PIL import Image
+
+from not_dot_net.backend.db import User as DbUser, session_scope
 from not_dot_net.backend.floorplan_models import MapPoint
+from not_dot_net.backend.floorplan_service import create_floor_plan
 
 
 def test_floorplan_image_data_uri_wraps_jpeg_bytes():
@@ -49,3 +56,54 @@ def test_pin_kind_options_cover_all_kind_colors():
     from not_dot_net.frontend.floorplan import _KIND_COLOR, PIN_KINDS
 
     assert set(PIN_KINDS) == set(_KIND_COLOR)
+
+
+def _make_image_bytes(width=400, height=300) -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (width, height), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def _make_admin(email="fp-admin@test.com") -> DbUser:
+    async with session_scope() as session:
+        db_user = DbUser(id=uuid.uuid4(), email=email, hashed_password="x", is_superuser=True)
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
+
+
+async def test_place_pin_mode_persists_across_pin_area_rerender(user: User) -> None:
+    """Reproducer: _render_plan_area used to hardcode the "Place pin" switch
+    back to off every time it re-rendered (e.g. right after a pin was added),
+    forcing an admin placing several pins in a row to re-toggle it before
+    every click. The switch's initial value must come from persisted state."""
+    from not_dot_net.frontend.floorplan import _render_plan_area
+
+    admin = await _make_admin()
+    plan = await create_floor_plan("Reproducer Plan", _make_image_bytes(), actor=admin)
+
+    @ui.page("/floorplan-rerender-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _render_plan_area(area, state, admin, True)
+
+        async def simulate_pin_added():
+            # Mirrors what _show_add_pin_dialog's do_save does: the switch
+            # was already toggled on by the admin, then a pin gets added and
+            # the plan area re-renders.
+            state["place_mode"] = True
+            await _render_plan_area(area, state, admin, True)
+            with area:
+                ui.label("rerender-complete")
+
+        ui.button("simulate-pin-added", on_click=simulate_pin_added)
+
+    await user.open("/floorplan-rerender-test")
+    user.find("simulate-pin-added").click()
+    await user.should_see("rerender-complete")
+
+    switches = list(user.find(kind=ui.switch).elements)
+    assert len(switches) == 1
+    assert switches[0].value is True

@@ -84,7 +84,7 @@ async def _render_floorplan(container, user: User):
                 ).props("color=primary")
             return
 
-        state = {"selected": plans[0], "highlight_id": None}
+        state = {"selected": plans[0], "highlight_id": None, "place_mode": False}
         plan_area = ui.column().classes("w-full")
 
         if len(plans) > 1:
@@ -119,7 +119,6 @@ async def _render_plan_area(plan_area, state, user, is_admin):
     plan = state["selected"]
     image_bytes = await get_floor_plan_image(plan.id)
     points = await list_map_points(plan.id)
-    place_mode = {"on": False}
 
     with plan_area:
         if image_bytes is None:
@@ -127,8 +126,11 @@ async def _render_plan_area(plan_area, state, user, is_admin):
             return
 
         if is_admin:
-            ui.switch(t("floorplan_place_pin_mode"), value=False,
-                      on_change=lambda e: place_mode.__setitem__("on", e.value))
+            # Preserve place-pin mode across re-renders (e.g. right after adding
+            # a pin) — otherwise the switch resets to off and an admin placing
+            # several pins in a row has to re-toggle it before every click.
+            ui.switch(t("floorplan_place_pin_mode"), value=state.get("place_mode", False),
+                      on_change=lambda e: state.__setitem__("place_mode", e.value))
 
         image = ui.interactive_image(
             source=_floorplan_image_data_uri(image_bytes),
@@ -137,7 +139,7 @@ async def _render_plan_area(plan_area, state, user, is_admin):
 
         async def on_mouse(e):
             x, y = round(e.image_x), round(e.image_y)
-            if is_admin and place_mode["on"]:
+            if is_admin and state.get("place_mode", False):
                 await _show_add_pin_dialog(plan_area, state, user, is_admin, plan.id, x, y)
                 return
             hit = nearest_map_point(points, x, y)
