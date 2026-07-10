@@ -32,6 +32,9 @@ class Resource(MappedAsDataclass, Base, kw_only=True):
     status: Mapped[str] = mapped_column(
         String(20), default="available", server_default="available"
     )
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
 
 

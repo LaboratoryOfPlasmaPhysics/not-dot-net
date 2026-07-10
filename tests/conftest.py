@@ -81,6 +81,7 @@ async def setup_db(request, monkeypatch):
     import not_dot_net.backend.workflow_models  # noqa: F401
     import not_dot_net.backend.booking_models  # noqa: F401
     import not_dot_net.backend.floorplan_models  # noqa: F401
+    import not_dot_net.backend.office_availability  # noqa: F401
     import not_dot_net.backend.audit  # noqa: F401
     import not_dot_net.backend.app_config  # noqa: F401
     import not_dot_net.backend.encrypted_storage  # noqa: F401

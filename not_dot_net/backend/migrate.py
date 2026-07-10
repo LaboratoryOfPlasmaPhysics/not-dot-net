@@ -53,6 +53,7 @@ async def _create_all(database_url: str) -> None:
     import not_dot_net.backend.mail_outbox  # noqa: F401
     import not_dot_net.backend.uid_allocator  # noqa: F401
     import not_dot_net.backend.floorplan_models  # noqa: F401 — register FloorPlan/MapPoint with Base
+    import not_dot_net.backend.office_availability  # noqa: F401 — register OfficeAvailability with Base
 
     engine = create_async_engine(database_url, poolclass=NullPool)
     try:
