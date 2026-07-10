@@ -62,8 +62,6 @@ async def _render_floorplan(container, user: User):
     with container:
         if not plans:
             ui.label(t("floorplan_none")).classes("text-grey")
-            if is_admin:
-                ui.button(t("floorplan_add"), icon="add").props("color=primary")
             return
 
         state = {"selected": plans[0], "highlight_id": None}
