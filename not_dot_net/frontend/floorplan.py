@@ -42,6 +42,13 @@ def _pin_kind_select_options() -> dict[str, str]:
     return {kind: t(f"kind_{kind}") for kind in PIN_KINDS}
 
 
+def _resource_picker_visible(kind: str) -> bool:
+    """Only "room" pins can be linked to an office resource — linking one to
+    another kind would create a dead link, since the office-availability UI
+    only ever renders for room-kind pins (see is_office in _show_pin_actions)."""
+    return kind == "room"
+
+
 def _qdate_option_date(value) -> str:
     return value.isoformat().replace("-", "/")
 
@@ -247,9 +254,15 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
         kind_select = ui.select(
             _pin_kind_select_options(), value="room", label=t("floorplan_pin_kind"),
         ).props("outlined dense").classes("w-full")
-        resource_select = ui.select(
-            resource_options, value=None, label=t("floorplan_link_resource"),
-        ).props("outlined dense with-input").classes("w-full")
+        resource_container = ui.column().classes("w-full")
+        with resource_container:
+            resource_select = ui.select(
+                resource_options, value=None, label=t("floorplan_link_resource"),
+            ).props("outlined dense with-input").classes("w-full")
+        resource_container.set_visibility(_resource_picker_visible(kind_select.value))
+        kind_select.on_value_change(
+            lambda e: resource_container.set_visibility(_resource_picker_visible(e.value))
+        )
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
@@ -275,6 +288,7 @@ async def _show_pin_actions(plan_area, state, user, is_admin, point):
     if point.resource_id is not None:
         resource = await get_resource_by_id(point.resource_id)
     is_office = point.kind == "room" and resource is not None and resource.resource_type == "office"
+    can_edit_resource = is_office and await has_permissions(user, "manage_bookings")
 
     with ui.dialog() as dialog, ui.card().classes("w-80"):
         ui.label(point.label).classes("text-h6")
@@ -285,6 +299,20 @@ async def _show_pin_actions(plan_area, state, user, is_admin, point):
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
+
+            if can_edit_resource:
+                async def do_edit():
+                    from not_dot_net.frontend.bookings import _show_resource_dialog
+
+                    dialog.close()
+                    await _show_resource_dialog(
+                        None, user, resource=resource,
+                        on_saved=lambda: _render_plan_area(plan_area, state, user, is_admin),
+                    )
+
+                ui.button(t("edit_resource"), icon="edit", on_click=do_edit).props(
+                    "flat dense color=primary"
+                )
 
             if is_admin:
                 async def do_delete():

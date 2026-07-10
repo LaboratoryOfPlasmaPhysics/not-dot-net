@@ -695,7 +695,7 @@ async def _show_migration_dialog(outer_container, user, res, upcoming):
     dlg.open()
 
 
-async def _show_resource_dialog(outer_container, user, resource=None):
+async def _show_resource_dialog(outer_container, user, resource=None, on_saved=None):
     editing = resource is not None
 
     with ui.dialog() as dialog, ui.card().classes("w-96"):
@@ -792,7 +792,10 @@ async def _show_resource_dialog(outer_container, user, resource=None):
                     ui.notify(str(e), color="negative")
                     return
                 dialog.close()
-                await _render_bookings(outer_container, user)
+                if on_saved is not None:
+                    await on_saved()
+                else:
+                    await _render_bookings(outer_container, user)
 
             ui.button(t("save"), on_click=do_save).props("color=primary")
 

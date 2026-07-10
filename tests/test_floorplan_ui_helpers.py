@@ -301,3 +301,130 @@ async def test_pin_actions_hides_offer_button_for_floorplan_admin_without_bookin
     await user.open("/pin-actions-floorplan-admin-test")
     with pytest.raises(AssertionError):
         await user.should_see(t("floorplan_offer_availability"))
+
+
+def test_resource_picker_visible_only_for_room_kind():
+    from not_dot_net.frontend.floorplan import _resource_picker_visible
+
+    assert _resource_picker_visible("room") is True
+    assert _resource_picker_visible("desk") is False
+    assert _resource_picker_visible("wall_plug") is False
+    assert _resource_picker_visible("asset") is False
+    assert _resource_picker_visible("other") is False
+
+
+async def test_pin_actions_shows_edit_button_for_manage_bookings_admin(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """An admin who can manage bookings must be able to reopen the resource
+    dialog from the pin popup — office resources are excluded from the
+    Bookings tab grid, so this popup is the only other way to edit them."""
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner4@test.com")
+    resource = await create_resource("Room 401", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan 4", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 401", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-edit-admin-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _show_pin_actions(area, state, admin, True, point)
+
+    await user.open("/pin-actions-edit-admin-test")
+    await user.should_see(t("edit_resource"))
+
+
+async def test_pin_actions_hides_edit_button_for_owner_non_admin(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """The office's owner can offer/book/revoke availability, but editing the
+    underlying Resource row (type, location, specs, owner reassignment) is an
+    admin-only action distinct from that — the owner must not see Edit."""
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+    import pytest
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner5@test.com")
+    resource = await create_resource("Room 402", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan 5", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 402", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-edit-owner-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _show_pin_actions(area, state, owner, False, point)
+
+    await user.open("/pin-actions-edit-owner-test")
+    with pytest.raises(AssertionError):
+        await user.should_see(t("edit_resource"))
+
+
+async def test_pin_actions_hides_edit_button_for_floorplan_admin_without_booking_permission(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """Reproducer for the exact permission-mixing mistake fixed for the
+    Offer/Revoke buttons in b5ae458: a manage_floorplans-only admin (is_admin
+    True from this file's perspective) must NOT see Edit — that button must
+    gate on manage_bookings, not the is_admin parameter."""
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.backend.roles import RoleDefinition, roles_config
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+    import pytest
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    cfg = await roles_config.get()
+    cfg.roles["floorplan_manager2"] = RoleDefinition(
+        label="Floorplan Manager 2", permissions=["manage_floorplans"],
+    )
+    await roles_config.set(cfg)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner6@test.com")
+    async with session_scope() as session:
+        floorplan_manager = DbUser(
+            id=uuid.uuid4(), email="fp-manager2@test.com", hashed_password="x",
+            is_active=True, role="floorplan_manager2",
+        )
+        session.add(floorplan_manager)
+        await session.commit()
+        await session.refresh(floorplan_manager)
+
+    resource = await create_resource("Room 403", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan 6", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 403", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-edit-floorplan-admin-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _show_pin_actions(area, state, floorplan_manager, True, point)
+
+    await user.open("/pin-actions-edit-floorplan-admin-test")
+    with pytest.raises(AssertionError):
+        await user.should_see(t("edit_resource"))
