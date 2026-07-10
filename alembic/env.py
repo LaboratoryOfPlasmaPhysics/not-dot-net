@@ -18,6 +18,7 @@ import not_dot_net.backend.encrypted_storage  # noqa: F401
 import not_dot_net.backend.tenure_service  # noqa: F401
 import not_dot_net.backend.mail_outbox  # noqa: F401
 import not_dot_net.backend.uid_allocator  # noqa: F401
+import not_dot_net.backend.floorplan_models  # noqa: F401
 from not_dot_net.backend.db import Base
 
 config = context.config
