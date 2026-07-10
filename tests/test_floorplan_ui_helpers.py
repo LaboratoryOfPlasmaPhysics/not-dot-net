@@ -112,3 +112,109 @@ async def test_place_pin_mode_persists_across_pin_area_rerender(
     switches = list(user.find(kind=ui.switch).elements)
     assert len(switches) == 1
     assert switches[0].value is True
+
+
+from datetime import date
+
+
+def test_clamp_range_to_window_keeps_value_inside_bounds():
+    from not_dot_net.frontend.floorplan import _clamp_range_to_window
+
+    result = _clamp_range_to_window(
+        {"from": "2026-08-05", "to": "2026-08-08"},
+        date(2026, 8, 1), date(2026, 8, 15),
+    )
+    assert result == {"from": "2026-08-05", "to": "2026-08-08"}
+
+
+def test_clamp_range_to_window_clamps_start_before_window():
+    from not_dot_net.frontend.floorplan import _clamp_range_to_window
+
+    result = _clamp_range_to_window(
+        {"from": "2026-07-20", "to": "2026-08-08"},
+        date(2026, 8, 1), date(2026, 8, 15),
+    )
+    assert result == {"from": "2026-08-01", "to": "2026-08-08"}
+
+
+def test_clamp_range_to_window_clamps_end_after_window():
+    from not_dot_net.frontend.floorplan import _clamp_range_to_window
+
+    result = _clamp_range_to_window(
+        {"from": "2026-08-05", "to": "2026-09-01"},
+        date(2026, 8, 1), date(2026, 8, 15),
+    )
+    assert result == {"from": "2026-08-05", "to": "2026-08-14"}
+
+
+def test_clamp_range_to_window_falls_back_on_invalid_value():
+    from not_dot_net.frontend.floorplan import _clamp_range_to_window
+
+    result = _clamp_range_to_window(None, date(2026, 8, 1), date(2026, 8, 15))
+    assert result == {"from": "2026-08-01", "to": "2026-08-14"}
+
+
+async def _create_staff_user(email: str) -> DbUser:
+    async with session_scope() as session:
+        db_user = DbUser(id=uuid.uuid4(), email=email, hashed_password="x", is_active=True)
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
+
+
+async def test_pin_actions_shows_offer_button_for_owner(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner@test.com")
+    resource = await create_resource("Room 301", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 301", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-owner-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _show_pin_actions(area, state, owner, False, point)
+
+    await user.open("/pin-actions-owner-test")
+    await user.should_see(t("floorplan_offer_availability"))
+
+
+async def test_pin_actions_hides_offer_button_for_stranger(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+    import pytest
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner2@test.com")
+    stranger = await _create_staff_user(email="stranger@test.com")
+    resource = await create_resource("Room 302", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan 2", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 302", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-stranger-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        await _show_pin_actions(area, state, stranger, False, point)
+
+    await user.open("/pin-actions-stranger-test")
+    with pytest.raises(AssertionError):
+        await user.should_see(t("floorplan_offer_availability"))

@@ -1,6 +1,7 @@
 """Floor Plan tab — view and (admin) manage building floor plans and pins."""
 
 import base64
+from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
 from nicegui import ui
@@ -39,6 +40,29 @@ PIN_KINDS = ["room", "desk", "wall_plug", "asset", "other"]
 
 def _pin_kind_select_options() -> dict[str, str]:
     return {kind: t(f"kind_{kind}") for kind in PIN_KINDS}
+
+
+def _qdate_option_date(value) -> str:
+    return value.isoformat().replace("-", "/")
+
+
+def _clamp_range_to_window(value, window_start, window_end_exclusive) -> dict[str, str]:
+    """Clamp a date-range dict to [window_start, window_end_exclusive). Falls
+    back to the full window when value is missing/invalid."""
+    window_last_day = window_end_exclusive - timedelta(days=1)
+    default = {"from": str(window_start), "to": str(window_last_day)}
+    if not isinstance(value, dict):
+        return default
+    try:
+        start = date.fromisoformat(value["from"])
+        end = date.fromisoformat(value["to"])
+    except (KeyError, TypeError, ValueError):
+        return default
+    start = max(start, window_start)
+    end = min(end, window_last_day)
+    if start > end:
+        return default
+    return {"from": str(start), "to": str(end)}
 
 
 def _floorplan_image_data_uri(content: bytes) -> str:
@@ -147,10 +171,7 @@ async def _render_plan_area(plan_area, state, user, is_admin):
             state["highlight_id"] = hit.id if hit else None
             image.content = _points_svg(points, state["highlight_id"])
             if hit:
-                if is_admin:
-                    await _show_pin_actions(plan_area, state, user, is_admin, hit)
-                else:
-                    ui.notify(hit.label)
+                await _show_pin_actions(plan_area, state, user, is_admin, hit)
 
         image.on_mouse(on_mouse)
 
@@ -243,18 +264,183 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
 
 
 async def _show_pin_actions(plan_area, state, user, is_admin, point):
-    with ui.dialog() as dialog, ui.card().classes("w-72"):
+    resource = None
+    if point.resource_id is not None:
+        resource = await get_resource_by_id(point.resource_id)
+    is_office = point.kind == "room" and resource is not None and resource.resource_type == "office"
+
+    with ui.dialog() as dialog, ui.card().classes("w-80"):
         ui.label(point.label).classes("text-h6")
         ui.label(t(f"kind_{point.kind}")).classes("text-sm text-grey")
+
+        if is_office:
+            await _render_office_availability_section(dialog, plan_area, state, user, is_admin, resource)
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
-            async def do_delete():
+            if is_admin:
+                async def do_delete():
+                    dialog.close()
+                    await delete_map_point(point.id, actor=user)
+                    ui.notify(t("floorplan_pin_deleted"), color="positive")
+                    await _render_plan_area(plan_area, state, user, is_admin)
+
+                ui.button(t("delete"), icon="delete", on_click=do_delete).props("color=negative")
+    dialog.open()
+
+
+async def _render_office_availability_section(dialog, plan_area, state, user, is_admin, resource):
+    from not_dot_net.backend.office_availability import (
+        OfficeAvailabilityError,
+        list_availability_windows,
+        revoke_availability,
+    )
+    from not_dot_net.frontend.bookings import _format_booking_period
+
+    is_owner = user.is_active and user.id == resource.owner_user_id
+    can_offer = is_owner or is_admin
+    windows = await list_availability_windows(resource.id)
+    today = date.today()
+    open_windows = [w for w in windows if w.end_date > today]
+
+    ui.separator().classes("my-2")
+    if open_windows:
+        ui.label(t("floorplan_availability_open")).classes("text-sm font-bold")
+        for w in open_windows:
+            with ui.row().classes("items-center gap-2"):
+                ui.label(_format_booking_period(w.start_date, w.end_date)).classes("text-sm text-grey-8")
+                if can_offer:
+                    async def do_revoke(window=w):
+                        try:
+                            await revoke_availability(window.id, actor=user)
+                        except OfficeAvailabilityError as exc:
+                            ui.notify(str(exc), color="negative")
+                            return
+                        ui.notify(t("floorplan_availability_revoked"), color="positive")
+                        dialog.close()
+                        await _render_plan_area(plan_area, state, user, is_admin)
+
+                    ui.button(icon="close", on_click=do_revoke).props(
+                        "flat dense round size=xs color=negative"
+                    )
+    else:
+        ui.label(t("floorplan_availability_none")).classes("text-sm text-grey")
+
+    with ui.row().classes("gap-2 mt-2"):
+        if can_offer:
+            ui.button(
+                t("floorplan_offer_availability"),
+                on_click=lambda: _show_offer_dialog(dialog, plan_area, state, user, is_admin, resource),
+            ).props("flat dense color=primary")
+        if open_windows and user.is_active:
+            ui.button(
+                t("book"),
+                on_click=lambda: _show_office_book_dialog(
+                    dialog, plan_area, state, user, is_admin, resource, open_windows,
+                ),
+            ).props("flat dense color=primary")
+
+
+async def _show_offer_dialog(parent_dialog, plan_area, state, user, is_admin, resource):
+    from not_dot_net.backend.office_availability import OfficeAvailabilityError, offer_availability
+
+    parent_dialog.close()
+    today = date.today()
+    default_range = {"from": str(today), "to": str(today + timedelta(days=14))}
+
+    with ui.dialog() as dialog, ui.card().classes("w-80"):
+        ui.label(t("floorplan_offer_availability")).classes("text-h6")
+        min_option = _qdate_option_date(today)
+        date_picker = ui.date(default_range).props(
+            f"range :options=\"date => date >= '{min_option}'\""
+        )
+
+        with ui.row().classes("justify-end gap-2 mt-2"):
+            ui.button(t("cancel"), on_click=dialog.close).props("flat")
+
+            async def do_save():
+                val = date_picker.value
+                if not isinstance(val, dict):
+                    ui.notify(t("required_field"), color="negative")
+                    return
+                start = date.fromisoformat(val["from"])
+                end = date.fromisoformat(val["to"]) + timedelta(days=1)
+                try:
+                    await offer_availability(resource.id, start, end, actor=user)
+                except (PermissionError, OfficeAvailabilityError) as exc:
+                    ui.notify(str(exc), color="negative")
+                    return
+                ui.notify(t("floorplan_availability_offered"), color="positive")
                 dialog.close()
-                await delete_map_point(point.id, actor=user)
-                ui.notify(t("floorplan_pin_deleted"), color="positive")
                 await _render_plan_area(plan_area, state, user, is_admin)
 
-            ui.button(t("delete"), icon="delete", on_click=do_delete).props("color=negative")
+            ui.button(t("save"), on_click=do_save).props("color=primary")
     dialog.open()
+
+
+async def _show_office_book_dialog(parent_dialog, plan_area, state, user, is_admin, resource, open_windows):
+    from not_dot_net.backend.booking_service import BookingConflictError, BookingValidationError, create_booking
+    from not_dot_net.frontend.bookings import _format_booking_period
+
+    parent_dialog.close()
+
+    async def _open_for_window(window):
+        with ui.dialog() as dialog, ui.card().classes("w-80"):
+            ui.label(t("book")).classes("text-h6")
+            default_range = _clamp_range_to_window(None, window.start_date, window.end_date)
+            min_option = _qdate_option_date(window.start_date)
+            max_option = _qdate_option_date(window.end_date - timedelta(days=1))
+            date_picker = ui.date(default_range).props(
+                f"range :options=\"date => date >= '{min_option}' && date <= '{max_option}'\""
+            )
+            note_input = ui.input(t("note")).props("outlined dense").classes("w-full")
+
+            with ui.row().classes("justify-end gap-2 mt-2"):
+                ui.button(t("cancel"), on_click=dialog.close).props("flat")
+
+                async def do_book():
+                    val = _clamp_range_to_window(date_picker.value, window.start_date, window.end_date)
+                    start = date.fromisoformat(val["from"])
+                    end = date.fromisoformat(val["to"]) + timedelta(days=1)
+                    try:
+                        await create_booking(
+                            resource.id, user.id, start, end,
+                            note=note_input.value, actor=user,
+                        )
+                    except (BookingConflictError, BookingValidationError) as exc:
+                        ui.notify(str(exc), color="negative")
+                        return
+                    ui.notify(t("booking_created"), color="positive")
+                    dialog.close()
+                    await _render_plan_area(plan_area, state, user, is_admin)
+
+                ui.button(t("book"), on_click=do_book).props("color=primary")
+        dialog.open()
+
+    if len(open_windows) == 1:
+        await _open_for_window(open_windows[0])
+        return
+
+    with ui.dialog() as select_dialog, ui.card().classes("w-80"):
+        ui.label(t("floorplan_choose_window")).classes("text-h6")
+        options = {
+            i: _format_booking_period(w.start_date, w.end_date) for i, w in enumerate(open_windows)
+        }
+        window_select = ui.select(
+            options, label=t("floorplan_choose_window"),
+        ).props("outlined dense").classes("w-full")
+
+        with ui.row().classes("justify-end gap-2 mt-2"):
+            ui.button(t("cancel"), on_click=select_dialog.close).props("flat")
+
+            async def do_continue():
+                if window_select.value is None:
+                    ui.notify(t("required_field"), color="negative")
+                    return
+                chosen = open_windows[window_select.value]
+                select_dialog.close()
+                await _open_for_window(chosen)
+
+            ui.button(t("continue"), on_click=do_continue).props("color=primary")
+    select_dialog.open()
