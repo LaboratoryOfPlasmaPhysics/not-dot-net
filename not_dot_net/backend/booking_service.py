@@ -60,6 +60,7 @@ async def list_resources(active_only: bool = True) -> list[Resource]:
 
 async def create_resource(name: str, resource_type: str, description: str = "",
                           location: str = "", specs: dict | None = None,
+                          owner_user_id: uuid.UUID | None = None,
                           actor=None) -> Resource:
     if actor is not None:
         await check_permission(actor, MANAGE_BOOKINGS)
@@ -70,6 +71,7 @@ async def create_resource(name: str, resource_type: str, description: str = "",
             description=description or None,
             location=location or None,
             specs=specs,
+            owner_user_id=owner_user_id,
         )
         session.add(resource)
         try:
@@ -88,7 +90,7 @@ async def create_resource(name: str, resource_type: str, description: str = "",
     return resource
 
 
-_RESOURCE_MUTABLE = frozenset({"name", "resource_type", "description", "location", "specs", "active"})
+_RESOURCE_MUTABLE = frozenset({"name", "resource_type", "description", "location", "specs", "active", "owner_user_id"})
 
 
 async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resource:

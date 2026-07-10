@@ -83,6 +83,22 @@ async def test_update_resource():
     assert updated.location == "Jussieu"
 
 
+async def test_create_resource_with_owner_user_id():
+    owner = await _create_user(email="owner2@test.com")
+    resource = await create_resource(
+        name="Room 101", resource_type="office", location="Palaiseau",
+        owner_user_id=owner.id,
+    )
+    assert resource.owner_user_id == owner.id
+
+
+async def test_update_resource_owner_user_id():
+    owner = await _create_user(email="owner3@test.com")
+    r = await _create_test_resource(name="Room 102", resource_type="office")
+    updated = await update_resource(r.id, owner_user_id=owner.id)
+    assert updated.owner_user_id == owner.id
+
+
 async def test_update_nonexistent_resource():
     with pytest.raises(ValueError, match="not found"):
         await update_resource(uuid.uuid4(), name="X")
