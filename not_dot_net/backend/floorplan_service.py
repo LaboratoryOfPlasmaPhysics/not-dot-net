@@ -135,12 +135,16 @@ async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
 
 
 async def add_map_point(
-    floor_plan_id: uuid.UUID, label: str, kind: str, x: int, y: int, actor=None,
+    floor_plan_id: uuid.UUID, label: str, kind: str, x: int, y: int,
+    resource_id: uuid.UUID | None = None, actor=None,
 ) -> MapPoint:
     if actor is not None:
         await check_permission(actor, MANAGE_FLOORPLANS)
     async with session_scope() as session:
-        point = MapPoint(floor_plan_id=floor_plan_id, label=label, kind=kind, x=x, y=y)
+        point = MapPoint(
+            floor_plan_id=floor_plan_id, label=label, kind=kind, x=x, y=y,
+            resource_id=resource_id,
+        )
         session.add(point)
         await session.commit()
         await session.refresh(point)

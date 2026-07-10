@@ -5,6 +5,7 @@ from xml.sax.saxutils import escape
 
 from nicegui import ui
 
+from not_dot_net.backend.booking_service import get_resource_by_id, list_resources
 from not_dot_net.backend.db import User
 from not_dot_net.backend.floorplan_models import MapPoint
 from not_dot_net.backend.floorplan_service import (
@@ -209,12 +210,18 @@ async def _confirm_delete_plan(container, user, plan):
 
 
 async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, x, y):
+    offices = [r for r in await list_resources(active_only=True) if r.resource_type == "office"]
+    resource_options = {None: t("floorplan_no_resource"), **{r.id: r.name for r in offices}}
+
     with ui.dialog() as dialog, ui.card().classes("w-80"):
         ui.label(t("floorplan_pin_label")).classes("text-subtitle2")
         label_input = ui.input(t("floorplan_pin_label")).props("outlined dense").classes("w-full")
         kind_select = ui.select(
             _pin_kind_select_options(), value="room", label=t("floorplan_pin_kind"),
         ).props("outlined dense").classes("w-full")
+        resource_select = ui.select(
+            resource_options, value=None, label=t("floorplan_link_resource"),
+        ).props("outlined dense with-input").classes("w-full")
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
@@ -224,7 +231,8 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
                     ui.notify(t("required_field"), color="negative")
                     return
                 await add_map_point(
-                    floor_plan_id, label_input.value.strip(), kind_select.value, x, y, actor=user,
+                    floor_plan_id, label_input.value.strip(), kind_select.value, x, y,
+                    resource_id=resource_select.value, actor=user,
                 )
                 ui.notify(t("floorplan_pin_added"), color="positive")
                 dialog.close()

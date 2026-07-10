@@ -104,3 +104,27 @@ def test_nearest_map_point_handles_empty_list():
     from not_dot_net.backend.floorplan_service import nearest_map_point
 
     assert nearest_map_point([], 0, 0) is None
+
+
+async def test_add_map_point_with_resource_id_links_to_resource(monkeypatch, tmp_path):
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+    resource = await create_resource("Room 101", "office", location="Palaiseau")
+
+    point = await add_map_point(fp.id, "Room 101", "room", 50, 60, resource_id=resource.id, actor=admin)
+    assert point.resource_id == resource.id
+
+
+async def test_add_map_point_without_resource_id_defaults_none(monkeypatch, tmp_path):
+    from not_dot_net.backend.floorplan_service import add_map_point
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+
+    point = await add_map_point(fp.id, "Plug 1", "wall_plug", 5, 5, actor=admin)
+    assert point.resource_id is None
