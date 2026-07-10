@@ -114,7 +114,7 @@ async def test_place_pin_mode_persists_across_pin_area_rerender(
     assert switches[0].value is True
 
 
-from datetime import date
+from datetime import date, timedelta
 
 
 def test_clamp_range_to_window_keeps_value_inside_bounds():
@@ -152,6 +152,32 @@ def test_clamp_range_to_window_falls_back_on_invalid_value():
 
     result = _clamp_range_to_window(None, date(2026, 8, 1), date(2026, 8, 15))
     assert result == {"from": "2026-08-01", "to": "2026-08-14"}
+
+
+def test_earliest_office_book_start_lead_time_wins_when_window_starts_today():
+    from not_dot_net.frontend.floorplan import _earliest_office_book_start
+
+    today = date(2026, 7, 10)
+    result = _earliest_office_book_start(today, today, minimum_lead_days=7)
+    assert result == date(2026, 7, 17)
+
+
+def test_earliest_office_book_start_window_start_wins_when_far_in_future():
+    from not_dot_net.frontend.floorplan import _earliest_office_book_start
+
+    today = date(2026, 7, 10)
+    window_start = date(2026, 8, 10)
+    result = _earliest_office_book_start(window_start, today, minimum_lead_days=7)
+    assert result == window_start
+
+
+def test_earliest_office_book_start_boundary_when_equal():
+    from not_dot_net.frontend.floorplan import _earliest_office_book_start
+
+    today = date(2026, 7, 10)
+    window_start = today + timedelta(days=7)
+    result = _earliest_office_book_start(window_start, today, minimum_lead_days=7)
+    assert result == window_start
 
 
 async def _create_staff_user(email: str) -> DbUser:

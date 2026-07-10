@@ -89,7 +89,8 @@ def render(user: User):
 async def _render_bookings(container, user: User, filter_range=None):
     container.clear()
     is_admin = await has_permissions(user, "manage_bookings")
-    resources = _exclude_offices(await list_resources(active_only=not is_admin))
+    all_resources = await list_resources(active_only=not is_admin)
+    resources = _exclude_offices(all_resources)
     logged_in = user.is_active
     my_bookings = await list_bookings_for_user(user.id) if logged_in else []
     booking_cfg = await bookings_config.get()
@@ -102,7 +103,7 @@ async def _render_bookings(container, user: User, filter_range=None):
                 "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4"
             ):
                 for bk in my_bookings:
-                    res = _get_resource_for_booking(bk.resource_id, resources)
+                    res = _get_resource_for_booking(bk.resource_id, all_resources)
                     res_name = res.name if res else "?"
                     with ui.card().classes("q-py-sm q-px-md"):
                         with ui.row().classes("items-center justify-between w-full"):

@@ -138,3 +138,56 @@ def test_exclude_offices_filters_out_office_resource_type():
     ]
     filtered = _exclude_offices(resources)
     assert [r.resource_type for r in filtered] == ["desktop", "laptop"]
+
+
+async def _create_staff_user(email: str) -> "DbUser":
+    from not_dot_net.backend.db import User as DbUser, session_scope
+    import uuid
+
+    async with session_scope() as session:
+        db_user = DbUser(id=uuid.uuid4(), email=email, hashed_password="x", is_active=True)
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
+
+
+async def _make_booking_admin(email="booking-admin@test.com") -> "DbUser":
+    from not_dot_net.backend.db import User as DbUser, session_scope
+    import uuid
+
+    async with session_scope() as session:
+        db_user = DbUser(id=uuid.uuid4(), email=email, hashed_password="x", is_superuser=True)
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user
+
+
+async def test_my_bookings_shows_real_office_name_not_question_mark(user):
+    """Reproducer: _render_bookings resolves 'My Bookings' display names
+    against the office-excluded `resources` list, so any office booking's
+    name lookup falls back to '?'. It must resolve against the full,
+    unfiltered resource list instead."""
+    from nicegui import ui
+    from not_dot_net.backend.booking_service import create_booking, create_resource
+    from not_dot_net.backend.office_availability import offer_availability
+    from not_dot_net.frontend.bookings import _render_bookings
+
+    admin = await _make_booking_admin()
+    owner = await _create_staff_user(email="office-owner@test.com")
+    resource = await create_resource(
+        "Room 401", "office", location="Palaiseau", owner_user_id=owner.id, actor=admin,
+    )
+    start = date.today() + timedelta(days=10)
+    end = start + timedelta(days=2)
+    await offer_availability(resource.id, date.today(), end + timedelta(days=30), actor=owner)
+    await create_booking(resource.id, owner.id, start, end, actor=owner)
+
+    @ui.page("/my-bookings-office-name-test")
+    async def page():
+        container = ui.column()
+        await _render_bookings(container, owner)
+
+    await user.open("/my-bookings-office-name-test")
+    await user.should_see(resource.name)

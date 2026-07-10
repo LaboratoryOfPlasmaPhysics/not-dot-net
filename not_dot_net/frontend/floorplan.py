@@ -46,6 +46,13 @@ def _qdate_option_date(value) -> str:
     return value.isoformat().replace("-", "/")
 
 
+def _earliest_office_book_start(window_start, today, minimum_lead_days: int) -> date:
+    """The earliest bookable start date for an offered office window: the
+    window's own start, floored by the org-wide `minimum_lead_days` policy
+    that `create_booking` enforces for every resource, offices included."""
+    return max(window_start, today + timedelta(days=minimum_lead_days))
+
+
 def _clamp_range_to_window(value, window_start, window_end_exclusive) -> dict[str, str]:
     """Clamp a date-range dict to [window_start, window_end_exclusive). Falls
     back to the full window when value is missing/invalid."""
@@ -382,15 +389,20 @@ async def _show_offer_dialog(parent_dialog, plan_area, state, user, is_admin, re
 
 async def _show_office_book_dialog(parent_dialog, plan_area, state, user, is_admin, resource, open_windows):
     from not_dot_net.backend.booking_service import BookingConflictError, BookingValidationError, create_booking
+    from not_dot_net.config import bookings_config
     from not_dot_net.frontend.bookings import _format_booking_period
 
     parent_dialog.close()
 
     async def _open_for_window(window):
+        cfg = await bookings_config.get()
+        earliest_start = _earliest_office_book_start(
+            window.start_date, date.today(), cfg.minimum_lead_days,
+        )
         with ui.dialog() as dialog, ui.card().classes("w-80"):
             ui.label(t("book")).classes("text-h6")
-            default_range = _clamp_range_to_window(None, window.start_date, window.end_date)
-            min_option = _qdate_option_date(window.start_date)
+            default_range = _clamp_range_to_window(None, earliest_start, window.end_date)
+            min_option = _qdate_option_date(earliest_start)
             max_option = _qdate_option_date(window.end_date - timedelta(days=1))
             date_picker = ui.date(default_range).props(
                 f"range :options=\"date => date >= '{min_option}' && date <= '{max_option}'\""
@@ -401,7 +413,7 @@ async def _show_office_book_dialog(parent_dialog, plan_area, state, user, is_adm
                 ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
                 async def do_book():
-                    val = _clamp_range_to_window(date_picker.value, window.start_date, window.end_date)
+                    val = _clamp_range_to_window(date_picker.value, earliest_start, window.end_date)
                     start = date.fromisoformat(val["from"])
                     end = date.fromisoformat(val["to"]) + timedelta(days=1)
                     try:
