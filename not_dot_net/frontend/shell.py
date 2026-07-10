@@ -13,6 +13,7 @@ from not_dot_net.frontend.admin_settings import render as render_settings
 from not_dot_net.frontend.admin_ad_account import render as render_ad_accounts
 from not_dot_net.frontend.audit_log import render as render_audit
 from not_dot_net.frontend.bookings import render as render_bookings
+from not_dot_net.frontend.floorplan import render as render_floorplan
 from not_dot_net.frontend.pages import render as render_pages
 from not_dot_net.frontend.directory import render as render_directory
 from not_dot_net.frontend.dashboard import render as render_dashboard
@@ -49,6 +50,7 @@ def setup():
         dashboard_label = t("dashboard")
         new_request_label = t("new_request")
         bookings_label = t("bookings")
+        floorplan_label = t("floorplan")
         pages_label = t("pages")
         audit_label = t("audit_log")
         settings_label = t("settings")
@@ -60,7 +62,7 @@ def setup():
         is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
         is_superuser = bool(getattr(effective_user, "is_superuser", False))
 
-        available_tabs = [dashboard_label, people_label, bookings_label, pages_label]
+        available_tabs = [dashboard_label, people_label, bookings_label, floorplan_label, pages_label]
         if can_create:
             available_tabs.append(new_request_label)
         if can_audit:
@@ -74,6 +76,7 @@ def setup():
             "dashboard": dashboard_label,
             "people": people_label,
             "bookings": bookings_label,
+            "floorplan": floorplan_label,
             "pages": pages_label,
             "new_request": new_request_label,
             "audit": audit_label,
@@ -102,6 +105,7 @@ def setup():
                 dashboard_tab = ui.tab(dashboard_label, icon="dashboard")
                 ui.tab(people_label, icon="people")
                 ui.tab(bookings_label, icon="event_available")
+                ui.tab(floorplan_label, icon="map")
                 ui.tab(pages_label, icon="article")
                 if can_create:
                     ui.tab(new_request_label, icon="add_circle")
@@ -156,6 +160,8 @@ def setup():
                 refreshers[people_label] = render_directory(effective_user)
             with ui.tab_panel(bookings_label):
                 refreshers[bookings_label] = render_bookings(effective_user)
+            with ui.tab_panel(floorplan_label):
+                refreshers[floorplan_label] = render_floorplan(effective_user)
             with ui.tab_panel(pages_label):
                 refreshers[pages_label] = render_pages(effective_user)
             if can_create:
