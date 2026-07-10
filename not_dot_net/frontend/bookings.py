@@ -4,6 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from nicegui import ui
+from sqlalchemy import func, select
 
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
@@ -22,12 +23,12 @@ from not_dot_net.backend.booking_service import (
     update_resource,
 )
 from not_dot_net.config import bookings_config
-from not_dot_net.backend.db import User, resolve_user_names
+from not_dot_net.backend.db import User, resolve_user_names, session_scope
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
 
-RESOURCE_TYPES = ["desktop", "laptop"]
+RESOURCE_TYPES = ["desktop", "laptop", "office"]
 
 
 def _minimum_booking_start(today: date | None = None, minimum_lead_days: int = 7) -> date:
@@ -88,7 +89,7 @@ def render(user: User):
 async def _render_bookings(container, user: User, filter_range=None):
     container.clear()
     is_admin = await has_permissions(user, "manage_bookings")
-    resources = await list_resources(active_only=not is_admin)
+    resources = _exclude_offices(await list_resources(active_only=not is_admin))
     logged_in = user.is_active
     my_bookings = await list_bookings_for_user(user.id) if logged_in else []
     booking_cfg = await bookings_config.get()
@@ -165,7 +166,8 @@ async def _render_bookings(container, user: User, filter_range=None):
                 label=t("resource_location"),
             ).props("outlined dense").classes("min-w-[150px]")
 
-            all_types = [t("all_types")] + RESOURCE_TYPES
+            equipment_types = [rt for rt in RESOURCE_TYPES if rt != "office"]
+            all_types = [t("all_types")] + equipment_types
             type_select = ui.select(
                 options=all_types, value=all_types[0],
                 label=t("resource_type"),
@@ -187,7 +189,7 @@ async def _render_bookings(container, user: User, filter_range=None):
             await _render_resource_list(
                 container, resource_area, resources, user, is_admin, normalized,
                 site_filter=site_select.value if site_select.value in sites else None,
-                type_filter=type_select.value if type_select.value in RESOURCE_TYPES else None,
+                type_filter=type_select.value if type_select.value in equipment_types else None,
                 setup_buffer_days=booking_cfg.resource_setup_buffer_days,
             )
 
@@ -320,11 +322,36 @@ def _status_color(status: str) -> str:
     return _STATUS_COLOR.get(status, "grey")
 
 
+_RESOURCE_ICON = {"desktop": "desktop_windows", "laptop": "laptop", "office": "meeting_room"}
+
+
+def _resource_icon(resource_type: str) -> str:
+    return _RESOURCE_ICON.get(resource_type, "devices")
+
+
+def _office_fields_visible(resource_type: str) -> bool:
+    return resource_type == "office"
+
+
+def _exclude_offices(resources: list) -> list:
+    return [r for r in resources if r.resource_type != "office"]
+
+
 def _get_resource_for_booking(resource_id, resources):
     for r in resources:
         if r.id == resource_id:
             return r
     return None
+
+
+async def _load_active_users() -> list[User]:
+    async with session_scope() as session:
+        result = await session.execute(
+            select(User).where(User.is_active == True).order_by(  # noqa: E712
+                func.lower(func.coalesce(User.full_name, User.email))
+            )
+        )
+        return list(result.scalars().all())
 
 
 async def _resource_card(outer_container, res, user, is_admin, state,
@@ -333,7 +360,7 @@ async def _resource_card(outer_container, res, user, is_admin, state,
         with ui.row().classes("items-center justify-between w-full"):
             with ui.column().classes("gap-0"):
                 with ui.row().classes("items-center gap-2"):
-                    icon = "desktop_windows" if res.resource_type == "desktop" else "laptop"
+                    icon = _resource_icon(res.resource_type)
                     ui.icon(icon, size="sm").classes("text-grey-7")
                     ui.label(res.name).classes("font-bold")
                 ui.label(t(res.resource_type)).classes("text-xs text-grey")
@@ -529,7 +556,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     if is_admin:
         ui.separator().classes("mt-3")
 
-        if res.active:
+        if res.resource_type != "office" and res.active:
             with ui.row().classes("items-center gap-2 mt-2"):
                 ui.label(t("status") + ":").classes("text-sm")
                 ui.badge(t(f"status_{res.status}"), color=_status_color(res.status))
@@ -695,14 +722,34 @@ async def _show_resource_dialog(outer_container, user, resource=None):
             value=resource.description or "" if editing else "",
         ).props("outlined dense").classes("w-full")
 
-        # Specs fields
-        ui.label(t("specs")).classes("text-subtitle2 mt-2")
+        specs_container = ui.column().classes("w-full")
+        owner_container = ui.column().classes("w-full")
+
         existing_specs = (resource.specs or {}) if editing else {}
         spec_inputs = {}
-        for key in ("cpu", "ram", "hdd", "gpu"):
-            spec_inputs[key] = ui.input(
-                t(key), value=existing_specs.get(key, ""),
-            ).props("outlined dense").classes("w-full")
+        with specs_container:
+            ui.label(t("specs")).classes("text-subtitle2 mt-2")
+            for key in ("cpu", "ram", "hdd", "gpu"):
+                spec_inputs[key] = ui.input(
+                    t(key), value=existing_specs.get(key, ""),
+                ).props("outlined dense").classes("w-full")
+
+        active_users = await _load_active_users()
+        owner_options = {None: t("no_owner"), **{u.id: (u.full_name or u.email) for u in active_users}}
+        with owner_container:
+            owner_select = ui.select(
+                owner_options,
+                value=resource.owner_user_id if editing else None,
+                label=t("resource_owner"),
+            ).props("outlined dense with-input").classes("w-full")
+
+        def _toggle_type_fields(resource_type: str):
+            is_office = _office_fields_visible(resource_type)
+            specs_container.set_visibility(not is_office)
+            owner_container.set_visibility(is_office)
+
+        _toggle_type_fields(type_select.value)
+        type_select.on_value_change(lambda e: _toggle_type_fields(e.value))
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
@@ -711,7 +758,11 @@ async def _show_resource_dialog(outer_container, user, resource=None):
                 if not name_input.value.strip():
                     ui.notify(t("required_field"), color="negative")
                     return
-                specs = {k: v.value.strip() for k, v in spec_inputs.items() if v.value.strip()}
+                is_office = _office_fields_visible(type_select.value)
+                specs = None if is_office else (
+                    {k: v.value.strip() for k, v in spec_inputs.items() if v.value.strip()} or None
+                )
+                owner_user_id = owner_select.value if is_office else None
                 try:
                     if editing:
                         await update_resource(
@@ -721,7 +772,8 @@ async def _show_resource_dialog(outer_container, user, resource=None):
                             resource_type=type_select.value,
                             location=location_select.value,
                             description=desc_input.value.strip() or None,
-                            specs=specs or None,
+                            specs=specs,
+                            owner_user_id=owner_user_id,
                         )
                         ui.notify(t("resource_updated"), color="positive")
                     else:
@@ -730,7 +782,8 @@ async def _show_resource_dialog(outer_container, user, resource=None):
                             resource_type=type_select.value,
                             description=desc_input.value.strip(),
                             location=location_select.value,
-                            specs=specs or None,
+                            specs=specs,
+                            owner_user_id=owner_user_id,
                             actor=user,
                         )
                         ui.notify(t("resource_created"), color="positive")

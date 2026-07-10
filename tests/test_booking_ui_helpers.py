@@ -110,3 +110,31 @@ async def test_bookings_sites_read_from_vocabulary_registry():
 
     sites = [t.code for t in await resolve_terms("sites")]
     assert sites == ["TestSite1", "TestSite2"]
+
+
+from not_dot_net.frontend.bookings import _exclude_offices, _office_fields_visible, _resource_icon
+
+
+def test_office_fields_visible_only_for_office_type():
+    assert _office_fields_visible("office") is True
+    assert _office_fields_visible("desktop") is False
+    assert _office_fields_visible("laptop") is False
+
+
+def test_resource_icon_maps_known_types():
+    assert _resource_icon("desktop") == "desktop_windows"
+    assert _resource_icon("laptop") == "laptop"
+    assert _resource_icon("office") == "meeting_room"
+    assert _resource_icon("nonsense") == "devices"
+
+
+def test_exclude_offices_filters_out_office_resource_type():
+    from types import SimpleNamespace
+
+    resources = [
+        SimpleNamespace(resource_type="desktop"),
+        SimpleNamespace(resource_type="office"),
+        SimpleNamespace(resource_type="laptop"),
+    ]
+    filtered = _exclude_offices(resources)
+    assert [r.resource_type for r in filtered] == ["desktop", "laptop"]
