@@ -27,3 +27,16 @@ class OfficeAvailability(MappedAsDataclass, Base, kw_only=True):
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
+
+
+def is_covered(windows: list[OfficeAvailability], start_date: date, end_date: date) -> bool:
+    """True if [start_date, end_date) is fully covered by the union of the
+    given windows. Pure/no DB — overlapping/duplicate windows are absorbed
+    for free by this sweep."""
+    day = start_date
+    for window in sorted(windows, key=lambda w: w.start_date):
+        if window.start_date > day:
+            break
+        if window.end_date > day:
+            day = window.end_date
+    return day >= end_date
