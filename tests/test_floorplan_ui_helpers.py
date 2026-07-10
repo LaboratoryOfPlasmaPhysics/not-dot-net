@@ -73,12 +73,17 @@ async def _make_admin(email="fp-admin@test.com") -> DbUser:
         return db_user
 
 
-async def test_place_pin_mode_persists_across_pin_area_rerender(user: User) -> None:
+async def test_place_pin_mode_persists_across_pin_area_rerender(
+    user: User, monkeypatch, tmp_path
+) -> None:
     """Reproducer: _render_plan_area used to hardcode the "Place pin" switch
     back to off every time it re-rendered (e.g. right after a pin was added),
     forcing an admin placing several pins in a row to re-toggle it before
     every click. The switch's initial value must come from persisted state."""
     from not_dot_net.frontend.floorplan import _render_plan_area
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
 
     admin = await _make_admin()
     plan = await create_floor_plan("Reproducer Plan", _make_image_bytes(), actor=admin)

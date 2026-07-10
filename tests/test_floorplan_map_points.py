@@ -32,29 +32,31 @@ async def _create_user(email="user@test.com", role="staff") -> User:
         return user
 
 
-async def _create_floor_plan(actor):
-    from not_dot_net.backend.floorplan_service import create_floor_plan
-    return await create_floor_plan("Plan", _make_image_bytes(), actor=actor)
+async def _create_floor_plan(actor, monkeypatch, tmp_path):
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    return await fs.create_floor_plan("Plan", _make_image_bytes(), actor=actor)
 
 
-async def test_add_map_point_requires_permission():
+async def test_add_map_point_requires_permission(monkeypatch, tmp_path):
     from not_dot_net.backend.floorplan_service import add_map_point
 
     await _setup_roles()
     admin = await _create_user(role="admin")
     staff = await _create_user(email="staff@test.com", role="staff")
-    fp = await _create_floor_plan(admin)
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
 
     with pytest.raises(PermissionError):
         await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=staff)
 
 
-async def test_add_and_list_map_points():
+async def test_add_and_list_map_points(monkeypatch, tmp_path):
     from not_dot_net.backend.floorplan_service import add_map_point, list_map_points
 
     await _setup_roles()
     admin = await _create_user(role="admin")
-    fp = await _create_floor_plan(admin)
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
 
     await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=admin)
     await add_map_point(fp.id, "Plug 12", "wall_plug", 120, 200, actor=admin)
@@ -63,13 +65,13 @@ async def test_add_and_list_map_points():
     assert {p.label for p in points} == {"Room 101", "Plug 12"}
 
 
-async def test_delete_map_point_requires_permission():
+async def test_delete_map_point_requires_permission(monkeypatch, tmp_path):
     from not_dot_net.backend.floorplan_service import add_map_point, delete_map_point, list_map_points
 
     await _setup_roles()
     admin = await _create_user(role="admin")
     staff = await _create_user(email="staff@test.com", role="staff")
-    fp = await _create_floor_plan(admin)
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
     point = await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=admin)
 
     with pytest.raises(PermissionError):
