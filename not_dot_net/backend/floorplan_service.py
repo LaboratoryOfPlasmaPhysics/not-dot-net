@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.db import session_scope
-from not_dot_net.backend.floorplan_models import FloorPlan
+from not_dot_net.backend.floorplan_models import FloorPlan, MapPoint
 from not_dot_net.backend.permissions import check_permission, permission
 
 MANAGE_FLOORPLANS = permission(
@@ -132,3 +132,62 @@ async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
         target_type="floor_plan", target_id=floor_plan_id,
         detail=f"name={deleted_name}",
     )
+
+
+async def add_map_point(
+    floor_plan_id: uuid.UUID, label: str, kind: str, x: int, y: int, actor=None,
+) -> MapPoint:
+    if actor is not None:
+        await check_permission(actor, MANAGE_FLOORPLANS)
+    async with session_scope() as session:
+        point = MapPoint(floor_plan_id=floor_plan_id, label=label, kind=kind, x=x, y=y)
+        session.add(point)
+        await session.commit()
+        await session.refresh(point)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "floorplan", "add_point",
+        actor_id=(actor.id if actor else None),
+        target_type="floor_plan", target_id=floor_plan_id,
+        detail=f"label={label} kind={kind}",
+    )
+    return point
+
+
+async def list_map_points(floor_plan_id: uuid.UUID) -> list[MapPoint]:
+    async with session_scope() as session:
+        query = select(MapPoint).where(MapPoint.floor_plan_id == floor_plan_id)
+        return list((await session.execute(query)).scalars().all())
+
+
+async def delete_map_point(map_point_id: uuid.UUID, actor=None) -> None:
+    if actor is not None:
+        await check_permission(actor, MANAGE_FLOORPLANS)
+    async with session_scope() as session:
+        point = await session.get(MapPoint, map_point_id)
+        if point is None:
+            raise ValueError(f"Map point {map_point_id} not found")
+        floor_plan_id, label = point.floor_plan_id, point.label
+        await session.delete(point)
+        await session.commit()
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "floorplan", "delete_point",
+        actor_id=(actor.id if actor else None),
+        target_type="floor_plan", target_id=floor_plan_id,
+        detail=f"label={label}",
+    )
+
+
+def nearest_map_point(points: list[MapPoint], x: int, y: int, radius: int = 15) -> MapPoint | None:
+    """Closest point to (x, y) within radius pixels, or None. Pure/no DB —
+    used by the frontend to turn an image click into 'which pin was that'."""
+    best: MapPoint | None = None
+    best_dist_sq = radius * radius
+    for point in points:
+        dist_sq = (point.x - x) ** 2 + (point.y - y) ** 2
+        if dist_sq <= best_dist_sq:
+            best, best_dist_sq = point, dist_sq
+    return best

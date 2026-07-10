@@ -1,0 +1,104 @@
+"""Tests for map point placement, listing, deletion, and hit-testing."""
+
+import uuid
+
+import pytest
+from PIL import Image
+from io import BytesIO
+
+from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.roles import RoleDefinition, roles_config
+
+
+def _make_image_bytes(width=400, height=300) -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (width, height), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def _setup_roles():
+    cfg = await roles_config.get()
+    cfg.roles["admin"] = RoleDefinition(label="Admin", permissions=["manage_floorplans"])
+    cfg.roles["staff"] = RoleDefinition(label="Staff", permissions=[])
+    await roles_config.set(cfg)
+
+
+async def _create_user(email="user@test.com", role="staff") -> User:
+    async with session_scope() as session:
+        user = User(id=uuid.uuid4(), email=email, hashed_password="x", role=role)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def _create_floor_plan(actor):
+    from not_dot_net.backend.floorplan_service import create_floor_plan
+    return await create_floor_plan("Plan", _make_image_bytes(), actor=actor)
+
+
+async def test_add_map_point_requires_permission():
+    from not_dot_net.backend.floorplan_service import add_map_point
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    staff = await _create_user(email="staff@test.com", role="staff")
+    fp = await _create_floor_plan(admin)
+
+    with pytest.raises(PermissionError):
+        await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=staff)
+
+
+async def test_add_and_list_map_points():
+    from not_dot_net.backend.floorplan_service import add_map_point, list_map_points
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin)
+
+    await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=admin)
+    await add_map_point(fp.id, "Plug 12", "wall_plug", 120, 200, actor=admin)
+
+    points = await list_map_points(fp.id)
+    assert {p.label for p in points} == {"Room 101", "Plug 12"}
+
+
+async def test_delete_map_point_requires_permission():
+    from not_dot_net.backend.floorplan_service import add_map_point, delete_map_point, list_map_points
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    staff = await _create_user(email="staff@test.com", role="staff")
+    fp = await _create_floor_plan(admin)
+    point = await add_map_point(fp.id, "Room 101", "room", 50, 60, actor=admin)
+
+    with pytest.raises(PermissionError):
+        await delete_map_point(point.id, actor=staff)
+
+    await delete_map_point(point.id, actor=admin)
+    assert await list_map_points(fp.id) == []
+
+
+def test_nearest_map_point_finds_closest_within_radius():
+    from not_dot_net.backend.floorplan_models import MapPoint
+    from not_dot_net.backend.floorplan_service import nearest_map_point
+
+    near = MapPoint(floor_plan_id=uuid.uuid4(), label="Near", kind="room", x=100, y=100)
+    far = MapPoint(floor_plan_id=uuid.uuid4(), label="Far", kind="room", x=500, y=500)
+
+    assert nearest_map_point([near, far], 105, 102) is near
+
+
+def test_nearest_map_point_returns_none_outside_radius():
+    from not_dot_net.backend.floorplan_models import MapPoint
+    from not_dot_net.backend.floorplan_service import nearest_map_point
+
+    point = MapPoint(floor_plan_id=uuid.uuid4(), label="Room", kind="room", x=100, y=100)
+
+    assert nearest_map_point([point], 200, 200) is None
+
+
+def test_nearest_map_point_handles_empty_list():
+    from not_dot_net.backend.floorplan_service import nearest_map_point
+
+    assert nearest_map_point([], 0, 0) is None
