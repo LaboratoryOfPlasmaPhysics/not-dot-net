@@ -313,6 +313,54 @@ def test_resource_picker_visible_only_for_room_kind():
     assert _resource_picker_visible("other") is False
 
 
+async def test_add_pin_dialog_clears_resource_when_kind_switched_away_from_room(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """Reproducer: hiding the resource picker when Kind != "room" is not
+    enough — the underlying resource_select value survived the switch, so
+    do_save could still submit a stale resource_id for a non-room pin. That
+    recreates the exact dead-link state (resource_id set on a pin whose kind
+    is never "room") the visibility fix was supposed to eliminate."""
+    from nicegui import ElementFilter
+    from nicegui import ui as nicegui_ui
+
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import list_map_points
+    from not_dot_net.frontend.floorplan import _show_add_pin_dialog
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    admin = await _make_admin()
+    resource = await create_resource("Room 501", "office", location="Palaiseau", actor=admin)
+    plan = await create_floor_plan("Office Plan 7", _make_image_bytes(), actor=admin)
+
+    @ui.page("/add-pin-kind-switch-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": True}
+        await _show_add_pin_dialog(area, state, admin, True, plan.id, 42, 24)
+
+    await user.open("/add-pin-kind-switch-test")
+    await user.should_see(t("floorplan_link_resource"))
+
+    with user.client:
+        kind_select, resource_select = list(ElementFilter(kind=nicegui_ui.select))
+        resource_select.value = resource.id
+        kind_select.value = "desk"
+
+        label_input = next(iter(ElementFilter(kind=nicegui_ui.input)))
+        label_input.value = "Desk 501"
+
+    user.find(t("save")).click()
+    await user.should_see(t("floorplan_pin_added"))
+
+    points = await list_map_points(plan.id)
+    added = next(p for p in points if p.label == "Desk 501")
+    assert added.resource_id is None
+
+
 async def test_pin_actions_shows_edit_button_for_manage_bookings_admin(
     user: User, monkeypatch, tmp_path
 ) -> None:

@@ -260,9 +260,14 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
                 resource_options, value=None, label=t("floorplan_link_resource"),
             ).props("outlined dense with-input").classes("w-full")
         resource_container.set_visibility(_resource_picker_visible(kind_select.value))
-        kind_select.on_value_change(
-            lambda e: resource_container.set_visibility(_resource_picker_visible(e.value))
-        )
+
+        def on_kind_change(e):
+            visible = _resource_picker_visible(e.value)
+            resource_container.set_visibility(visible)
+            if not visible:
+                resource_select.value = None
+
+        kind_select.on_value_change(on_kind_change)
 
         with ui.row().classes("justify-end gap-2 mt-2"):
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
