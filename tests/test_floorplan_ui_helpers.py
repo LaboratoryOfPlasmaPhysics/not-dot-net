@@ -218,3 +218,60 @@ async def test_pin_actions_hides_offer_button_for_stranger(user: User, monkeypat
     await user.open("/pin-actions-stranger-test")
     with pytest.raises(AssertionError):
         await user.should_see(t("floorplan_offer_availability"))
+
+
+async def test_pin_actions_hides_offer_button_for_floorplan_admin_without_booking_permission(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """Reproducer: can_offer used to be derived from `is_admin`, which is
+    threaded from the `manage_floorplans` permission — a different
+    permission than the one `offer_availability`/`revoke_availability`
+    actually enforce (`manage_bookings`). A non-owner user who holds
+    manage_floorplans but not manage_bookings must not see the Offer
+    availability button, since the backend would reject the action."""
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.backend.roles import RoleDefinition, roles_config
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+    import pytest
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    cfg = await roles_config.get()
+    cfg.roles["floorplan_manager"] = RoleDefinition(
+        label="Floorplan Manager", permissions=["manage_floorplans"],
+    )
+    await roles_config.set(cfg)
+
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner3@test.com")
+    async with session_scope() as session:
+        floorplan_manager = DbUser(
+            id=uuid.uuid4(), email="fp-manager@test.com", hashed_password="x",
+            is_active=True, role="floorplan_manager",
+        )
+        session.add(floorplan_manager)
+        await session.commit()
+        await session.refresh(floorplan_manager)
+
+    resource = await create_resource("Room 303", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Office Plan 3", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 303", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-floorplan-admin-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        # is_admin=True mirrors what _render_floorplan computes from
+        # manage_floorplans — the caller correctly grants floor-plan admin
+        # UI (e.g. delete-pin), but that must NOT leak into the booking
+        # permission gate.
+        await _show_pin_actions(area, state, floorplan_manager, True, point)
+
+    await user.open("/pin-actions-floorplan-admin-test")
+    with pytest.raises(AssertionError):
+        await user.should_see(t("floorplan_offer_availability"))

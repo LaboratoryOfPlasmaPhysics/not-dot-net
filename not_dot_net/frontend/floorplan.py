@@ -299,7 +299,8 @@ async def _render_office_availability_section(dialog, plan_area, state, user, is
     from not_dot_net.frontend.bookings import _format_booking_period
 
     is_owner = user.is_active and user.id == resource.owner_user_id
-    can_offer = is_owner or is_admin
+    can_manage_bookings = await has_permissions(user, "manage_bookings")
+    can_offer = is_owner or can_manage_bookings
     windows = await list_availability_windows(resource.id)
     today = date.today()
     open_windows = [w for w in windows if w.end_date > today]
@@ -314,7 +315,7 @@ async def _render_office_availability_section(dialog, plan_area, state, user, is
                     async def do_revoke(window=w):
                         try:
                             await revoke_availability(window.id, actor=user)
-                        except OfficeAvailabilityError as exc:
+                        except (PermissionError, OfficeAvailabilityError) as exc:
                             ui.notify(str(exc), color="negative")
                             return
                         ui.notify(t("floorplan_availability_revoked"), color="positive")
