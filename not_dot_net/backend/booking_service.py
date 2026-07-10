@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from not_dot_net.backend.booking_models import Booking, Resource, ResourceStatus
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.mail import send_mail
+from not_dot_net.backend.office_availability import is_covered, list_availability_windows
 from not_dot_net.backend.permissions import check_permission, has_permissions, permission
 from not_dot_net.config import bookings_config, org_config
 
@@ -364,6 +365,13 @@ async def create_booking(
                 raise ValueError(f"Resource {resource_id} not found")
             if not resource.active:
                 raise BookingValidationError("Resource is not active")
+
+            if resource.resource_type == "office":
+                windows = await list_availability_windows(resource_id)
+                if not is_covered(windows, start_date, end_date):
+                    raise BookingValidationError(
+                        "Requested dates are outside the offered availability window"
+                    )
 
             conflicts = await session.execute(
                 select(Booking).where(

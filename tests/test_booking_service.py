@@ -613,3 +613,47 @@ async def test_out_of_service_does_not_block_booking():
     start = _valid_start()
     booking = await create_booking(r.id, owner.id, start, start + timedelta(days=2), actor=owner)
     assert booking.id is not None
+
+
+from not_dot_net.backend.office_availability import offer_availability
+
+
+async def test_create_booking_office_inside_window_succeeds():
+    await _setup_roles()
+    admin = await _create_user(email="office-admin@test.com", role="admin")
+    user = await _create_user(email="booker2@test.com")
+    resource = await _create_test_resource(name="Room 201", resource_type="office")
+    start = _valid_start()
+    await offer_availability(resource.id, start, start + timedelta(days=20), actor=admin)
+    booking = await create_booking(resource.id, user.id, start, start + timedelta(days=3), actor=user)
+    assert booking.resource_id == resource.id
+
+
+async def test_create_booking_office_outside_window_raises():
+    await _setup_roles()
+    admin = await _create_user(email="office-admin2@test.com", role="admin")
+    user = await _create_user(email="booker3@test.com")
+    resource = await _create_test_resource(name="Room 202", resource_type="office")
+    start = _valid_start()
+    await offer_availability(resource.id, start, start + timedelta(days=3), actor=admin)
+    with pytest.raises(BookingValidationError):
+        await create_booking(resource.id, user.id, start, start + timedelta(days=10), actor=user)
+
+
+async def test_create_booking_office_with_no_windows_raises():
+    await _setup_roles()
+    user = await _create_user(email="booker4@test.com")
+    resource = await _create_test_resource(name="Room 203", resource_type="office")
+    start = _valid_start()
+    with pytest.raises(BookingValidationError):
+        await create_booking(resource.id, user.id, start, start + timedelta(days=3), actor=user)
+
+
+async def test_create_booking_equipment_unaffected_by_office_check():
+    """No availability window exists anywhere, but equipment booking must
+    still succeed — is_covered is never consulted for non-office resources."""
+    r = await _create_test_resource(name="PC-99", resource_type="desktop")
+    pc_user = await _create_user(email="pcuser@test.com")
+    start = _valid_start()
+    booking = await create_booking(r.id, pc_user.id, start, start + timedelta(days=3))
+    assert booking.resource_id == r.id
