@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError, ImageOps
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.floorplan_models import FloorPlan
@@ -74,7 +75,12 @@ async def create_floor_plan(name: str, content: bytes, actor=None) -> FloorPlan:
             width_px=width, height_px=height,
         )
         session.add(fp)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            image_path.unlink(missing_ok=True)
+            raise ValueError(f"Floor plan name '{name}' already exists") from exc
         await session.refresh(fp)
 
     from not_dot_net.backend.audit import log_audit

@@ -60,16 +60,19 @@ def test_process_floorplan_image_rejects_garbage():
     assert process_floorplan_image(b"not an image") is None
 
 
-async def test_create_floor_plan_requires_manage_floorplans_permission():
-    from not_dot_net.backend.floorplan_service import create_floor_plan
+async def test_create_floor_plan_requires_manage_floorplans_permission(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
 
     await _setup_roles()
     staff = await _create_user(role="staff")
     with pytest.raises(PermissionError):
-        await create_floor_plan("Test Plan", _make_image_bytes(), actor=staff)
+        await fs.create_floor_plan("Test Plan", _make_image_bytes(), actor=staff)
 
 
-async def test_create_and_list_floor_plans():
+async def test_create_and_list_floor_plans(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
     from not_dot_net.backend.floorplan_service import create_floor_plan, list_floor_plans
 
     await _setup_roles()
@@ -82,7 +85,9 @@ async def test_create_and_list_floor_plans():
     assert [p.name for p in plans] == ["Building A - Floor 1"]
 
 
-async def test_create_floor_plan_rejects_invalid_image():
+async def test_create_floor_plan_rejects_invalid_image(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
     from not_dot_net.backend.floorplan_service import create_floor_plan
 
     await _setup_roles()
@@ -91,7 +96,9 @@ async def test_create_floor_plan_rejects_invalid_image():
         await create_floor_plan("Bad Plan", b"garbage", actor=admin)
 
 
-async def test_get_floor_plan_image_round_trips_bytes():
+async def test_get_floor_plan_image_round_trips_bytes(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
     from not_dot_net.backend.floorplan_service import create_floor_plan, get_floor_plan_image
 
     await _setup_roles()
@@ -104,7 +111,25 @@ async def test_get_floor_plan_image_round_trips_bytes():
         assert img.size == (200, 150)
 
 
-async def test_delete_floor_plan_requires_permission_and_removes_file():
+async def test_create_floor_plan_duplicate_name_cleans_up_file(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    await fs.create_floor_plan("Dup", _make_image_bytes(), actor=admin)
+
+    with pytest.raises(ValueError, match="already exists"):
+        await fs.create_floor_plan("Dup", _make_image_bytes(), actor=admin)
+
+    plans = await fs.list_floor_plans()
+    assert len(plans) == 1
+    assert sorted(p.name for p in tmp_path.iterdir()) == [f"{plans[0].id}.jpg"]
+
+
+async def test_delete_floor_plan_requires_permission_and_removes_file(tmp_path, monkeypatch):
+    import not_dot_net.backend.floorplan_service as fs
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
     from not_dot_net.backend.floorplan_service import (
         create_floor_plan, delete_floor_plan, get_floor_plan_image, list_floor_plans,
     )
