@@ -7,7 +7,7 @@ from xml.sax.saxutils import escape
 from nicegui import ui
 
 from not_dot_net.backend.booking_service import get_resource_by_id, list_resources
-from not_dot_net.backend.db import User
+from not_dot_net.backend.db import User, resolve_user_names
 from not_dot_net.backend.floorplan_models import MapPoint
 from not_dot_net.backend.floorplan_service import (
     add_map_point,
@@ -392,6 +392,9 @@ async def _show_pin_actions(plan_area, state, user, is_admin, point, leaflet=Non
         ui.label(t(f"kind_{point.kind}")).classes("text-sm text-grey")
 
         if is_office:
+            owner_names = await resolve_user_names([resource.owner_user_id])
+            owner_label = owner_names.get(resource.owner_user_id, t("no_owner"))
+            ui.label(f"{t('resource_owner')}: {owner_label}").classes("text-sm")
             await _render_office_availability_section(dialog, plan_area, state, user, is_admin, resource)
 
         with ui.row().classes("justify-end gap-2 mt-2"):

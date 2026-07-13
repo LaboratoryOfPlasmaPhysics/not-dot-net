@@ -749,3 +749,54 @@ async def test_rechecking_a_kind_restores_it_to_visible_kinds_state(
         desk_checkbox.value = True
 
     assert "desk" in state["visible_kinds"]
+
+
+async def test_pin_actions_shows_owner_name_for_office_with_owner(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    owner = await _create_staff_user(email="owner-name-test@test.com")
+    resource = await create_resource("Room 601", "office", location="Palaiseau",
+                                     owner_user_id=owner.id, actor=admin)
+    plan = await create_floor_plan("Owner Name Plan", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 601", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-owner-name-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
+        await _show_pin_actions(area, state, admin, False, point)
+
+    await user.open("/pin-actions-owner-name-test")
+    expected_name = owner.full_name or owner.email
+    await user.should_see(expected_name)
+
+
+async def test_pin_actions_shows_no_owner_for_unowned_office(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    resource = await create_resource("Room 602", "office", location="Palaiseau", actor=admin)
+    plan = await create_floor_plan("Unowned Office Plan", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Room 602", "room", 50, 50,
+                                resource_id=resource.id, actor=admin)
+
+    @ui.page("/pin-actions-no-owner-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
+        await _show_pin_actions(area, state, admin, False, point)
+
+    await user.open("/pin-actions-no-owner-test")
+    await user.should_see(t("no_owner"))
