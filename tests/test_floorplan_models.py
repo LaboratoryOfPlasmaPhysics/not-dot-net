@@ -46,3 +46,26 @@ async def test_floor_plan_name_is_unique():
     await _create_floor_plan(name="Dup")
     with pytest.raises(Exception):
         await _create_floor_plan(name="Dup")
+
+
+async def test_map_point_polygon_round_trips():
+    fp = await _create_floor_plan()
+    async with session_scope() as session:
+        point = MapPoint(
+            floor_plan_id=fp.id, label="Room 101", kind="room", x=60, y=80,
+            polygon=[[10, 10], [110, 10], [110, 90], [10, 90]],
+        )
+        session.add(point)
+        await session.commit()
+        await session.refresh(point)
+        assert point.polygon == [[10, 10], [110, 10], [110, 90], [10, 90]]
+
+
+async def test_map_point_polygon_defaults_to_none():
+    fp = await _create_floor_plan()
+    async with session_scope() as session:
+        point = MapPoint(floor_plan_id=fp.id, label="Plug 1", kind="wall_plug", x=5, y=5)
+        session.add(point)
+        await session.commit()
+        await session.refresh(point)
+        assert point.polygon is None
