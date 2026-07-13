@@ -676,3 +676,76 @@ async def test_unchecking_a_kind_updates_visible_kinds_state(user: User, monkeyp
         desk_checkbox.value = False
 
     assert "desk" not in state["visible_kinds"]
+
+
+async def test_render_plan_area_shows_kind_checkboxes_for_non_admin_viewer(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """The layer-visibility checkbox row must render regardless of
+    admin/editing state — the existing checkbox tests only ever exercised
+    is_admin=True, leaving the plain-viewer path (no place-pin controls)
+    uncovered."""
+    from not_dot_net.frontend.floorplan import PIN_KINDS, _render_plan_area
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    staff = await _create_staff_user(email="staff-viewer@test.com")
+    plan = await create_floor_plan("Layer Toggle Plan Non-Admin", _make_image_bytes(), actor=admin)
+
+    @ui.page("/floorplan-layer-toggles-non-admin-test")
+    async def page():
+        area = ui.column()
+        state = {
+            "selected": plan, "highlight_id": None, "place_mode": "off",
+            "editing_point_id": None,
+        }
+        await _render_plan_area(area, state, staff, False)
+
+    await user.open("/floorplan-layer-toggles-non-admin-test")
+    for kind in PIN_KINDS:
+        await user.should_see(t(f"kind_{kind}"))
+
+    checkboxes = list(user.find(kind=ui.checkbox).elements)
+    assert len(checkboxes) == len(PIN_KINDS)
+    assert all(cb.value is True for cb in checkboxes)
+
+
+async def test_rechecking_a_kind_restores_it_to_visible_kinds_state(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    """Only the uncheck branch of on_kind_toggle (`elif not e.value and kind
+    in kinds: kinds.remove(kind)`) was exercised previously. This covers the
+    re-check branch (`if e.value and kind not in kinds: kinds.append(kind)`)
+    by starting with a kind already excluded and checking it back on."""
+    from nicegui import ElementFilter
+
+    from not_dot_net.frontend.floorplan import PIN_KINDS, _render_plan_area
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Layer Toggle Plan 3", _make_image_bytes(), actor=admin)
+
+    state = {
+        "selected": plan, "highlight_id": None, "place_mode": "off",
+        "editing_point_id": None,
+        "visible_kinds": [k for k in PIN_KINDS if k != "desk"],
+    }
+
+    @ui.page("/floorplan-layer-toggles-recheck-test")
+    async def page():
+        area = ui.column()
+        await _render_plan_area(area, state, admin, True)
+
+    await user.open("/floorplan-layer-toggles-recheck-test")
+    with user.client:
+        desk_checkbox = next(
+            cb for cb in ElementFilter(kind=ui.checkbox) if cb.text == t("kind_desk")
+        )
+        assert desk_checkbox.value is False
+        desk_checkbox.value = True
+
+    assert "desk" in state["visible_kinds"]
