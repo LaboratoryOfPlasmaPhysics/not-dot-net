@@ -618,3 +618,61 @@ async def test_pin_actions_hides_edit_shape_button_for_plain_pin(user: User, mon
     await user.open("/pin-actions-no-edit-shape-test")
     with pytest.raises(AssertionError):
         await user.should_see(t("floorplan_edit_shape"))
+
+
+async def test_render_plan_area_shows_kind_toggle_checkboxes(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.frontend.floorplan import PIN_KINDS, _render_plan_area
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Layer Toggle Plan", _make_image_bytes(), actor=admin)
+
+    @ui.page("/floorplan-layer-toggles-test")
+    async def page():
+        area = ui.column()
+        state = {
+            "selected": plan, "highlight_id": None, "place_mode": "off",
+            "editing_point_id": None,
+        }
+        await _render_plan_area(area, state, admin, True)
+
+    await user.open("/floorplan-layer-toggles-test")
+    for kind in PIN_KINDS:
+        await user.should_see(t(f"kind_{kind}"))
+
+    checkboxes = list(user.find(kind=ui.checkbox).elements)
+    assert len(checkboxes) == len(PIN_KINDS)
+    assert all(cb.value is True for cb in checkboxes)
+
+
+async def test_unchecking_a_kind_updates_visible_kinds_state(user: User, monkeypatch, tmp_path) -> None:
+    from nicegui import ElementFilter
+
+    from not_dot_net.frontend.floorplan import _render_plan_area
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Layer Toggle Plan 2", _make_image_bytes(), actor=admin)
+
+    state = {
+        "selected": plan, "highlight_id": None, "place_mode": "off",
+        "editing_point_id": None,
+    }
+
+    @ui.page("/floorplan-layer-toggles-uncheck-test")
+    async def page():
+        area = ui.column()
+        await _render_plan_area(area, state, admin, True)
+
+    await user.open("/floorplan-layer-toggles-uncheck-test")
+    with user.client:
+        desk_checkbox = next(
+            cb for cb in ElementFilter(kind=ui.checkbox) if cb.text == t("kind_desk")
+        )
+        desk_checkbox.value = False
+
+    assert "desk" not in state["visible_kinds"]

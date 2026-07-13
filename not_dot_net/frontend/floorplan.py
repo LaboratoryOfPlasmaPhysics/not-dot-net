@@ -196,11 +196,13 @@ async def _render_plan_area(plan_area, state, user, is_admin):
         controls_row = ui.column().classes("w-full")
 
         leaflet_mode = "editing" if editing_id is not None else state.get("place_mode", "off")
+        visible_kinds = state.setdefault("visible_kinds", list(PIN_KINDS))
         leaflet = FloorPlanLeaflet(
             image_url=_floorplan_image_data_uri(image_bytes),
             width_px=plan.width_px, height_px=plan.height_px,
             points=_points_payload(points, state["highlight_id"]),
             mode=leaflet_mode,
+            visible_kinds=visible_kinds,
         )
         if editing_id is not None:
             leaflet.set_editing_point(editing_id)
@@ -237,6 +239,19 @@ async def _render_plan_area(plan_area, state, user, is_admin):
                     leaflet.set_mode(e.value)
 
                 ui.toggle(mode_options, value=state.get("place_mode", "off"), on_change=on_mode_change)
+
+            with ui.row().classes("items-center gap-2 mt-1"):
+                kind_labels = _pin_kind_select_options()
+                for kind in PIN_KINDS:
+                    def on_kind_toggle(e, kind=kind):
+                        kinds = state["visible_kinds"]
+                        if e.value and kind not in kinds:
+                            kinds.append(kind)
+                        elif not e.value and kind in kinds:
+                            kinds.remove(kind)
+                        leaflet.set_visible_kinds(list(kinds))
+
+                    ui.checkbox(kind_labels[kind], value=kind in visible_kinds, on_change=on_kind_toggle)
 
         async def on_image_click(e):
             if not _should_place_pin(is_admin, state.get("place_mode", "off")):
