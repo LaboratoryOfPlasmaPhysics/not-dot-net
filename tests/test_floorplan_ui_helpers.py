@@ -17,36 +17,46 @@ def test_floorplan_image_data_uri_wraps_jpeg_bytes():
     assert uri.startswith("data:image/jpeg;base64,")
 
 
-def test_points_svg_contains_circle_per_point():
-    from not_dot_net.frontend.floorplan import _points_svg
+def test_points_payload_contains_entry_per_point():
+    from not_dot_net.frontend.floorplan import _points_payload
 
     points = [
         MapPoint(floor_plan_id=uuid.uuid4(), label="Room 101", kind="room", x=50, y=60),
         MapPoint(floor_plan_id=uuid.uuid4(), label="Plug 12", kind="wall_plug", x=120, y=200),
     ]
-    svg = _points_svg(points)
-    assert svg.count("<circle") == 2
-    assert 'cx="50" cy="60"' in svg
-    assert 'cx="120" cy="200"' in svg
+    payload = _points_payload(points)
+    assert len(payload) == 2
+    assert payload[0]["x"] == 50 and payload[0]["y"] == 60
+    assert payload[1]["x"] == 120 and payload[1]["y"] == 200
 
 
-def test_points_svg_escapes_label_special_characters():
-    from not_dot_net.frontend.floorplan import _points_svg
+def test_points_payload_escapes_label_special_characters():
+    """Leaflet's bindTooltip sets tooltip content via innerHTML for string
+    content, so an unescaped label would let an admin-entered pin label
+    inject markup into every viewer's page."""
+    from not_dot_net.frontend.floorplan import _points_payload
 
     points = [MapPoint(floor_plan_id=uuid.uuid4(), label="A&B <test>", kind="room", x=10, y=10)]
-    svg = _points_svg(points)
-    assert "A&B <test>" not in svg
-    assert "&amp;" in svg
-    assert "&lt;test&gt;" in svg
+    payload = _points_payload(points)
+    assert payload[0]["label"] == "A&amp;B &lt;test&gt;"
 
 
-def test_points_svg_highlights_matching_point():
-    from not_dot_net.frontend.floorplan import _points_svg
+def test_points_payload_highlights_matching_point():
+    from not_dot_net.frontend.floorplan import _points_payload
 
     target = MapPoint(floor_plan_id=uuid.uuid4(), label="Room 101", kind="room", x=50, y=60)
     other = MapPoint(floor_plan_id=uuid.uuid4(), label="Room 102", kind="room", x=90, y=60)
-    svg = _points_svg([target, other], highlight_id=target.id)
-    assert svg.count('stroke="black"') == 1
+    payload = _points_payload([target, other], highlight_id=target.id)
+    assert payload[0]["highlighted"] is True
+    assert payload[1]["highlighted"] is False
+
+
+def test_points_payload_colors_by_kind():
+    from not_dot_net.frontend.floorplan import _KIND_COLOR, _points_payload
+
+    points = [MapPoint(floor_plan_id=uuid.uuid4(), label="Plug 12", kind="wall_plug", x=1, y=1)]
+    payload = _points_payload(points)
+    assert payload[0]["color"] == _KIND_COLOR["wall_plug"]
 
 
 def test_pin_kind_options_cover_all_kind_colors():

@@ -20,6 +20,7 @@ from not_dot_net.backend.floorplan_service import (
     nearest_map_point,
 )
 from not_dot_net.backend.permissions import has_permissions
+from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
 from not_dot_net.frontend.i18n import t
 
 _KIND_COLOR = {
@@ -84,18 +85,21 @@ def _floorplan_image_data_uri(content: bytes) -> str:
     return f"data:image/jpeg;base64,{b64}"
 
 
-def _points_svg(points: list[MapPoint], highlight_id=None) -> str:
-    parts = []
-    for point in points:
-        color = _KIND_COLOR.get(point.kind, "#757575")
-        stroke = ' stroke="black" stroke-width="2"' if point.id == highlight_id else ""
-        parts.append(
-            f'<circle cx="{point.x}" cy="{point.y}" r="8" fill="{color}"{stroke}/>'
-            f'<text x="{point.x + 10}" y="{point.y + 4}" font-size="12" '
-            f'fill="black" stroke="white" stroke-width="3" paint-order="stroke">'
-            f'{escape(point.label)}</text>'
-        )
-    return "".join(parts)
+def _points_payload(points: list[MapPoint], highlight_id=None) -> list[dict]:
+    """Marker data for FloorPlanLeaflet. Labels are HTML-escaped because
+    Leaflet's bindTooltip sets tooltip content via innerHTML for string
+    content — an unescaped admin-entered label would inject markup into
+    every viewer's page."""
+    return [
+        {
+            "x": point.x,
+            "y": point.y,
+            "label": escape(point.label),
+            "color": _KIND_COLOR.get(point.kind, "#757575"),
+            "highlighted": point.id == highlight_id,
+        }
+        for point in points
+    ]
 
 
 def render(user: User):
@@ -124,20 +128,17 @@ async def _render_floorplan(container, user: User):
             return
 
         state = {"selected": plans[0], "highlight_id": None, "place_mode": False}
-        plan_area = ui.column().classes("w-full")
 
+        # Declare the switcher/admin row *before* creating plan_area: NiceGUI
+        # assigns DOM position at element-creation time, not at content-fill
+        # time, so plan_area must not be created first or these end up
+        # rendered below the map regardless of statement order.
+        tabs = None
         if len(plans) > 1:
-            select = ui.select(
-                {p.id: p.name for p in plans}, value=state["selected"].id,
-                label=t("floorplan_select"),
-            ).props("outlined dense").classes("w-64 mb-2")
-
-            async def on_select(e):
-                state["selected"] = next(p for p in plans if p.id == e.value)
-                state["highlight_id"] = None
-                await _render_plan_area(plan_area, state, user, is_admin)
-
-            select.on_value_change(on_select)
+            with ui.tabs().classes("w-full mb-2") as tabs:
+                for p in plans:
+                    ui.tab(name=str(p.id), label=p.name)
+            tabs.value = str(state["selected"].id)
 
         if is_admin:
             with ui.row().classes("gap-2 mb-2"):
@@ -149,6 +150,16 @@ async def _render_floorplan(container, user: User):
                     t("delete"), icon="delete",
                     on_click=lambda: _confirm_delete_plan(container, user, state["selected"]),
                 ).props("flat dense color=negative")
+
+        plan_area = ui.column().classes("w-full")
+
+        if tabs is not None:
+            async def on_select(e):
+                state["selected"] = next(p for p in plans if str(p.id) == e.value)
+                state["highlight_id"] = None
+                await _render_plan_area(plan_area, state, user, is_admin)
+
+            tabs.on_value_change(on_select)
 
         await _render_plan_area(plan_area, state, user, is_admin)
 
@@ -171,23 +182,24 @@ async def _render_plan_area(plan_area, state, user, is_admin):
             ui.switch(t("floorplan_place_pin_mode"), value=state.get("place_mode", False),
                       on_change=lambda e: state.__setitem__("place_mode", e.value))
 
-        image = ui.interactive_image(
-            source=_floorplan_image_data_uri(image_bytes),
-            content=_points_svg(points, state["highlight_id"]),
-        ).classes("w-full border rounded")
+        leaflet = FloorPlanLeaflet(
+            image_url=_floorplan_image_data_uri(image_bytes),
+            width_px=plan.width_px, height_px=plan.height_px,
+            points=_points_payload(points, state["highlight_id"]),
+        )
 
-        async def on_mouse(e):
-            x, y = round(e.image_x), round(e.image_y)
+        async def on_click(e):
+            x, y = round(e.args["x"]), round(e.args["y"])
             if is_admin and state.get("place_mode", False):
                 await _show_add_pin_dialog(plan_area, state, user, is_admin, plan.id, x, y)
                 return
             hit = nearest_map_point(points, x, y)
             state["highlight_id"] = hit.id if hit else None
-            image.content = _points_svg(points, state["highlight_id"])
+            leaflet.set_points(_points_payload(points, state["highlight_id"]))
             if hit:
                 await _show_pin_actions(plan_area, state, user, is_admin, hit)
 
-        image.on_mouse(on_mouse)
+        leaflet.on("image-click", on_click)
 
 
 async def _show_add_plan_dialog(container, user):
