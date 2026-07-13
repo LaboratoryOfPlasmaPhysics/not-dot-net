@@ -114,10 +114,10 @@ async def _make_admin(email="fp-admin@test.com") -> DbUser:
 async def test_place_pin_mode_persists_across_pin_area_rerender(
     user: User, monkeypatch, tmp_path
 ) -> None:
-    """Reproducer: _render_plan_area used to hardcode the "Place pin" switch
-    back to off every time it re-rendered (e.g. right after a pin was added),
+    """Reproducer: _render_plan_area used to hardcode the mode selector back
+    to "off" every time it re-rendered (e.g. right after a pin was added),
     forcing an admin placing several pins in a row to re-toggle it before
-    every click. The switch's initial value must come from persisted state."""
+    every click. The toggle's initial value must come from persisted state."""
     from not_dot_net.frontend.floorplan import _render_plan_area
     import not_dot_net.backend.floorplan_service as fs
 
@@ -129,14 +129,14 @@ async def test_place_pin_mode_persists_across_pin_area_rerender(
     @ui.page("/floorplan-rerender-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _render_plan_area(area, state, admin, True)
 
         async def simulate_pin_added():
-            # Mirrors what _show_add_pin_dialog's do_save does: the switch
-            # was already toggled on by the admin, then a pin gets added and
-            # the plan area re-renders.
-            state["place_mode"] = True
+            # Mirrors what _show_add_pin_dialog's do_save does: the toggle
+            # was already switched to "place" by the admin, then a pin gets
+            # added and the plan area re-renders.
+            state["place_mode"] = "place"
             await _render_plan_area(area, state, admin, True)
             with area:
                 ui.label("rerender-complete")
@@ -147,9 +147,9 @@ async def test_place_pin_mode_persists_across_pin_area_rerender(
     user.find("simulate-pin-added").click()
     await user.should_see("rerender-complete")
 
-    switches = list(user.find(kind=ui.switch).elements)
-    assert len(switches) == 1
-    assert switches[0].value is True
+    toggles = list(user.find(kind=ui.toggle).elements)
+    assert len(toggles) == 1
+    assert toggles[0].value == "place"
 
 
 from datetime import date, timedelta
@@ -247,7 +247,7 @@ async def test_pin_actions_shows_offer_button_for_owner(user: User, monkeypatch,
     @ui.page("/pin-actions-owner-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _show_pin_actions(area, state, owner, False, point)
 
     await user.open("/pin-actions-owner-test")
@@ -276,7 +276,7 @@ async def test_pin_actions_hides_offer_button_for_stranger(user: User, monkeypat
     @ui.page("/pin-actions-stranger-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _show_pin_actions(area, state, stranger, False, point)
 
     await user.open("/pin-actions-stranger-test")
@@ -329,7 +329,7 @@ async def test_pin_actions_hides_offer_button_for_floorplan_admin_without_bookin
     @ui.page("/pin-actions-floorplan-admin-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         # is_admin=True mirrors what _render_floorplan computes from
         # manage_floorplans — the caller correctly grants floor-plan admin
         # UI (e.g. delete-pin), but that must NOT leak into the booking
@@ -377,7 +377,7 @@ async def test_add_pin_dialog_clears_resource_when_kind_switched_away_from_room(
     @ui.page("/add-pin-kind-switch-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": True}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "place", "editing_point_id": None}
         await _show_add_pin_dialog(area, state, admin, True, plan.id, 42, 24)
 
     await user.open("/add-pin-kind-switch-test")
@@ -424,7 +424,7 @@ async def test_pin_actions_shows_edit_button_for_manage_bookings_admin(
     @ui.page("/pin-actions-edit-admin-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _show_pin_actions(area, state, admin, True, point)
 
     await user.open("/pin-actions-edit-admin-test")
@@ -457,7 +457,7 @@ async def test_pin_actions_hides_edit_button_for_owner_non_admin(
     @ui.page("/pin-actions-edit-owner-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _show_pin_actions(area, state, owner, False, point)
 
     await user.open("/pin-actions-edit-owner-test")
@@ -508,9 +508,113 @@ async def test_pin_actions_hides_edit_button_for_floorplan_admin_without_booking
     @ui.page("/pin-actions-edit-floorplan-admin-test")
     async def page():
         area = ui.column()
-        state = {"selected": plan, "highlight_id": None, "place_mode": False}
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
         await _show_pin_actions(area, state, floorplan_manager, True, point)
 
     await user.open("/pin-actions-edit-floorplan-admin-test")
     with pytest.raises(AssertionError):
         await user.should_see(t("edit_resource"))
+
+
+async def test_show_add_pin_dialog_with_polygon_persists_geometry(
+    user: User, monkeypatch, tmp_path
+) -> None:
+    from nicegui import ElementFilter
+    from nicegui import ui as nicegui_ui
+
+    from not_dot_net.backend.floorplan_service import list_map_points
+    from not_dot_net.frontend.floorplan import _show_add_pin_dialog
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Zone Plan", _make_image_bytes(), actor=admin)
+    polygon = [[0, 0], [50, 0], [50, 40], [0, 40]]
+
+    @ui.page("/add-zone-dialog-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": "draw", "editing_point_id": None}
+        await _show_add_pin_dialog(area, state, admin, True, plan.id, 25, 20, polygon=polygon)
+
+    await user.open("/add-zone-dialog-test")
+    with user.client:
+        label_input = next(iter(ElementFilter(kind=nicegui_ui.input)))
+        label_input.value = "Room Zone"
+
+    user.find(t("save")).click()
+    await user.should_see(t("floorplan_pin_added"))
+
+    points = await list_map_points(plan.id)
+    added = next(p for p in points if p.label == "Room Zone")
+    assert added.polygon == polygon
+    assert (added.x, added.y) == (25, 20)
+
+
+def test_should_place_pin_requires_admin_and_place_mode():
+    from not_dot_net.frontend.floorplan import _should_place_pin
+
+    assert _should_place_pin(True, "place") is True
+    assert _should_place_pin(False, "place") is False
+    assert _should_place_pin(True, "draw") is False
+    assert _should_place_pin(True, "off") is False
+
+
+def test_should_draw_zone_requires_admin_and_draw_mode():
+    from not_dot_net.frontend.floorplan import _should_draw_zone
+
+    assert _should_draw_zone(True, "draw") is True
+    assert _should_draw_zone(False, "draw") is False
+    assert _should_draw_zone(True, "place") is False
+
+
+async def test_pin_actions_shows_edit_shape_button_for_zone(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Zone Popup Plan", _make_image_bytes(), actor=admin)
+    point = await add_map_point(
+        plan.id, "Room Z", "room", 0, 0,
+        polygon=[[0, 0], [40, 0], [40, 30], [0, 30]], actor=admin,
+    )
+
+    @ui.page("/pin-actions-edit-shape-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
+        leaflet = FloorPlanLeaflet(image_url="x", width_px=100, height_px=100)
+        await _show_pin_actions(area, state, admin, True, point, leaflet=leaflet)
+
+    await user.open("/pin-actions-edit-shape-test")
+    await user.should_see(t("floorplan_edit_shape"))
+
+
+async def test_pin_actions_hides_edit_shape_button_for_plain_pin(user: User, monkeypatch, tmp_path) -> None:
+    from not_dot_net.backend.floorplan_service import add_map_point
+    from not_dot_net.frontend.floorplan import _show_pin_actions
+    from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
+    from not_dot_net.frontend.i18n import t
+    import not_dot_net.backend.floorplan_service as fs
+    import pytest
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+    plan = await create_floor_plan("Plain Pin Plan", _make_image_bytes(), actor=admin)
+    point = await add_map_point(plan.id, "Plug X", "wall_plug", 5, 5, actor=admin)
+
+    @ui.page("/pin-actions-no-edit-shape-test")
+    async def page():
+        area = ui.column()
+        state = {"selected": plan, "highlight_id": None, "place_mode": "off", "editing_point_id": None}
+        leaflet = FloorPlanLeaflet(image_url="x", width_px=100, height_px=100)
+        await _show_pin_actions(area, state, admin, True, point, leaflet=leaflet)
+
+    await user.open("/pin-actions-no-edit-shape-test")
+    with pytest.raises(AssertionError):
+        await user.should_see(t("floorplan_edit_shape"))

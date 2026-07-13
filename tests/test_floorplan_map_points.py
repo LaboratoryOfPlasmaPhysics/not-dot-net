@@ -81,31 +81,6 @@ async def test_delete_map_point_requires_permission(monkeypatch, tmp_path):
     assert await list_map_points(fp.id) == []
 
 
-def test_nearest_map_point_finds_closest_within_radius():
-    from not_dot_net.backend.floorplan_models import MapPoint
-    from not_dot_net.backend.floorplan_service import nearest_map_point
-
-    near = MapPoint(floor_plan_id=uuid.uuid4(), label="Near", kind="room", x=100, y=100)
-    far = MapPoint(floor_plan_id=uuid.uuid4(), label="Far", kind="room", x=500, y=500)
-
-    assert nearest_map_point([near, far], 105, 102) is near
-
-
-def test_nearest_map_point_returns_none_outside_radius():
-    from not_dot_net.backend.floorplan_models import MapPoint
-    from not_dot_net.backend.floorplan_service import nearest_map_point
-
-    point = MapPoint(floor_plan_id=uuid.uuid4(), label="Room", kind="room", x=100, y=100)
-
-    assert nearest_map_point([point], 200, 200) is None
-
-
-def test_nearest_map_point_handles_empty_list():
-    from not_dot_net.backend.floorplan_service import nearest_map_point
-
-    assert nearest_map_point([], 0, 0) is None
-
-
 async def test_add_map_point_with_resource_id_links_to_resource(monkeypatch, tmp_path):
     from not_dot_net.backend.booking_service import create_resource
     from not_dot_net.backend.floorplan_service import add_map_point

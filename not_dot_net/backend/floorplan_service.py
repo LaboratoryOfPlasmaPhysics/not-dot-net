@@ -220,15 +220,3 @@ async def update_map_point_geometry(
         detail=f"label={point.label}",
     )
     return point
-
-
-def nearest_map_point(points: list[MapPoint], x: int, y: int, radius: int = 15) -> MapPoint | None:
-    """Closest point to (x, y) within radius pixels, or None. Pure/no DB —
-    used by the frontend to turn an image click into 'which pin was that'."""
-    best: MapPoint | None = None
-    best_dist_sq = radius * radius
-    for point in points:
-        dist_sq = (point.x - x) ** 2 + (point.y - y) ** 2
-        if dist_sq <= best_dist_sq:
-            best, best_dist_sq = point, dist_sq
-    return best

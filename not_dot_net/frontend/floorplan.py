@@ -17,7 +17,7 @@ from not_dot_net.backend.floorplan_service import (
     get_floor_plan_image,
     list_floor_plans,
     list_map_points,
-    nearest_map_point,
+    update_map_point_geometry,
 )
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
@@ -48,6 +48,14 @@ def _resource_picker_visible(kind: str) -> bool:
     another kind would create a dead link, since the office-availability UI
     only ever renders for room-kind pins (see is_office in _show_pin_actions)."""
     return kind == "room"
+
+
+def _should_place_pin(is_admin: bool, mode: str) -> bool:
+    return is_admin and mode == "place"
+
+
+def _should_draw_zone(is_admin: bool, mode: str) -> bool:
+    return is_admin and mode == "draw"
 
 
 def _qdate_option_date(value) -> str:
@@ -130,7 +138,7 @@ async def _render_floorplan(container, user: User):
                 ).props("color=primary")
             return
 
-        state = {"selected": plans[0], "highlight_id": None, "place_mode": False}
+        state = {"selected": plans[0], "highlight_id": None, "place_mode": "off", "editing_point_id": None}
 
         # Declare the switcher/admin row *before* creating plan_area: NiceGUI
         # assigns DOM position at element-creation time, not at content-fill
@@ -172,37 +180,90 @@ async def _render_plan_area(plan_area, state, user, is_admin):
     plan = state["selected"]
     image_bytes = await get_floor_plan_image(plan.id)
     points = await list_map_points(plan.id)
+    points_by_id = {str(p.id): p for p in points}
+    editing_id = state.get("editing_point_id")
 
     with plan_area:
         if image_bytes is None:
             ui.label(t("floorplan_none")).classes("text-grey")
             return
 
-        if is_admin:
-            # Preserve place-pin mode across re-renders (e.g. right after adding
-            # a pin) — otherwise the switch resets to off and an admin placing
-            # several pins in a row has to re-toggle it before every click.
-            ui.switch(t("floorplan_place_pin_mode"), value=state.get("place_mode", False),
-                      on_change=lambda e: state.__setitem__("place_mode", e.value))
+        # Container created before `leaflet` so its controls render above the
+        # map (DOM position = element-creation time, not content-fill time —
+        # see the switcher-position gotcha this file already learned once).
+        # Its content is filled in below, after `leaflet` exists, so the
+        # closures here can reference it without any forward-declaration.
+        controls_row = ui.column().classes("w-full")
 
+        leaflet_mode = "editing" if editing_id is not None else state.get("place_mode", "off")
         leaflet = FloorPlanLeaflet(
             image_url=_floorplan_image_data_uri(image_bytes),
             width_px=plan.width_px, height_px=plan.height_px,
             points=_points_payload(points, state["highlight_id"]),
+            mode=leaflet_mode,
         )
+        if editing_id is not None:
+            leaflet.set_editing_point(editing_id)
 
-        async def on_click(e):
-            x, y = round(e.args["x"]), round(e.args["y"])
-            if is_admin and state.get("place_mode", False):
-                await _show_add_pin_dialog(plan_area, state, user, is_admin, plan.id, x, y)
+        with controls_row:
+            if editing_id is not None:
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(t("floorplan_edit_shape")).classes("text-sm font-bold")
+
+                    async def do_cancel_edit():
+                        state["editing_point_id"] = None
+                        await _render_plan_area(plan_area, state, user, is_admin)
+
+                    async def do_finish_edit():
+                        vertices = await leaflet.finish_editing()
+                        target = points_by_id.get(editing_id)
+                        state["editing_point_id"] = None
+                        if vertices and target is not None:
+                            await update_map_point_geometry(target.id, vertices, actor=user)
+                            ui.notify(t("floorplan_shape_updated"), color="positive")
+                        await _render_plan_area(plan_area, state, user, is_admin)
+
+                    ui.button(t("cancel"), on_click=do_cancel_edit).props("flat dense")
+                    ui.button(t("floorplan_finish_edit"), on_click=do_finish_edit).props("dense color=primary")
+            elif is_admin:
+                mode_options = {
+                    "off": t("floorplan_mode_off"),
+                    "place": t("floorplan_place_pin_mode"),
+                    "draw": t("floorplan_draw_zone_mode"),
+                }
+
+                def on_mode_change(e):
+                    state["place_mode"] = e.value
+                    leaflet.set_mode(e.value)
+
+                ui.toggle(mode_options, value=state.get("place_mode", "off"), on_change=on_mode_change)
+
+        async def on_image_click(e):
+            if not _should_place_pin(is_admin, state.get("place_mode", "off")):
                 return
-            hit = nearest_map_point(points, x, y)
-            state["highlight_id"] = hit.id if hit else None
-            leaflet.set_points(_points_payload(points, state["highlight_id"]))
-            if hit:
-                await _show_pin_actions(plan_area, state, user, is_admin, hit)
+            x, y = round(e.args["x"]), round(e.args["y"])
+            await _show_add_pin_dialog(plan_area, state, user, is_admin, plan.id, x, y)
 
-        leaflet.on("image-click", on_click)
+        async def on_zone_drawn(e):
+            if not _should_draw_zone(is_admin, state.get("place_mode", "off")):
+                return
+            vertices = [[round(v[0]), round(v[1])] for v in e.args["vertices"]]
+            await _show_add_pin_dialog(
+                plan_area, state, user, is_admin, plan.id, vertices[0][0], vertices[0][1],
+                polygon=vertices,
+            )
+
+        async def on_pin_click(e):
+            hit = points_by_id.get(e.args["id"])
+            if hit is None:
+                return
+            state["highlight_id"] = hit.id
+            leaflet.set_points(_points_payload(points, state["highlight_id"]))
+            await _show_pin_actions(plan_area, state, user, is_admin, hit, leaflet=leaflet)
+
+        leaflet.on("image-click", on_image_click)
+        leaflet.on("zone-drawn", on_zone_drawn)
+        leaflet.on("pin-click", on_pin_click)
 
 
 async def _show_add_plan_dialog(container, user):
@@ -259,7 +320,7 @@ async def _confirm_delete_plan(container, user, plan):
     dialog.open()
 
 
-async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, x, y):
+async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, x, y, polygon=None):
     offices = [r for r in await list_resources(active_only=True) if r.resource_type == "office"]
     resource_options = {None: t("floorplan_no_resource"), **{r.id: r.name for r in offices}}
 
@@ -293,7 +354,7 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
                     return
                 await add_map_point(
                     floor_plan_id, label_input.value.strip(), kind_select.value, x, y,
-                    resource_id=resource_select.value, actor=user,
+                    resource_id=resource_select.value, polygon=polygon, actor=user,
                 )
                 ui.notify(t("floorplan_pin_added"), color="positive")
                 dialog.close()
@@ -303,12 +364,13 @@ async def _show_add_pin_dialog(plan_area, state, user, is_admin, floor_plan_id, 
     dialog.open()
 
 
-async def _show_pin_actions(plan_area, state, user, is_admin, point):
+async def _show_pin_actions(plan_area, state, user, is_admin, point, leaflet=None):
     resource = None
     if point.resource_id is not None:
         resource = await get_resource_by_id(point.resource_id)
     is_office = point.kind == "room" and resource is not None and resource.resource_type == "office"
     can_edit_resource = is_office and await has_permissions(user, "manage_bookings")
+    can_edit_shape = is_admin and point.polygon is not None and leaflet is not None
 
     with ui.dialog() as dialog, ui.card().classes("w-80"):
         ui.label(point.label).classes("text-h6")
@@ -331,6 +393,16 @@ async def _show_pin_actions(plan_area, state, user, is_admin, point):
                     )
 
                 ui.button(t("edit_resource"), icon="edit", on_click=do_edit).props(
+                    "flat dense color=primary"
+                )
+
+            if can_edit_shape:
+                async def do_edit_shape():
+                    dialog.close()
+                    state["editing_point_id"] = str(point.id)
+                    await _render_plan_area(plan_area, state, user, is_admin)
+
+                ui.button(t("floorplan_edit_shape"), icon="edit_location", on_click=do_edit_shape).props(
                     "flat dense color=primary"
                 )
 
