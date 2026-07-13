@@ -128,3 +128,73 @@ async def test_add_map_point_without_resource_id_defaults_none(monkeypatch, tmp_
 
     point = await add_map_point(fp.id, "Plug 1", "wall_plug", 5, 5, actor=admin)
     assert point.resource_id is None
+
+
+def test_polygon_centroid_averages_vertices():
+    from not_dot_net.backend.floorplan_service import _polygon_centroid
+
+    assert _polygon_centroid([[0, 0], [10, 0], [10, 10], [0, 10]]) == (5, 5)
+
+
+async def test_add_map_point_with_polygon_computes_centroid(monkeypatch, tmp_path):
+    from not_dot_net.backend.floorplan_service import add_map_point
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+
+    point = await add_map_point(
+        fp.id, "Room 101", "room", 0, 0,
+        polygon=[[0, 0], [100, 0], [100, 80], [0, 80]], actor=admin,
+    )
+    assert point.polygon == [[0, 0], [100, 0], [100, 80], [0, 80]]
+    assert (point.x, point.y) == (50, 40)
+
+
+async def test_add_map_point_without_polygon_defaults_none(monkeypatch, tmp_path):
+    from not_dot_net.backend.floorplan_service import add_map_point
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+
+    point = await add_map_point(fp.id, "Plug 1", "wall_plug", 5, 5, actor=admin)
+    assert point.polygon is None
+
+
+async def test_update_map_point_geometry_requires_permission(monkeypatch, tmp_path):
+    from not_dot_net.backend.floorplan_service import add_map_point, update_map_point_geometry
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    staff = await _create_user(email="staff2@test.com", role="staff")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+    point = await add_map_point(
+        fp.id, "Room 101", "room", 0, 0,
+        polygon=[[0, 0], [100, 0], [100, 80], [0, 80]], actor=admin,
+    )
+
+    with pytest.raises(PermissionError):
+        await update_map_point_geometry(point.id, [[0, 0], [50, 0], [50, 40], [0, 40]], actor=staff)
+
+
+async def test_update_map_point_geometry_persists_new_shape_and_centroid(monkeypatch, tmp_path):
+    from not_dot_net.backend.floorplan_service import (
+        add_map_point, list_map_points, update_map_point_geometry,
+    )
+
+    await _setup_roles()
+    admin = await _create_user(role="admin")
+    fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
+    point = await add_map_point(
+        fp.id, "Room 101", "room", 0, 0,
+        polygon=[[0, 0], [100, 0], [100, 80], [0, 80]], actor=admin,
+    )
+
+    new_shape = [[0, 0], [40, 0], [40, 40], [0, 40]]
+    updated = await update_map_point_geometry(point.id, new_shape, actor=admin)
+    assert updated.polygon == new_shape
+    assert (updated.x, updated.y) == (20, 20)
+
+    [stored] = await list_map_points(fp.id)
+    assert stored.polygon == new_shape

@@ -23,6 +23,14 @@ FLOORPLAN_MAX_DIMENSION_PX = 2400
 FLOORPLAN_JPEG_QUALITY = 90
 
 
+def _polygon_centroid(polygon: list[list[int]]) -> tuple[int, int]:
+    """Average of the vertices, in the same pixel space as x/y — used as the
+    marker/tooltip anchor when a point has drawn geometry instead of a plain pin."""
+    xs = [v[0] for v in polygon]
+    ys = [v[1] for v in polygon]
+    return round(sum(xs) / len(xs)), round(sum(ys) / len(ys))
+
+
 def _rgb(image: Image.Image) -> Image.Image:
     if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
         background = Image.new("RGB", image.size, "white")
@@ -136,14 +144,17 @@ async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
 
 async def add_map_point(
     floor_plan_id: uuid.UUID, label: str, kind: str, x: int, y: int,
-    resource_id: uuid.UUID | None = None, actor=None,
+    resource_id: uuid.UUID | None = None, polygon: list[list[int]] | None = None,
+    actor=None,
 ) -> MapPoint:
     if actor is not None:
         await check_permission(actor, MANAGE_FLOORPLANS)
+    if polygon is not None:
+        x, y = _polygon_centroid(polygon)
     async with session_scope() as session:
         point = MapPoint(
             floor_plan_id=floor_plan_id, label=label, kind=kind, x=x, y=y,
-            resource_id=resource_id,
+            resource_id=resource_id, polygon=polygon,
         )
         session.add(point)
         await session.commit()
@@ -183,6 +194,32 @@ async def delete_map_point(map_point_id: uuid.UUID, actor=None) -> None:
         target_type="floor_plan", target_id=floor_plan_id,
         detail=f"label={label}",
     )
+
+
+async def update_map_point_geometry(
+    point_id: uuid.UUID, polygon: list[list[int]], actor=None,
+) -> MapPoint:
+    if actor is not None:
+        await check_permission(actor, MANAGE_FLOORPLANS)
+    x, y = _polygon_centroid(polygon)
+    async with session_scope() as session:
+        point = await session.get(MapPoint, point_id)
+        if point is None:
+            raise ValueError(f"Map point {point_id} not found")
+        point.polygon = polygon
+        point.x = x
+        point.y = y
+        await session.commit()
+        await session.refresh(point)
+
+    from not_dot_net.backend.audit import log_audit
+    await log_audit(
+        "floorplan", "edit_point_shape",
+        actor_id=(actor.id if actor else None),
+        target_type="floor_plan", target_id=point.floor_plan_id,
+        detail=f"label={point.label}",
+    )
+    return point
 
 
 def nearest_map_point(points: list[MapPoint], x: int, y: int, radius: int = 15) -> MapPoint | None:
