@@ -172,7 +172,7 @@ async def test_delete_in_use_is_refused(user: User, superuser) -> None:
     await user.should_see("Phone")
     user.find(kind=ui.button, content="delete").click()
     await user.should_see(t("cancel"))
-    user.find(t("delete")).click()
+    user.find(kind=ui.button, content=t("delete")).click()
     await user.should_see("mission/info")
 
     cfg = await field_definitions_config.get()
