@@ -59,6 +59,34 @@ def test_points_payload_colors_by_kind():
     assert payload[0]["color"] == _KIND_COLOR["wall_plug"]
 
 
+def test_points_payload_includes_id_and_kind():
+    from not_dot_net.frontend.floorplan import _points_payload
+
+    point = MapPoint(floor_plan_id=uuid.uuid4(), label="Room 101", kind="room", x=50, y=60)
+    payload = _points_payload([point])
+    assert payload[0]["id"] == str(point.id)
+    assert payload[0]["kind"] == "room"
+
+
+def test_points_payload_includes_polygon_when_present():
+    from not_dot_net.frontend.floorplan import _points_payload
+
+    point = MapPoint(
+        floor_plan_id=uuid.uuid4(), label="Room 101", kind="room", x=50, y=60,
+        polygon=[[10, 10], [90, 10], [90, 70], [10, 70]],
+    )
+    payload = _points_payload([point])
+    assert payload[0]["polygon"] == [[10, 10], [90, 10], [90, 70], [10, 70]]
+
+
+def test_points_payload_polygon_defaults_none():
+    from not_dot_net.frontend.floorplan import _points_payload
+
+    point = MapPoint(floor_plan_id=uuid.uuid4(), label="Plug 1", kind="wall_plug", x=1, y=1)
+    payload = _points_payload([point])
+    assert payload[0]["polygon"] is None
+
+
 def test_pin_kind_options_cover_all_kind_colors():
     """The kind dropdown offered in the add-pin dialog must stay in sync with
     the colors _points_svg knows how to render — a kind with no color entry

@@ -92,11 +92,14 @@ def _points_payload(points: list[MapPoint], highlight_id=None) -> list[dict]:
     every viewer's page."""
     return [
         {
+            "id": str(point.id),
             "x": point.x,
             "y": point.y,
             "label": escape(point.label),
             "color": _KIND_COLOR.get(point.kind, "#757575"),
             "highlighted": point.id == highlight_id,
+            "kind": point.kind,
+            "polygon": point.polygon,
         }
         for point in points
     ]
