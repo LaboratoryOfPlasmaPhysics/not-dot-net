@@ -1,8 +1,21 @@
 import { leaflet as L } from "nicegui-leaflet";
 
+// Keyed by URL so concurrent mounts of this component (NiceGUI/Vue can
+// mount more than one instance of the same element in quick succession)
+// await the SAME in-flight load instead of racing: checking only "is the
+// tag already in the DOM" lets a second caller resolve instantly while the
+// first caller's actual network fetch is still pending, so code right
+// after `await loadScript(...)` can run before the script has executed.
+const stylesheetPromises = new Map();
+const scriptPromises = new Map();
+
 function loadStylesheet(href) {
-  if (document.querySelector(`link[href="${href}"]`)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
+  if (stylesheetPromises.has(href)) return stylesheetPromises.get(href);
+  const promise = new Promise((resolve, reject) => {
+    if (document.querySelector(`link[href="${href}"]`)) {
+      resolve();
+      return;
+    }
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = href;
@@ -10,17 +23,25 @@ function loadStylesheet(href) {
     link.onerror = reject;
     document.head.appendChild(link);
   });
+  stylesheetPromises.set(href, promise);
+  return promise;
 }
 
 function loadScript(src) {
-  if (document.querySelector(`script[src="${src}"]`)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
+  if (scriptPromises.has(src)) return scriptPromises.get(src);
+  const promise = new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
     const script = document.createElement("script");
     script.src = src;
     script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);
   });
+  scriptPromises.set(src, promise);
+  return promise;
 }
 
 const ALL_KINDS = ["room", "desk", "wall_plug", "asset", "other"];
@@ -97,6 +118,13 @@ export default {
       if (entry.isIntersecting) this.map.invalidateSize();
     });
     this.observer.observe(this.$el);
+
+    // A component can be created with editingPointId already set (Task 5
+    // calls set_editing_point() right after construction, in the same
+    // server-side turn) — the client then never observes a null->id
+    // *change*, so the non-immediate watcher below would never fire for
+    // this case. Apply the current value explicitly once mount is done.
+    if (this.editingPointId) this.startEditing(this.editingPointId);
   },
   unmounted() {
     this.editHandler?.disable();
@@ -121,6 +149,11 @@ export default {
       },
     },
     editingPointId(newId) {
+      this.startEditing(newId);
+    },
+  },
+  methods: {
+    startEditing(newId) {
       if (this.editHandler) {
         this.editHandler.disable();
         this.editHandler = null;
@@ -132,8 +165,6 @@ export default {
       this.editHandler = new L.EditToolbar.Edit(this.map, { featureGroup: group });
       this.editHandler.enable();
     },
-  },
-  methods: {
     applyVisibleKinds(kinds) {
       const visible = new Set(kinds || []);
       Object.entries(this.kindGroups).forEach(([kind, group]) => {
