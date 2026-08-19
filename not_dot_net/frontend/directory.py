@@ -19,6 +19,7 @@ from not_dot_net.backend.profile_photo import (
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.backend.permissions import permission, has_permissions
 from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
 from not_dot_net.config import files_config
@@ -403,7 +404,7 @@ def _render_ad_enable_disable_button(container, person: User, current_user: User
                 ldap_cfg=cfg,
             )
         except LdapModifyError as e:
-            ui.notify(t("disable_failed", error=str(e)), color="negative", multi_line=True)
+            notify_error(e)
             return
         async with _session_scope() as session:
             db_person = await session.get(User, person.id)

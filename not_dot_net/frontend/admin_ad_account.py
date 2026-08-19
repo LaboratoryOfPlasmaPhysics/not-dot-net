@@ -4,6 +4,7 @@ from __future__ import annotations
 from nicegui import ui
 
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
 from not_dot_net.backend.permissions import check_permission, MANAGE_SETTINGS
 
@@ -59,7 +60,7 @@ async def render(current_user) -> None:
             try:
                 result = await seed_from_ad(bind_user, bind_pw)
             except Exception as e:
-                ui.notify(str(e), type="negative")
+                notify_error(e)
                 return
             ui.notify(
                 t("lock_existing_ad_uids_result", seeded=result.seeded, skipped=result.skipped),

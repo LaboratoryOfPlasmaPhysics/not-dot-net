@@ -26,6 +26,7 @@ from not_dot_net.backend.floorplan_service import (
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog
 
 _KIND_COLOR = {
@@ -346,8 +347,10 @@ async def _show_add_plan_dialog(container, user):
                 try:
                     await create_floor_plan(name_input.value.strip(), state["content"], actor=user)
                 except (ValueError, PermissionError) as exc:
-                    ui.notify(t("floorplan_upload_failed") if isinstance(exc, ValueError) else str(exc),
-                              color="negative")
+                    if isinstance(exc, ValueError):
+                        ui.notify(t("floorplan_upload_failed"), color="negative")
+                    else:
+                        notify_error(exc)
                     return
                 ui.notify(t("floorplan_uploaded"), color="positive")
                 dialog.close()
@@ -366,7 +369,7 @@ async def _confirm_delete_plan(container, user, plan):
             try:
                 await delete_floor_plan(plan.id, actor=user)
             except PermissionError as exc:
-                ui.notify(str(exc), color="negative")
+                notify_error(exc)
                 return
             ui.notify(t("floorplan_deleted"), color="positive")
             await _render_floorplan(container, user)
@@ -509,7 +512,7 @@ async def _render_office_availability_section(dialog, plan_area, state, user, is
                         try:
                             await revoke_availability(window.id, actor=user)
                         except (PermissionError, OfficeAvailabilityError) as exc:
-                            ui.notify(str(exc), color="negative")
+                            notify_error(exc)
                             return
                         ui.notify(t("floorplan_availability_revoked"), color="positive")
                         dialog.close()
@@ -567,7 +570,7 @@ async def _show_offer_dialog(parent_dialog, plan_area, state, user, is_admin, re
                 try:
                     await offer_availability(resource.id, start, end, actor=user)
                 except (PermissionError, OfficeAvailabilityError) as exc:
-                    ui.notify(str(exc), color="negative")
+                    notify_error(exc)
                     return
                 ui.notify(t("floorplan_availability_offered"), color="positive")
                 dialog.close()
@@ -612,7 +615,7 @@ async def _show_office_book_dialog(parent_dialog, plan_area, state, user, is_adm
                             note=note_input.value, actor=user,
                         )
                     except (BookingConflictError, BookingValidationError) as exc:
-                        ui.notify(str(exc), color="negative")
+                        notify_error(exc)
                         return
                     ui.notify(t("booking_created"), color="positive")
                     dialog.close()

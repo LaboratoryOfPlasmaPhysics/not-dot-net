@@ -118,7 +118,9 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
     if actor is not None:
         await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
-        resource = await session.get(Resource, resource_id)
+        # Same lock create_booking takes: without it a booking committing
+        # between the guard below and the DELETE gets CASCADE-deleted silently.
+        resource = await session.get(Resource, resource_id, with_for_update=True)
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found")
         if resource.active:

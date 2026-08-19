@@ -16,6 +16,7 @@ from not_dot_net.backend.page_service import (
 )
 from not_dot_net.backend.permissions import check_permission, has_permissions
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog
 
 
@@ -150,7 +151,7 @@ async def _show_editor(container, user: User, page=None):
                             actor=user,
                         )
                 except ValueError as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 ui.notify(t("page_saved"), color="positive")
                 dialog.close()

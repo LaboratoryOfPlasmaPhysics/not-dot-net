@@ -6,7 +6,7 @@ from datetime import date, datetime
 from sqlalchemy import Date, ForeignKey, String, func, or_, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
-from not_dot_net.backend.db import Base, session_scope
+from not_dot_net.backend.db import Base, User, session_scope
 
 
 class UserTenure(MappedAsDataclass, Base, kw_only=True):
@@ -60,6 +60,10 @@ async def add_tenure(
 ) -> UserTenure:
     _validate_tenure_dates(start_date, end_date)
     async with session_scope() as session:
+        # Serialise concurrent adds for the same person on their user row:
+        # the overlap check is read-all-then-insert, and there is no DB
+        # exclusion constraint to catch two writers that both passed it.
+        await session.get(User, user_id, with_for_update=True)
         await _ensure_no_overlap(session, user_id, start_date, end_date)
         tenure = UserTenure(
             user_id=user_id,

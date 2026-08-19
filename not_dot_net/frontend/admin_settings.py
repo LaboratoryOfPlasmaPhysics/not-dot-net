@@ -16,6 +16,7 @@ from not_dot_net.backend.personnel_import import import_personnel, parse_clean_c
 from not_dot_net.frontend.admin_email_templates import render as render_email_templates
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.vocabularies_editor import render as render_vocabularies
 from not_dot_net.frontend.widgets import chip_list_editor, confirm_dialog, keyed_chip_editor
@@ -181,7 +182,7 @@ async def _render_form(prefix, cfg_section, current, user):
             ui.notify(t("settings_saved"), color="positive")
         except (TypeError, ValueError, ValidationError) as e:
             # TypeError: int(None) when a cleared ui.number submits None.
-            ui.notify(str(e), color="negative")
+            notify_error(e)
 
     async def reset():
         from not_dot_net.backend.permissions import check_permission
@@ -216,7 +217,7 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
             await log_audit("settings", "update", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
             ui.notify(t("settings_saved"), color="positive")
         except Exception as e:
-            ui.notify(str(e), color="negative")
+            notify_error(e)
 
     async def reset():
         await cfg_section.reset()

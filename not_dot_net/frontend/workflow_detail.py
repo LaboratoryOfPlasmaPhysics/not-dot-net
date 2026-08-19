@@ -23,6 +23,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import get_locale, t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_step import (
     render_approval,
@@ -139,7 +140,7 @@ def setup():
                                 try:
                                     await resend_notification(req.id, actor_user=user)
                                 except Exception as e:
-                                    ui.notify(str(e), color="negative")
+                                    notify_error(e)
                                     return
                                 ui.notify(t("notification_resent"), color="positive")
                                 ui.navigate.to(f"/workflow/request/{request_id}")
@@ -176,7 +177,7 @@ async def _render_failed_effects(req, user, request_id: str) -> None:
                     req.id, ad_creds=(bind_user, bind_password), actor=user,
                 )
             except Exception as e:
-                ui.notify(str(e), color="negative")
+                notify_error(e)
                 return
             ui.notify(
                 t("ad_effects_retried", ok=ok, failed=failed),
@@ -237,7 +238,7 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                         try:
                             await cancel_request(req.id, user.id, actor_user=user)
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("request_cancelled"), color="positive")
                         ui.navigate.to(f"/workflow/request/{req.id}")
@@ -276,7 +277,7 @@ def _confirm_delete(req, user):
             try:
                 await delete_request(req.id, actor_user=user)
             except Exception as e:
-                ui.notify(str(e), color="negative")
+                notify_error(e)
                 return
             dlg.close()
             ui.notify(t("request_deleted"), color="positive")
@@ -339,7 +340,7 @@ def _render_file_download(f, field_label, user):
                 )
             except Exception as e:
                 _log.exception("Encrypted download failed (file %s)", fid)
-                ui.notify(t("download_failed", error=str(e)), color="negative")
+                ui.notify(t("download_failed"), color="negative")
                 return
             ui.download(data, name)
     else:
@@ -354,10 +355,7 @@ def _render_file_download(f, field_label, user):
                 ui.download(path.read_bytes(), fname)
             else:
                 _log.error("Workflow file missing on disk: %s", path)
-                ui.notify(
-                    t("download_failed", error=t("file_missing")),
-                    color="negative",
-                )
+                ui.notify(t("download_failed_missing"), color="negative")
     with ui.row().classes("items-center gap-1"):
         ui.label(f"{field_label}:").classes("text-xs text-grey-8")
         ui.button(f"📎 {f.filename}", on_click=download).props("flat dense size=sm")
@@ -431,14 +429,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                         try:
                             await submit_step(req.id, user.id, "approve", comment=comment, actor_user=user, ad_creds=(bu, bp))
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("step_submitted"), color="positive")
                         ui.navigate.to(f"/workflow/request/{request_id_str}")
                     await prompt_ad_credentials(user, _retry_approve)
                     return
                 except Exception as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
@@ -451,14 +449,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                         try:
                             await submit_step(req.id, user.id, "reject", comment=comment, actor_user=user, ad_creds=(bu, bp))
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("step_submitted"), color="positive")
                         ui.navigate.to(f"/workflow/request/{request_id_str}")
                     await prompt_ad_credentials(user, _retry_reject)
                     return
                 except Exception as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
@@ -471,14 +469,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                         try:
                             await submit_step(req.id, user.id, "request_corrections", comment=comment, actor_user=user, ad_creds=(bu, bp))
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("corrections_requested"), color="positive")
                         ui.navigate.to(f"/workflow/request/{request_id_str}")
                     await prompt_ad_credentials(user, _retry_corrections)
                     return
                 except Exception as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 ui.notify(t("corrections_requested"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
@@ -500,7 +498,7 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                             ad_creds=(bind_user, bind_pw), _out=out,
                         )
                     except Exception as e:
-                        ui.notify(str(e), color="negative")
+                        notify_error(e)
                         return
                     if out:
                         ad_res = out[0]
@@ -524,7 +522,7 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                 try:
                     await submit_step(req.id, user.id, "submit", data=data, actor_user=user)
                 except Exception as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")

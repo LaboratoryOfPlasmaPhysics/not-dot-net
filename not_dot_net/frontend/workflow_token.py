@@ -22,6 +22,7 @@ from not_dot_net.backend.workflow_service import (
 from not_dot_net.backend.workflow_engine import get_current_step_config
 from not_dot_net.backend.mail import send_mail
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.workflow_step import render_step_form
 
 
@@ -81,7 +82,7 @@ def setup():
                     try:
                         valid = await verify_code(request.id, code_input.value)
                     except PermissionError as e:
-                        ui.notify(str(e), color="negative")
+                        notify_error(e)
                         return
                     if valid:
                         cont.clear()

@@ -15,6 +15,7 @@ from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
 from not_dot_net.config import FieldConfig, FieldRef, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig, resolve_field_ref
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
@@ -988,13 +989,13 @@ class WorkflowEditorDialog:
         try:
             self.set_field_attr(wf_key, step_key, idx, "name", new_name)
         except ValueError as e:
-            ui.notify(str(e), color="negative")
+            notify_error(e)
 
     def _safe_set(self, wf_key: str, step_key: str, field: str, value) -> None:
         try:
             self.set_step_field(wf_key, step_key, field, value)
         except ValueError as e:
-            ui.notify(str(e), color="negative")
+            notify_error(e)
         except KeyError:
             pass  # stale closure from pre-rename detail pane — silently ignore
 
@@ -1245,7 +1246,7 @@ class WorkflowEditorDialog:
         try:
             validated = WorkflowsConfig.model_validate(self.working_copy.model_dump())
         except ValidationError as e:
-            ui.notify(str(e), color="negative", multi_line=True)
+            notify_error(e)
             return
         await workflows_config.set(validated)
         await log_audit(

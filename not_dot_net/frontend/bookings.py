@@ -27,6 +27,7 @@ from not_dot_net.backend.db import User, resolve_user_names, session_scope
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog
 
 RESOURCE_TYPES = ["desktop", "laptop", "office"]
@@ -153,7 +154,7 @@ async def _render_bookings(container, user: User, filter_range=None):
                                 try:
                                     await cancel_booking(b.id, actor=user)
                                 except Exception as e:
-                                    ui.notify(str(e), color="negative")
+                                    notify_error(e)
                                     return
                                 ui.notify(t("booking_cancelled"), color="positive")
                                 await _render_bookings(container, user)
@@ -470,7 +471,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                         try:
                             await cancel_booking(b.id, actor=user)
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("booking_cancelled"), color="positive")
                         await _render_bookings(outer_container, user)
@@ -554,7 +555,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                     actor=user,
                 )
             except (BookingConflictError, BookingValidationError) as err:
-                ui.notify(str(err), color="negative")
+                notify_error(err)
                 return
             ui.notify(t("booking_created"), color="positive")
             await _render_bookings(outer_container, user)
@@ -595,7 +596,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                         try:
                             await set_resource_status(res.id, target, actor=user)
                         except Exception as e:
-                            ui.notify(str(e), color="negative")
+                            notify_error(e)
                             return
                         ui.notify(t("status_updated"), color="positive")
                         await _render_bookings(outer_container, user)
@@ -623,7 +624,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                             try:
                                 await update_resource(res.id, active=False, actor=user)
                             except Exception as e:
-                                ui.notify(str(e), color="negative")
+                                notify_error(e)
                                 return
                             ui.notify(t("resource_retired"), color="positive")
                             await _render_bookings(outer_container, user)
@@ -641,7 +642,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                     try:
                         await restore_resource(res.id, actor=user)
                     except Exception as e:
-                        ui.notify(str(e), color="negative")
+                        notify_error(e)
                         return
                     ui.notify(t("resource_restored"), color="positive")
                     await _render_bookings(outer_container, user)
@@ -659,7 +660,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                             try:
                                 await delete_resource(res.id, actor=user)
                             except Exception as e:
-                                ui.notify(str(e), color="negative")
+                                notify_error(e)
                                 return
                             ui.notify(t("resource_deleted"), color="positive")
                             await _render_bookings(outer_container, user)
@@ -711,7 +712,7 @@ async def _show_migration_dialog(outer_container, user, res, upcoming):
                     await migrate_booking(bk_id, uuid.UUID(sel.value), actor=user)
                 await delete_resource(res.id, actor=user)
             except (BookingConflictError, BookingValidationError) as e:
-                ui.notify(str(e), color="negative")
+                notify_error(e)
                 return
             dlg.close()
             ui.notify(t("bookings_migrated_resource_deleted"), color="positive")
@@ -817,7 +818,7 @@ async def _show_resource_dialog(outer_container, user, resource=None, on_saved=N
                         )
                         ui.notify(t("resource_created"), color="positive")
                 except Exception as e:
-                    ui.notify(str(e), color="negative")
+                    notify_error(e)
                     return
                 dialog.close()
                 if on_saved is not None:

@@ -8,6 +8,7 @@ from not_dot_net.backend.vocabularies import (
     vocabularies_config, list_vocabularies,
 )
 from not_dot_net.frontend.i18n import t, get_locale
+from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.workflow_editor_options import display_name_to_key
 
 
@@ -140,7 +141,7 @@ def _open_term_editor(vocabulary: StoredVocabulary, on_done) -> None:
             try:
                 await save_vocabulary(working)
             except ValueError as exc:
-                ui.notify(str(exc), color="negative")
+                notify_error(exc)
                 return
             dlg.close()
             await on_done()
