@@ -16,6 +16,7 @@ from not_dot_net.backend.page_service import (
 )
 from not_dot_net.backend.permissions import check_permission, has_permissions
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import confirm_dialog
 
 
 def _slugify(text: str) -> str:
@@ -79,9 +80,15 @@ async def _render_page_list(container, user: User):
                                 ui.notify(t("page_deleted"), color="positive")
                                 await _render_page_list(container, user)
 
+                            delete_dlg = confirm_dialog(
+                                t("confirm_delete_page", title=page.title), do_delete,
+                                confirm_label=t("delete"),
+                            )
                             ui.button(
-                                icon="delete", on_click=do_delete,
-                            ).props("flat dense round color=negative size=sm")
+                                icon="delete", on_click=delete_dlg.open,
+                            ).props("flat dense round color=negative size=sm").tooltip(
+                                t("delete")
+                            )
 
 
 async def _show_editor(container, user: User, page=None):

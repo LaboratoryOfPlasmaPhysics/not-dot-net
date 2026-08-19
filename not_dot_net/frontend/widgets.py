@@ -1,6 +1,51 @@
 """Reusable input widgets used in admin settings forms."""
 
+import inspect
+
 from nicegui import ui
+
+from not_dot_net.frontend.i18n import t
+
+
+class ConfirmDialog(ui.dialog):
+    """Dialog that runs `on_confirm` only after the user confirms.
+
+    `confirm()` is the same entry point the button uses, so tests exercise the
+    real path. A raising action leaves the dialog open — the caller's notify
+    would otherwise disappear along with it.
+    """
+
+    def __init__(self, message: str, on_confirm, *, confirm_label: str, confirm_icon: str):
+        super().__init__()
+        self._on_confirm = on_confirm
+        with self, ui.card():
+            ui.label(message).classes("text-bold")
+            with ui.row():
+                ui.button(confirm_label, icon=confirm_icon, on_click=self.confirm).props(
+                    "color=negative"
+                )
+                ui.button(t("cancel"), on_click=self.close).props("flat")
+
+    async def confirm(self) -> None:
+        result = self._on_confirm()
+        if inspect.isawaitable(result):
+            await result
+        self.close()
+
+
+def confirm_dialog(
+    message: str,
+    on_confirm,
+    *,
+    confirm_label: str | None = None,
+    confirm_icon: str = "delete_forever",
+) -> ConfirmDialog:
+    """Build (but do not open) a confirmation dialog. Call `.open()` to show it."""
+    return ConfirmDialog(
+        message, on_confirm,
+        confirm_label=confirm_label or t("confirm"),
+        confirm_icon=confirm_icon,
+    )
 
 
 def chip_list_editor(

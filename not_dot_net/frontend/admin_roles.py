@@ -8,6 +8,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import check_permission, get_permissions, MANAGE_ROLES
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import confirm_dialog
 
 
 async def render(user):
@@ -139,14 +140,19 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
             current_count = (await _user_count_by_role()).get(role_key, 0)
             if current_count > 0:
                 ui.notify(
-                    f"Cannot delete role '{role_key}' — {current_count} users assigned",
+                    t("role_delete_in_use", key=role_key, count=current_count),
                     color="negative",
                 )
                 return
             cfg = await roles_config.get()
             del cfg.roles[role_key]
             await roles_config.set(cfg)
-            ui.notify(f"Role '{role_key}' deleted", color="positive")
+            ui.notify(t("role_deleted", key=role_key), color="positive")
             await _render_roles(outer_container, user)
 
-        ui.button(t("delete"), icon="delete", on_click=delete).props("flat color=negative")
+        delete_dlg = confirm_dialog(
+            t("confirm_delete_role", key=role_key), delete, confirm_label=t("delete"),
+        )
+        ui.button(t("delete"), icon="delete", on_click=delete_dlg.open).props(
+            "flat color=negative"
+        )

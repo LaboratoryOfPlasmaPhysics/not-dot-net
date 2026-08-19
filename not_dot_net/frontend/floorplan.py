@@ -22,6 +22,7 @@ from not_dot_net.backend.floorplan_service import (
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import confirm_dialog
 
 _KIND_COLOR = {
     "room": "#1976d2",
@@ -431,7 +432,13 @@ async def _show_pin_actions(plan_area, state, user, is_admin, point, leaflet=Non
                     ui.notify(t("floorplan_pin_deleted"), color="positive")
                     await _render_plan_area(plan_area, state, user, is_admin)
 
-                ui.button(t("delete"), icon="delete", on_click=do_delete).props("color=negative")
+                delete_dlg = confirm_dialog(
+                    t("confirm_delete_pin", label=point.label or ""), do_delete,
+                    confirm_label=t("delete"),
+                )
+                ui.button(t("delete"), icon="delete", on_click=delete_dlg.open).props(
+                    "color=negative"
+                )
     dialog.open()
 
 
@@ -467,9 +474,13 @@ async def _render_office_availability_section(dialog, plan_area, state, user, is
                         dialog.close()
                         await _render_plan_area(plan_area, state, user, is_admin)
 
-                    ui.button(icon="close", on_click=do_revoke).props(
-                        "flat dense round size=xs color=negative"
+                    revoke_dlg = confirm_dialog(
+                        t("confirm_revoke_availability"), do_revoke,
+                        confirm_label=t("floorplan_revoke"), confirm_icon="event_busy",
                     )
+                    ui.button(icon="close", on_click=revoke_dlg.open).props(
+                        "flat dense round size=xs color=negative"
+                    ).tooltip(t("floorplan_revoke"))
     else:
         ui.label(t("floorplan_availability_none")).classes("text-sm text-grey")
 

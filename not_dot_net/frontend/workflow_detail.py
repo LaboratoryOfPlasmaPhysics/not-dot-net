@@ -23,6 +23,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import get_locale, t
+from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_step import (
     render_approval,
     render_status_badge,
@@ -241,9 +242,15 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                         ui.notify(t("request_cancelled"), color="positive")
                         ui.navigate.to(f"/workflow/request/{req.id}")
 
-                    ui.button(t("cancel"), icon="cancel", on_click=handle_cancel).props(
-                        "flat color=negative size=sm"
+                    # Labelled "withdraw", not "cancel": every other `cancel` in
+                    # the UI dismisses a dialog, and this one is irreversible.
+                    cancel_dlg = confirm_dialog(
+                        t("confirm_cancel_request"), handle_cancel,
+                        confirm_label=t("withdraw_request"), confirm_icon="cancel",
                     )
+                    ui.button(
+                        t("withdraw_request"), icon="cancel", on_click=cancel_dlg.open,
+                    ).props("flat color=negative size=sm")
             if is_creator:
                 def handle_clone():
                     app.storage.user["clone_prefill"] = {"type": req.type, "data": dict(req.data)}

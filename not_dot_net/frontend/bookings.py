@@ -27,6 +27,7 @@ from not_dot_net.backend.db import User, resolve_user_names, session_scope
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import confirm_dialog
 
 RESOURCE_TYPES = ["desktop", "laptop", "office"]
 
@@ -126,9 +127,15 @@ async def _render_bookings(container, user: User, filter_range=None):
                                 ui.notify(t("booking_cancelled"), color="positive")
                                 await _render_bookings(container, user)
 
+                            cancel_dlg = confirm_dialog(
+                                t("confirm_cancel_booking"), do_cancel,
+                                confirm_label=t("cancel_booking"), confirm_icon="event_busy",
+                            )
                             ui.button(
-                                icon="close", on_click=do_cancel,
-                            ).props("flat dense round color=negative size=sm")
+                                icon="close", on_click=cancel_dlg.open,
+                            ).props("flat dense round color=negative size=sm").tooltip(
+                                t("cancel_booking")
+                            )
 
             ui.separator().classes("mb-4")
 
@@ -451,9 +458,13 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                         ui.notify(t("booking_cancelled"), color="positive")
                         await _render_bookings(outer_container, user)
 
-                    ui.button(icon="close", on_click=do_cancel).props(
-                        "flat dense round size=xs color=negative"
+                    cancel_dlg = confirm_dialog(
+                        t("confirm_cancel_booking"), do_cancel,
+                        confirm_label=t("cancel_booking"), confirm_icon="event_busy",
                     )
+                    ui.button(icon="close", on_click=cancel_dlg.open).props(
+                        "flat dense round size=xs color=negative"
+                    ).tooltip(t("cancel_booking"))
 
     # Book form — only for authenticated users
     if not user.is_active:

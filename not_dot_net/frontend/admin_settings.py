@@ -18,7 +18,7 @@ from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.vocabularies_editor import render as render_vocabularies
-from not_dot_net.frontend.widgets import chip_list_editor, keyed_chip_editor
+from not_dot_net.frontend.widgets import chip_list_editor, confirm_dialog, keyed_chip_editor
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +179,13 @@ async def _render_form(prefix, cfg_section, current, user):
         await log_audit("settings", "reset", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
         ui.notify(t("settings_reset"), color="info")
 
+    reset_dlg = confirm_dialog(
+        t("confirm_reset_defaults"), reset,
+        confirm_label=t("reset_defaults"), confirm_icon="restart_alt",
+    )
     with ui.row():
         ui.button(t("save"), on_click=save).props("color=primary")
-        ui.button(t("reset_defaults"), on_click=reset).props("flat color=grey")
+        ui.button(t("reset_defaults"), on_click=reset_dlg.open).props("flat color=grey")
 
 
 async def _render_yaml_editor(prefix, cfg_section, current, user):

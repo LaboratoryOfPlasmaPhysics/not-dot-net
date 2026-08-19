@@ -15,6 +15,7 @@ from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
 from not_dot_net.config import FieldConfig, FieldRef, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig, resolve_field_ref
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_editor_options import (
     assignee_options,
     assignee_summary,
@@ -103,7 +104,11 @@ class WorkflowEditorDialog:
                 self._warnings_label.on("click", lambda e: self._show_warnings(self._current_warnings))
                 with ui.row():
                     ui.button(t("cancel"), on_click=self._on_cancel_click).props("flat")
-                    ui.button(t("reset_defaults"), on_click=self.reset).props("flat color=grey")
+                    reset_dlg = confirm_dialog(
+                        t("confirm_reset_workflows"), self.reset,
+                        confirm_label=t("reset_defaults"), confirm_icon="restart_alt",
+                    )
+                    ui.button(t("reset_defaults"), on_click=reset_dlg.open).props("flat color=grey")
                     self._save_button = ui.button(t("save"), on_click=self.save).props("color=primary")
                     with self._save_button:
                         self._save_dirty_badge = ui.badge(color="warning", text_color="white"
