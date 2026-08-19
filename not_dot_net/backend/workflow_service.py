@@ -542,23 +542,12 @@ async def submit_step(
         # A refresh here could raise after commit and, via the caller's discard-on-error
         # cleanup, delete a legitimately-submitted request together with its files.
 
-        # Mark encrypted files for retention on workflow completion (requires Task 8 column)
-        if new_status == RequestStatus.COMPLETED:
-            try:
-                from not_dot_net.backend.encrypted_storage import mark_for_retention
-                from not_dot_net.backend.workflow_models import WorkflowFile
-                if hasattr(WorkflowFile, "encrypted_file_id"):
-                    async with session_scope() as retention_session:
-                        file_result = await retention_session.execute(
-                            select(WorkflowFile).where(
-                                WorkflowFile.request_id == req.id,
-                                WorkflowFile.encrypted_file_id != None,
-                            )
-                        )
-                        for wf_file in file_result.scalars().all():
-                            await mark_for_retention(wf_file.encrypted_file_id, days=365)
-            except Exception:
-                logger.exception("Failed to mark files for retention for request %s", req.id)
+        # Schedule encrypted files for eventual deletion once the request is
+        # terminal — not just on COMPLETED. A cancelled or rejected request's
+        # personal documents were previously kept forever: the retention purge
+        # only collects rows with retained_until set.
+        if new_status in _TERMINAL_STATUSES:
+            await schedule_file_retention(req.id, new_status)
 
             if req.type == "onboarding":
                 try:
@@ -617,6 +606,49 @@ async def submit_step(
         return req
 
 
+
+_TERMINAL_STATUSES = (
+    RequestStatus.COMPLETED,
+    RequestStatus.REJECTED,
+    RequestStatus.CANCELLED,
+)
+
+# Completed requests keep their documents for a year (they document a real
+# onboarding); requests that never completed have no reason to hold personal
+# data that long.
+_RETENTION_DAYS = {
+    RequestStatus.COMPLETED: 365,
+    RequestStatus.REJECTED: 30,
+    RequestStatus.CANCELLED: 30,
+}
+
+
+async def schedule_file_retention(request_id: uuid.UUID, status) -> None:
+    """Set a deletion deadline on every encrypted file of a terminal request.
+
+    Best-effort: a retention failure must not undo a committed transition.
+    """
+    from not_dot_net.backend.encrypted_storage import mark_for_retention
+    from not_dot_net.backend.workflow_models import WorkflowFile
+
+    days = _RETENTION_DAYS.get(status)
+    if days is None:
+        return
+    try:
+        async with session_scope() as session:
+            result = await session.execute(
+                select(WorkflowFile).where(
+                    WorkflowFile.request_id == request_id,
+                    WorkflowFile.encrypted_file_id.is_not(None),
+                )
+            )
+            file_ids = [f.encrypted_file_id for f in result.scalars().all()]
+        for file_id in file_ids:
+            await mark_for_retention(file_id, days=days)
+    except Exception:
+        logger.exception("Failed to mark files for retention for request %s", request_id)
+
+
 async def cancel_request(
     request_id: uuid.UUID,
     actor_id: uuid.UUID,
@@ -647,6 +679,8 @@ async def cancel_request(
         )
         session.add(event)
         await session.commit()
+
+        await schedule_file_retention(req.id, RequestStatus.CANCELLED)
 
         from not_dot_net.backend.audit import log_audit
         await log_audit(
@@ -1135,6 +1169,10 @@ async def _handle_ad_account_creation(
         try:
             new_dn = await asyncio.to_thread(_ldap_create, new_user, bind_user, bind_pw, ldap_cfg, _connect)
         except _LdapModifyError as e:
+            # The UID row is deliberately NOT released here: UIDs are never
+            # reused (see uid_allocator), because a UID that was handed out may
+            # already own files on disk. Leaking one on a failed create is the
+            # cheaper half of that trade — the range holds 50k of them.
             await log_audit(
                 category="ad", action="create_user",
                 actor_id=str(actor_user.id) if actor_user else None,
