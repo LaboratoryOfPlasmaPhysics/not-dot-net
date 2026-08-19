@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from html import escape as html_escape
 from typing import Optional
@@ -122,6 +123,7 @@ async def _try_ldap_auth(username: str, password: str):
     from not_dot_net.backend.auth.ldap import (
         USERNAME_RE, ldap_config, ldap_authenticate, get_ldap_connect,
         provision_ldap_user, sync_user_from_ldap, store_user_connection,
+        NO_LOCAL_PASSWORD,
     )
     from not_dot_net.backend.db import session_scope, get_user_db, User
     from not_dot_net.backend.roles import roles_config
@@ -131,7 +133,10 @@ async def _try_ldap_auth(username: str, password: str):
         return None
 
     cfg = await ldap_config.get()
-    result = ldap_authenticate(username, password, cfg, get_ldap_connect())
+    # ldap3 is blocking; NiceGUI serves every client from one event loop.
+    result = await asyncio.to_thread(
+        ldap_authenticate, username, password, cfg, get_ldap_connect()
+    )
     if result is None:
         return None
     user_info, ldap_conn = result
@@ -153,6 +158,9 @@ async def _try_ldap_auth(username: str, password: str):
             async with session_scope() as session:
                 db_user = await session.get(User, user.id)
                 db_user.auth_method = AuthMethod.LDAP
+                # Revoke the local password too: handle_login tries local auth
+                # first, so keeping it would survive AD rotation and lockout.
+                db_user.hashed_password = NO_LOCAL_PASSWORD
                 await session.commit()
         await sync_user_from_ldap(user.id, user_info)
         store_user_connection(str(user.id), ldap_conn)

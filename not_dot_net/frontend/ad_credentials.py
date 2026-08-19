@@ -1,6 +1,8 @@
 """Reusable AD admin credentials prompt dialog."""
 from __future__ import annotations
 
+import asyncio
+
 from typing import Awaitable, Callable
 
 from nicegui import ui
@@ -35,7 +37,9 @@ async def prompt_ad_credentials(
                 return
             cfg = await ldap_config.get()
             try:
-                conn = _ldap_bind(bind_user, password_input.value, cfg, get_ldap_connect())
+                conn = await asyncio.to_thread(
+                    _ldap_bind, bind_user, password_input.value, cfg, get_ldap_connect()
+                )
             except LdapModifyError as e:
                 msg = str(e)
                 error_label.set_text(

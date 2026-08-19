@@ -194,3 +194,56 @@ class TestLdapEscaping:
         from ldap3.utils.conv import escape_filter_chars
 
         assert "*" not in escape_filter_chars("*")
+
+
+class TestLocalPasswordRevokedOnLdapUpgrade:
+    """B4 — upgrading a LOCAL account to LDAP must also revoke the local password."""
+
+    async def test_old_local_password_stops_working_after_upgrade(self):
+        from contextlib import asynccontextmanager
+        from pwdlib.exceptions import UnknownHashError
+        from not_dot_net.backend.auth.ldap import (
+            LdapConfig, ldap_config, set_ldap_connect,
+        )
+        from not_dot_net.backend.db import AuthMethod, User, session_scope, get_user_db
+        from not_dot_net.backend.users import get_user_manager
+        from not_dot_net.backend.schemas import UserCreate
+        from not_dot_net.frontend.login import _try_ldap_auth
+        from fastapi.security import OAuth2PasswordRequestForm
+        from tests.test_ldap_provision import _make_fake_connect
+
+        async with session_scope() as session:
+            async with asynccontextmanager(get_user_db)(session) as user_db:
+                async with asynccontextmanager(get_user_manager)(user_db) as mgr:
+                    user = await mgr.create(
+                        UserCreate(email="legacy@example.com", password="localpass", is_active=True)
+                    )
+                    user.auth_method = AuthMethod.LOCAL
+                    session.add(user)
+                    await session.commit()
+                    user_id = user.id
+
+        cfg = LdapConfig(url="fake", domain="example.com", base_dn="dc=example,dc=com", auto_provision=True)
+        await ldap_config.set(cfg)
+        set_ldap_connect(_make_fake_connect({
+            "legacy": {"mail": "legacy@example.com", "displayName": "Legacy", "password": "ldappass"},
+        }))
+
+        assert await _try_ldap_auth("legacy", "ldappass") is not None
+
+        async with session_scope() as session:
+            refreshed = await session.get(User, user_id)
+            assert refreshed.auth_method == AuthMethod.LDAP
+            assert refreshed.hashed_password == "!ldap-no-local-password"
+
+        # The pre-upgrade local password must no longer authenticate locally.
+        creds = OAuth2PasswordRequestForm(
+            username="legacy@example.com", password="localpass", scope="", grant_type="password",
+        )
+        async with session_scope() as session:
+            async with asynccontextmanager(get_user_db)(session) as user_db:
+                async with asynccontextmanager(get_user_manager)(user_db) as mgr:
+                    try:
+                        assert await mgr.authenticate(creds) is None
+                    except UnknownHashError:
+                        pass  # sentinel hash is unparseable — also a local-auth miss

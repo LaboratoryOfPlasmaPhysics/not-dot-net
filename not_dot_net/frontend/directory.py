@@ -1,5 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import date
+from urllib.parse import urlparse
 
 from nicegui import ui
 from sqlalchemy import func, select
@@ -38,6 +40,23 @@ def _serialize_value(v) -> str | None:
     if isinstance(v, date):
         return v.isoformat()
     return str(v)
+
+
+def safe_external_url(value: str | None) -> str | None:
+    """Return an http(s) URL safe to use as an href, or None if there isn't one.
+
+    `webpage` is user-controlled and also round-trips from AD (`wWWHomePage`),
+    so `javascript:`/`data:` payloads must never reach ui.link. Whitespace is
+    stripped everywhere (not just at the ends) so `java\tscript:` can't sneak a
+    scheme past the check. Scheme-less input is assumed https.
+    """
+    candidate = "".join((value or "").split())
+    if not candidate:
+        return None
+    scheme = urlparse(candidate).scheme
+    if scheme:
+        return candidate if scheme in ("http", "https") else None
+    return f"https://{candidate.lstrip('/')}"
 
 
 def classify_updates(updates: dict) -> tuple[dict[str, str | None], dict]:
@@ -237,7 +256,11 @@ async def _render_detail(container, person: User, current_user: User, state: dic
         if person.webpage:
             with ui.row().classes("items-center gap-1"):
                 ui.label(f"{t('webpage')}:").classes("text-sm")
-                ui.link(person.webpage, person.webpage, new_tab=True).classes("text-sm")
+                href = safe_external_url(person.webpage)
+                if href:
+                    ui.link(person.webpage, href, new_tab=True).classes("text-sm")
+                else:
+                    ui.label(person.webpage).classes("text-sm")
         if person.start_date:
             ui.label(f"{t('start_date')}: {person.start_date}").classes("text-sm")
         if person.end_date:
@@ -311,7 +334,7 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
     writable: set[str] | None = set()
     if conn is not None:
         try:
-            writable = _query_writable_attributes(conn, person.ldap_dn)
+            writable = await asyncio.to_thread(_query_writable_attributes, conn, person.ldap_dn)
         except Exception:
             writable = set()
 
@@ -360,7 +383,8 @@ def _render_ad_enable_disable_button(container, person: User, current_user: User
     async def push_to_ad(bind_user: str, bind_password: str) -> None:
         cfg = await ldap_config.get()
         try:
-            ldap_set_account_enabled(
+            await asyncio.to_thread(
+                ldap_set_account_enabled,
                 dn=person.ldap_dn, enabled=enabling,
                 bind_username=bind_user, bind_password=bind_password,
                 ldap_cfg=cfg,
@@ -578,6 +602,11 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                     except ValueError:
                         ui.notify(t("invalid_date"), color="negative")
                         return
+                if k == "webpage" and val:
+                    val = safe_external_url(val)
+                    if val is None:
+                        ui.notify(t("invalid_webpage"), color="negative")
+                        return
                 submitted[k] = val
 
             current = {k: getattr(person, k) for k in submitted}
@@ -604,7 +633,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                     if ad_writable is None or attr in ad_writable
                 }
                 if modify_payload:
-                    ok = conn.modify(person.ldap_dn, modify_payload)
+                    ok = await asyncio.to_thread(conn.modify, person.ldap_dn, modify_payload)
                     if not ok:
                         ui.notify(
                             t("ad_write_failed", error=conn.result.get("description", "")),

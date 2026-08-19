@@ -1,4 +1,6 @@
 """Superuser-only user management tab: filter, sort, edit, bulk enable/disable in AD."""
+
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -98,7 +100,8 @@ async def apply_bulk_ad_state(
             failed.append((person, "not_ad"))
             continue
         try:
-            ldap_set_account_enabled(
+            await asyncio.to_thread(
+                ldap_set_account_enabled,
                 dn=person.ldap_dn, enabled=enabling,
                 bind_username=bind_username, bind_password=bind_password,
                 ldap_cfg=cfg,

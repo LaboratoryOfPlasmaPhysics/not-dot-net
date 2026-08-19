@@ -85,6 +85,10 @@ ldap_config = section("ldap", LdapConfig, label="LDAP / Active Directory")
 
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 
+# Placeholder hash for accounts that authenticate only through AD — pwdlib cannot
+# parse it, so any local-password attempt is a guaranteed miss.
+NO_LOCAL_PASSWORD = "!ldap-no-local-password"
+
 
 _ACCOUNTDISABLE = 0x2
 _ACCOUNT_EXPIRES_NEVER = {0, 9223372036854775807}
@@ -587,7 +591,7 @@ async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "Us
                   for info_field, user_field in _INFO_TO_USER.items()}
         user = User(
             **fields,
-            hashed_password="!ldap-no-local-password",
+            hashed_password=NO_LOCAL_PASSWORD,
             auth_method=AuthMethod.LDAP,
             ldap_dn=user_info.dn,
             role=default_role,

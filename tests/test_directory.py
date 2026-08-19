@@ -385,3 +385,45 @@ def test_parse_optional_date_handles_blank_and_invalid_input():
     assert parse_optional_date(" 2026-06-10 ") == _date(2026, 6, 10)
     with pytest.raises(ValueError):
         parse_optional_date("10/06/2026")
+
+
+class TestWebpageUrlSafety:
+    """S1 — a user-controlled `webpage` must never render as a javascript: link.
+
+    The value reaches the DB from two directions: the directory edit form and
+    AD sync (`wWWHomePage`), so the guard has to sit on the render side too.
+    """
+
+    def test_rejects_dangerous_schemes(self):
+        from not_dot_net.frontend.directory import safe_external_url
+
+        for value in (
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "  javascript:alert(1)",
+            "java\tscript:alert(1)",
+            "data:text/html;base64,PHNjcmlwdD4=",
+            "vbscript:msgbox(1)",
+            "file:///etc/passwd",
+            "mailto:someone@example.com",
+        ):
+            assert safe_external_url(value) is None, f"{value!r} should be rejected"
+
+    def test_accepts_http_and_https(self):
+        from not_dot_net.frontend.directory import safe_external_url
+
+        assert safe_external_url("https://lpp.polytechnique.fr") == "https://lpp.polytechnique.fr"
+        assert safe_external_url("http://example.com/~user") == "http://example.com/~user"
+        assert safe_external_url("  https://example.com  ") == "https://example.com"
+
+    def test_bare_domain_gets_https_scheme(self):
+        from not_dot_net.frontend.directory import safe_external_url
+
+        assert safe_external_url("example.com/~me") == "https://example.com/~me"
+
+    def test_empty_is_none(self):
+        from not_dot_net.frontend.directory import safe_external_url
+
+        assert safe_external_url("") is None
+        assert safe_external_url(None) is None
+        assert safe_external_url("   ") is None
