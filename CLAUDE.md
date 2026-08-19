@@ -60,6 +60,7 @@ The remaining HTTP surface is:
 - `GET /workflow/token/{token}` (`frontend/workflow_token.py`)
 - `GET /workflow/request/{id}` (`frontend/workflow_detail.py`)
 - `GET /pages/{slug}` (`frontend/public_page.py`)
+- `GET /floorplan/image/{id}` (`frontend/floorplan.py`) — immutable, long-cached; same exposure as the guest-visible floor plan page
 - The NiceGUI shell at `/`
 
 ### Module-level dependency injection

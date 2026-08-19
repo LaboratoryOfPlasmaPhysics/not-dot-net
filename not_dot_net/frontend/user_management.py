@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from nicegui import ui
 from sqlalchemy import select
+from sqlalchemy.orm import defer
 
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.auth.ldap import (
@@ -126,7 +127,9 @@ async def apply_bulk_ad_state(
 
 async def _load_all_users() -> list[User]:
     async with session_scope() as session:
-        result = await session.execute(select(User))
+        # defer(photo): this table never renders photos, and LargeBinary is not
+        # deferred on the model, so every row otherwise dragged its image along.
+        result = await session.execute(select(User).options(defer(User.photo)))
         return list(result.scalars().all())
 
 

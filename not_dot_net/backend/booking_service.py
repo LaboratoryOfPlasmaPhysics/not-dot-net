@@ -319,6 +319,34 @@ async def list_bookings_for_resource(
         return list(result.scalars().all())
 
 
+async def list_bookings_for_resources(
+    resource_ids: list[uuid.UUID],
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> dict[uuid.UUID, list[Booking]]:
+    """Bookings for many resources in one query, grouped by resource_id.
+
+    Every listed id gets a key, so callers never need a `.get(id, [])` dance.
+    """
+    if not resource_ids:
+        return {}
+    async with session_scope() as session:
+        query = (
+            select(Booking)
+            .where(Booking.resource_id.in_(resource_ids))
+            .order_by(Booking.start_date)
+        )
+        if from_date:
+            query = query.where(Booking.end_date >= from_date)
+        if to_date:
+            query = query.where(Booking.start_date <= to_date)
+        result = await session.execute(query)
+        grouped: dict[uuid.UUID, list[Booking]] = {rid: [] for rid in resource_ids}
+        for booking in result.scalars().all():
+            grouped[booking.resource_id].append(booking)
+        return grouped
+
+
 async def list_bookings_for_user(user_id: uuid.UUID) -> list[Booking]:
     async with session_scope() as session:
         result = await session.execute(

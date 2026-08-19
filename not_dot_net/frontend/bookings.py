@@ -87,6 +87,37 @@ def render(user: User):
     return refresh
 
 
+
+async def compute_availability(
+    resources, *, range_start: date, range_end: date, setup_buffer_days: int,
+) -> tuple[dict[uuid.UUID, bool], dict[uuid.UUID, object]]:
+    """Map each resource to free/busy over the window, plus the blocking booking.
+
+    One batched query for the whole list — this runs on every render, date-range
+    change, filter change and post-booking re-render.
+    """
+    from not_dot_net.backend.booking_service import list_bookings_for_resources
+
+    buffer = timedelta(days=setup_buffer_days)
+    window_start, window_end = range_start - buffer, range_end + buffer
+
+    by_resource = await list_bookings_for_resources(
+        [r.id for r in resources], from_date=window_start, to_date=window_end,
+    )
+
+    availability: dict[uuid.UUID, bool] = {}
+    conflicts: dict[uuid.UUID, object] = {}
+    for res in resources:
+        blocking = next((
+            b for b in by_resource.get(res.id, [])
+            if b.start_date < window_end and b.end_date > window_start
+        ), None)
+        if blocking is not None:
+            conflicts[res.id] = blocking
+        availability[res.id] = blocking is None
+    return availability, conflicts
+
+
 async def _render_bookings(container, user: User, filter_range=None):
     container.clear()
     is_admin = await has_permissions(user, "manage_bookings")
@@ -253,24 +284,10 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
         if setup_buffer_days is not None
         else (await bookings_config.get()).resource_setup_buffer_days
     )
-    availability: dict[uuid.UUID, bool] = {}
-    conflict_bookings = {}
-    for res in filtered:
-        bookings = await list_bookings_for_resource(
-            res.id,
-            from_date=range_start - timedelta(days=setup_buffer_days),
-            to_date=range_end + timedelta(days=setup_buffer_days),
-        )
-        conflicting_booking = next((
-            b
-            for b in bookings
-            if b.start_date < range_end + timedelta(days=setup_buffer_days)
-            and b.end_date > range_start - timedelta(days=setup_buffer_days)
-        ), None)
-        has_conflict = conflicting_booking is not None
-        if conflicting_booking is not None:
-            conflict_bookings[res.id] = conflicting_booking
-        availability[res.id] = not has_conflict
+    availability, conflict_bookings = await compute_availability(
+        filtered, range_start=range_start, range_end=range_end,
+        setup_buffer_days=setup_buffer_days,
+    )
 
     owner_labels = {}
     if conflict_bookings:

@@ -13,6 +13,7 @@ import not_dot_net.backend.auth.ldap  # noqa: F401 — register LdapConfig secti
 import not_dot_net.backend.ad_account_config  # noqa: F401 — register AdAccountConfig section
 import not_dot_net.backend.workflow_effects  # noqa: F401 — register effect handlers
 from not_dot_net.frontend.login import setup as setup_login, login_router
+from not_dot_net.frontend.floorplan import floorplan_router
 from not_dot_net.frontend.shell import setup as setup_shell
 from not_dot_net.frontend.workflow_token import setup as setup_token
 from not_dot_net.frontend.workflow_detail import setup as setup_workflow_detail
@@ -158,6 +159,7 @@ def create_app(
     app.on_shutdown(shutdown)
 
     app.include_router(login_router)
+    app.include_router(floorplan_router)
 
     from not_dot_net.frontend.i18n import validate_translations
     validate_translations()

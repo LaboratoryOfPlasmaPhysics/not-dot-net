@@ -1,9 +1,12 @@
 """Floor Plan tab — view and (admin) manage building floor plans and pins."""
 
 import base64
+import uuid
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from nicegui import ui
 
 from not_dot_net.backend.booking_service import get_resource_by_id, list_resources
@@ -14,6 +17,7 @@ from not_dot_net.backend.floorplan_service import (
     create_floor_plan,
     delete_floor_plan,
     delete_map_point,
+    floor_plan_image_exists,
     get_floor_plan_image,
     list_floor_plans,
     list_map_points,
@@ -89,9 +93,46 @@ def _clamp_range_to_window(value, window_start, window_end_exclusive) -> dict[st
     return {"from": str(start), "to": str(end)}
 
 
+
+floorplan_router = APIRouter(tags=["floorplan"])
+
+
+@floorplan_router.get("/floorplan/image/{floor_plan_id}")
+async def serve_floorplan_image(floor_plan_id: str):
+    """Serve a plan image. Content is immutable per id — plans have no
+    image-replacement path, only create and delete — so it caches hard.
+
+    Unauthenticated, matching the floor plan page itself: these same bytes were
+    already shipped to guests inside the page.
+    """
+    try:
+        plan_id = uuid.UUID(floor_plan_id)
+    except ValueError:
+        raise HTTPException(status_code=404)
+
+    content = await get_floor_plan_image(plan_id)
+    if content is None:
+        raise HTTPException(status_code=404)
+    return Response(
+        content=content,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 def _floorplan_image_data_uri(content: bytes) -> str:
     b64 = base64.b64encode(content).decode()
     return f"data:image/jpeg;base64,{b64}"
+
+
+def _floorplan_image_url(floor_plan_id) -> str:
+    """Cacheable URL for a plan image, instead of a multi-MB base64 prop.
+
+    The plan area re-renders on every pin add/delete, zone edit, availability
+    change and office booking; embedding the image meant re-reading it from
+    disk and pushing it over the websocket each time.
+    """
+    return f"/floorplan/image/{floor_plan_id}"
 
 
 def _points_payload(points: list[MapPoint], highlight_id=None) -> list[dict]:
@@ -179,13 +220,13 @@ async def _render_floorplan(container, user: User):
 async def _render_plan_area(plan_area, state, user, is_admin):
     plan_area.clear()
     plan = state["selected"]
-    image_bytes = await get_floor_plan_image(plan.id)
+    has_image = await floor_plan_image_exists(plan.id)
     points = await list_map_points(plan.id)
     points_by_id = {str(p.id): p for p in points}
     editing_id = state.get("editing_point_id")
 
     with plan_area:
-        if image_bytes is None:
+        if not has_image:
             ui.label(t("floorplan_none")).classes("text-grey")
             return
 
@@ -199,7 +240,7 @@ async def _render_plan_area(plan_area, state, user, is_admin):
         leaflet_mode = "editing" if editing_id is not None else state.get("place_mode", "off")
         visible_kinds = state.setdefault("visible_kinds", list(PIN_KINDS))
         leaflet = FloorPlanLeaflet(
-            image_url=_floorplan_image_data_uri(image_bytes),
+            image_url=_floorplan_image_url(plan.id),
             width_px=plan.width_px, height_px=plan.height_px,
             points=_points_payload(points, state["highlight_id"]),
             mode=leaflet_mode,

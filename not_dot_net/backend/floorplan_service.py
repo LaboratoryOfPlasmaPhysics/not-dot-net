@@ -120,6 +120,17 @@ async def get_floor_plan_image(floor_plan_id: uuid.UUID) -> bytes | None:
     return path.read_bytes()
 
 
+async def floor_plan_image_exists(floor_plan_id: uuid.UUID) -> bool:
+    """Whether a plan's image file is on disk, without reading it.
+
+    The plan area re-renders often; loading megabytes back only to compare
+    against None was pure waste.
+    """
+    async with session_scope() as session:
+        fp = await session.get(FloorPlan, floor_plan_id)
+    return fp is not None and Path(fp.image_path).is_file()
+
+
 async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
     if actor is not None:
         await check_permission(actor, MANAGE_FLOORPLANS)
