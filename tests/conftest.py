@@ -90,8 +90,14 @@ async def setup_db(request, monkeypatch):
     import not_dot_net.backend.uid_allocator  # noqa: F401
     import not_dot_net.backend.effect_retry  # noqa: F401
 
+    # Each test gets a fresh in-memory DB, but the ConfigSection cache is module
+    # state — without this a section read in one test is served to the next.
+    from not_dot_net.backend.app_config import invalidate_config_cache
+    invalidate_config_cache()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
+    invalidate_config_cache()
     await engine.dispose()
     db_module._engine, db_module._async_session_maker = old_engine, old_session
