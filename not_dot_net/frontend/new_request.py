@@ -260,7 +260,7 @@ def _render_returning_search(on_select) -> None:
             results_container.clear()
             with results_container:
                 for match in matches:
-                    active_label = "" if match["active"] else " (inactive)"
+                    active_label = "" if match["active"] else f" ({t('inactive').lower()})"
 
                     async def select_user(m=match, lbl=active_label):
                         on_select(m)
@@ -268,7 +268,7 @@ def _render_returning_search(on_select) -> None:
                         results_container.clear()
                         with results_container:
                             ui.chip(
-                                f"Returning: {m['name']}{lbl}",
+                                t("returning_person_chip", name=f"{m['name']}{lbl}"),
                                 icon="person",
                                 color="blue",
                             )

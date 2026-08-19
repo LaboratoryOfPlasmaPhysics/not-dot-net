@@ -48,9 +48,9 @@ async def test_pages_tab_shows_page_created_after_page_load(user: User) -> None:
     await _login(user)
     await user.open("/")
     # Wait for the deferred (timer-based) initial renders to complete:
-    # the empty pages list shows "page not found", the empty requests
+    # the empty pages list shows its empty state, the empty requests
     # table shows "no requests". Only then is the snapshot truly taken.
-    await user.should_see(t("page_not_found"))
+    await user.should_see(t("pages_empty"))
     await user.should_see(t("no_requests"))
 
     await create_page(
@@ -69,7 +69,7 @@ async def test_dashboard_shows_data_created_after_page_load_when_switching_back(
     await _ensure_no_page("fresh-dash-page")
     await _login(user)
     await user.open("/")
-    await user.should_see(t("page_not_found"))
+    await user.should_see(t("pages_empty"))
     await user.should_see(t("no_requests"))
 
     await create_page(

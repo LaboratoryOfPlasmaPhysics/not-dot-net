@@ -153,7 +153,7 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
                         on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
                     ).props("outlined flat accept='.pdf,.jpg,.jpeg,.png,.doc,.docx'").classes("w-full")
                 else:
-                    ui.label(f"{label}: no upload available").classes("text-grey text-sm")
+                    ui.label(f"{label}: {t('no_upload_available')}").classes("text-grey text-sm")
 
             if uploaded:
                 present_view = ui.row().classes("items-center gap-2")

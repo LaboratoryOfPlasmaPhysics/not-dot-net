@@ -280,6 +280,7 @@ async def _open_bulk_dialog(targets: list[User], *, enabling: bool, actor: User,
         async def submit():
             bind_user = (username_input.value or "").strip()
             if not bind_user or not password_input.value:
+                error_label.set_text(t("username_password_required"))
                 return
             error_label.set_text("")
             result = await apply_bulk_ad_state(

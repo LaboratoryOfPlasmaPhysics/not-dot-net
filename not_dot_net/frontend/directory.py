@@ -172,7 +172,7 @@ def _format_duration(person: User) -> str:
         return f"{t('since')} {person.start_date} ({years}y)"
     months = delta.days // 30
     if months >= 1:
-        return f"{t('since')} {person.start_date} ({months}mo)"
+        return f"{t('since')} {person.start_date} ({t('months_short', n=months)})"
     return f"{t('since')} {person.start_date}"
 
 
@@ -748,7 +748,7 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
         status_input = ui.select(status_opts, label=t("status")).props("outlined dense stack-label")
         employer_input = ui.select(employer_opts, label=t("employer")).props("outlined dense stack-label")
         start_input = ui.input(t("start_date"), placeholder="YYYY-MM-DD").props("outlined dense stack-label")
-        end_input = ui.input(t("end_date"), placeholder="YYYY-MM-DD (optional)").props("outlined dense stack-label")
+        end_input = ui.input(t("end_date"), placeholder=t("date_placeholder_optional")).props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes")).props("outlined dense stack-label")
 
         async def save():

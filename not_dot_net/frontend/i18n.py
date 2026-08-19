@@ -187,11 +187,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ad_effects_retried": "{ok} succeeded, {failed} still failing",
         "retry": "Retry",
         "confirm": "Confirm",
+        "add_row": "+ Add",
+        "username_password_required": "Username and password are required",
+        "recipient_required": "Enter a recipient address first",
+        "search": "Search...",
+        "returning_person_chip": "Returning: {name}",
+        "no_upload_available": "no upload available",
+        "pages_empty": "No pages yet",
+        "months_short": "{n}mo",
+        "date_placeholder_optional": "YYYY-MM-DD (optional)",
         "withdraw_request": "Withdraw request",
         "confirm_cancel_request": "Withdraw this request? It cannot be reopened.",
-        "cancel_booking": "Cancel booking",
         "confirm_cancel_booking": "Cancel this booking? The slot is released immediately.",
-        "confirm_delete_page": "Delete the page \"{title}\"? Published links to it will break.",
         "confirm_delete_role": "Delete the role '{key}'?",
         "role_deleted": "Role '{key}' deleted",
         "role_delete_in_use": "Cannot delete role '{key}' — {count} user(s) assigned",
@@ -390,7 +397,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "page_deleted": "Page deleted",
         "page_not_found": "Page not found",
         "page_draft": "Draft",
-        "confirm_delete_page": "Delete this page?",
+        "confirm_delete_page": "Delete the page \"{title}\"? Published links to it will break.",
         # Workflow detail
         "back_to_dashboard": "Back to dashboard",
         "requested_by": "Requested by",
@@ -779,11 +786,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ad_effects_retried": "{ok} réussie(s), {failed} toujours en échec",
         "retry": "Réessayer",
         "confirm": "Confirmer",
+        "add_row": "+ Ajouter",
+        "username_password_required": "Nom d'utilisateur et mot de passe requis",
+        "recipient_required": "Saisissez d'abord une adresse destinataire",
+        "search": "Rechercher...",
+        "returning_person_chip": "Retour : {name}",
+        "no_upload_available": "aucun fichier envoyé",
+        "pages_empty": "Aucune page pour le moment",
+        "months_short": "{n} mois",
+        "date_placeholder_optional": "AAAA-MM-JJ (optionnel)",
         "withdraw_request": "Retirer la demande",
         "confirm_cancel_request": "Retirer cette demande ? Elle ne pourra pas être rouverte.",
-        "cancel_booking": "Annuler la réservation",
         "confirm_cancel_booking": "Annuler cette réservation ? Le créneau est libéré immédiatement.",
-        "confirm_delete_page": "Supprimer la page « {title} » ? Les liens publiés vers elle seront cassés.",
         "confirm_delete_role": "Supprimer le rôle « {key} » ?",
         "role_deleted": "Rôle « {key} » supprimé",
         "role_delete_in_use": "Impossible de supprimer le rôle « {key} » — {count} utilisateur(s) assigné(s)",
@@ -982,7 +996,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "page_deleted": "Page supprimée",
         "page_not_found": "Page introuvable",
         "page_draft": "Brouillon",
-        "confirm_delete_page": "Supprimer cette page ?",
+        "confirm_delete_page": "Supprimer la page « {title} » ? Les liens publiés vers elle seront cassés.",
         # Workflow detail
         "back_to_dashboard": "Retour au tableau de bord",
         "requested_by": "Demandé par",
@@ -1265,3 +1279,22 @@ def t(key: str, **kwargs) -> str:
     if kwargs:
         text = text.format(**kwargs)
     return text
+
+
+# strftime("%b") follows the process locale, which in the container is C —
+# French users got "Aug 12". Month names come from the table instead.
+_MONTHS_SHORT = {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin",
+           "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+}
+
+
+def format_short_date(dt) -> str:
+    """Day + abbreviated month in the current locale's usual order."""
+    if dt is None:
+        return ""
+    locale = get_locale()
+    month = _MONTHS_SHORT.get(locale, _MONTHS_SHORT[DEFAULT_LOCALE])[dt.month - 1]
+    return f"{dt.day} {month}" if locale == "fr" else f"{month} {dt.day}"

@@ -19,7 +19,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
 from not_dot_net.config import dashboard_config, step_display
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_short_date, t
 from not_dot_net.frontend.workflow_step import (
     render_step_progress,
 )
@@ -275,7 +275,7 @@ async def _render_requests_table(container, requests):
                     label=t("status"),
                 ).props("outlined dense clearable").classes("min-w-[140px]")
 
-                search = ui.input(placeholder="Search...").props("outlined dense clearable").classes("min-w-[160px]")
+                search = ui.input(placeholder=t("search")).props("outlined dense clearable").classes("min-w-[160px]")
 
         def apply_filters():
             filtered = rows
@@ -392,7 +392,7 @@ async def _render_actionable(container, user: User):
                     if last_comment:
                         actor = actor_names.get(last_comment.actor_id, "")
                         date_str = (
-                            last_comment.created_at.strftime("%b %d")
+                            format_short_date(last_comment.created_at)
                             if last_comment.created_at else ""
                         )
                         with ui.element("div").classes("mt-2 pl-3").style(

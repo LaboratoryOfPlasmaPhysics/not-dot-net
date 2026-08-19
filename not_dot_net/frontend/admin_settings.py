@@ -340,6 +340,7 @@ def _render_ldap_sync(user):
             async def do_sync():
                 bind_user = username_input.value.strip()
                 if not bind_user or not password_input.value:
+                    error_label.set_text(t("username_password_required"))
                     return
                 error_label.set_text("")
                 result_label.set_text(t("sync_ad_running"))
@@ -390,6 +391,7 @@ def _render_mail_test(user):
             from not_dot_net.backend.mail_outbox import send_test_mail
             target = (recipient.value or "").strip()
             if not target:
+                ui.notify(t("recipient_required"), color="negative")
                 return
             try:
                 await send_test_mail(target)

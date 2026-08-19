@@ -51,7 +51,8 @@ async def _render_page_list(container, user: User):
                 ).props("flat color=primary")
 
         if not pages:
-            ui.label(t("page_not_found")).classes("text-grey")
+            # Not page_not_found: an empty list is a normal state, not an error.
+            ui.label(t("pages_empty")).classes("text-grey")
             return
 
         for page in pages:

@@ -34,6 +34,7 @@ async def prompt_ad_credentials(
         async def submit():
             bind_user = username_input.value.strip()
             if not bind_user or not password_input.value:
+                error_label.set_text(t("username_password_required"))
                 return
             cfg = await ldap_config.get()
             try:

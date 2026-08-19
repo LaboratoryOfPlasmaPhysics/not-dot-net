@@ -74,3 +74,54 @@ async def test_confirm_dialog_accepts_a_sync_action(user: User):
     await user.open("/confirm-sync")
     await holder["dlg"].confirm()
     assert ran == [True]
+
+
+class TestKeyedChipEditorValue:
+    """U18 — duplicate key inputs silently dropped a row's data on save."""
+
+    async def test_duplicate_keys_merge_instead_of_overwriting(self, user: User):
+        from not_dot_net.frontend.widgets import keyed_chip_editor
+
+        holder = {}
+
+        @ui.page("/keyed-dupes")
+        def page():
+            holder["editor"] = keyed_chip_editor({"Intern": ["g1"], "Staff": ["g2"]})
+
+        await user.open("/keyed-dupes")
+        editor = holder["editor"]
+        # The admin renames "Staff" to "Intern" — previously the first row's
+        # groups just vanished on save.
+        editor._rows["Staff"]["key_input"].value = "Intern"
+
+        assert editor.value == {"Intern": ["g1", "g2"]}
+
+    async def test_blank_keys_are_dropped(self, user: User):
+        from not_dot_net.frontend.widgets import keyed_chip_editor
+
+        holder = {}
+
+        @ui.page("/keyed-blank")
+        def page():
+            holder["editor"] = keyed_chip_editor({"Intern": ["g1"], "Staff": ["g2"]})
+
+        await user.open("/keyed-blank")
+        editor = holder["editor"]
+        editor._rows["Staff"]["key_input"].value = "   "
+
+        assert editor.value == {"Intern": ["g1"]}
+
+    async def test_merge_does_not_duplicate_shared_values(self, user: User):
+        from not_dot_net.frontend.widgets import keyed_chip_editor
+
+        holder = {}
+
+        @ui.page("/keyed-shared")
+        def page():
+            holder["editor"] = keyed_chip_editor({"A": ["g1", "g2"], "B": ["g2", "g3"]})
+
+        await user.open("/keyed-shared")
+        editor = holder["editor"]
+        editor._rows["B"]["key_input"].value = "A"
+
+        assert editor.value == {"A": ["g1", "g2", "g3"]}

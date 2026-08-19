@@ -95,11 +95,25 @@ class KeyedChipEditor:
         with self._container:
             for k, vs in (value or {}).items():
                 self._add_row(k, list(vs))
-            self._add_button = ui.button("+ Add", on_click=self._on_add).props("flat dense color=primary")
+            self._add_button = ui.button(t("add_row"), on_click=self._on_add).props("flat dense color=primary")
 
     @property
     def value(self) -> dict[str, list[str]]:
-        return {row["key_input"].value: list(row["chip"].value) for row in self._rows.values()}
+        """Current contents, keyed by whatever the key inputs now say.
+
+        Two rows can end up sharing a key (the admin renames one to match
+        another); a plain dict comprehension silently kept only the last, losing
+        the other row's values on save. Merge instead, and drop blank keys
+        rather than producing a "" entry.
+        """
+        merged: dict[str, list[str]] = {}
+        for row in self._rows.values():
+            key = (row["key_input"].value or "").strip()
+            if not key:
+                continue
+            existing = merged.setdefault(key, [])
+            existing.extend(v for v in row["chip"].value if v not in existing)
+        return merged
 
     def add_key(self, key: str, values: list[str] | None = None) -> None:
         with self._container:

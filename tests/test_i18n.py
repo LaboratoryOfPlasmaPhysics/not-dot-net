@@ -1,6 +1,12 @@
 import string
+from pathlib import Path
 
+import not_dot_net.frontend.i18n as i18n_module
 from not_dot_net.frontend.i18n import TRANSLATIONS, _parse_accept_language, t
+
+# Resolved at import time: other tests use runpy, which can leave
+# `import not_dot_net.frontend...` failing mid-suite.
+I18N_SOURCE = Path(i18n_module.__file__)
 
 SECURITY_MESSAGE_KEYS = {
     "invalid_credentials",
@@ -82,3 +88,31 @@ def test_fr_translations_are_not_english():
         fr = TRANSLATIONS["fr"][key]
         if en not in shared_allowed:
             assert en != fr, f"'{key}' has same value in en and fr: '{en}'"
+
+
+def test_no_duplicate_keys_in_any_locale():
+    """A repeated key in a dict literal silently keeps the LAST definition.
+
+    Adding "returning_person" a second time made t("returning_person", name=X)
+    render an unrelated label and drop the placeholder — with no error anywhere.
+    """
+    import ast
+    import collections
+
+    tree = ast.parse(I18N_SOURCE.read_text())
+    duplicates = {}
+    for node in ast.walk(tree):
+        target = getattr(node, "target", None)
+        if not isinstance(node, ast.AnnAssign) or getattr(target, "id", "") != "TRANSLATIONS":
+            continue
+        for locale_node, table in zip(node.value.keys, node.value.values):
+            names = [k.value for k in table.keys if isinstance(k, ast.Constant)]
+            repeated = sorted(k for k, n in collections.Counter(names).items() if n > 1)
+            if repeated:
+                duplicates[locale_node.value] = repeated
+
+    # "description" and "office" are pre-existing and already on the backlog.
+    known = {"description", "office"}
+    unexpected = {loc: [k for k in keys if k not in known] for loc, keys in duplicates.items()}
+    unexpected = {loc: keys for loc, keys in unexpected.items() if keys}
+    assert not unexpected, f"duplicate translation keys: {unexpected}"
