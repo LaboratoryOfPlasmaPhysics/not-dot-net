@@ -219,9 +219,9 @@ async def _current_booking_user(session, resource_id: uuid.UUID, today: date) ->
 
 
 async def _out_of_service_recipients(session) -> list[User]:
-    result = await session.execute(select(User).where(User.is_active == True))  # noqa: E712
-    users = list(result.scalars().all())
-    return [u for u in users if u.is_superuser or await has_permissions(u, MANAGE_BOOKINGS)]
+    from not_dot_net.backend.permissions import users_with_permission
+
+    return await users_with_permission(session, MANAGE_BOOKINGS)
 
 
 async def _booking_email_env() -> tuple[str, str, str]:

@@ -292,11 +292,8 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             return list(result.scalars().all())
 
         async def get_users_by_permission(perm):
-            result = await session.execute(
-                select(User).where(User.is_active == True)
-            )
-            all_users = list(result.scalars().all())
-            return [u for u in all_users if await has_permissions(u, perm)]
+            from not_dot_net.backend.permissions import users_with_permission
+            return await users_with_permission(session, perm)
 
         await notify(
             request=req,

@@ -44,6 +44,39 @@ async def has_permissions(user, *permissions: str) -> bool:
     return all(p in role_def.permissions for p in permissions)
 
 
+
+async def users_with_permission(session, permission: str) -> list:
+    """Active users whose role grants `permission`, plus every super-user.
+
+    Resolves roles first and filters in SQL. The previous shape — load every
+    active user, then await has_permissions on each — scanned the whole table
+    and, since User.photo is a non-deferred LargeBinary, dragged every profile
+    photo through memory on each notification fan-out.
+    """
+    from sqlalchemy import or_, select
+    from sqlalchemy.orm import defer
+
+    from not_dot_net.backend.db import User
+    from not_dot_net.backend.roles import roles_config
+
+    cfg = await roles_config.get()
+    granting = [
+        key for key, definition in cfg.roles.items()
+        if permission in definition.permissions
+    ]
+
+    condition = User.is_superuser.is_(True)
+    if granting:
+        condition = or_(condition, User.role.in_(granting))
+
+    result = await session.execute(
+        select(User)
+        .where(User.is_active.is_(True), condition)
+        .options(defer(User.photo))
+    )
+    return list(result.scalars().all())
+
+
 def require(*permissions: str):
     """FastAPI dependency — raises 403 if user lacks permissions."""
     from not_dot_net.backend.users import current_active_user
