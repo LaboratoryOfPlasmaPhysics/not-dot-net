@@ -968,6 +968,21 @@ async def resolve_actor_names(actor_ids) -> dict[uuid.UUID, str]:
     return await resolve_user_names(actor_ids)
 
 
+
+async def can_resend_notification(user) -> bool:
+    """Whether `user` may re-send a token link for a target_person step.
+
+    The single source of truth for both the button's visibility and the
+    service's enforcement — they used to carry separate copies of this
+    OR-check and could drift apart.
+    """
+    return (
+        await has_permissions(user, APPROVE_WORKFLOWS)
+        or await has_permissions(user, "access_personal_data")
+        or await has_permissions(user, "manage_users")
+    )
+
+
 async def resend_notification(
     request_id: uuid.UUID,
     actor_user=None,
@@ -995,12 +1010,7 @@ async def resend_notification(
         if step_config is None or step_config.assignee != "target_person":
             raise ValueError(f"Current step '{req.current_step}' is not assigned to target_person")
 
-        can_act = (
-            await has_permissions(actor_user, APPROVE_WORKFLOWS)
-            or await has_permissions(actor_user, "access_personal_data")
-            or await has_permissions(actor_user, "manage_users")
-        )
-        if not can_act:
+        if not await can_resend_notification(actor_user):
             raise PermissionError("Insufficient permissions to resend notification")
 
         req.token = str(uuid.uuid4())

@@ -106,3 +106,29 @@ async def test_image_exists_is_false_when_the_file_is_gone(monkeypatch, tmp_path
 
     (tmp_path / f"{plan.id}.jpg").unlink()
     assert await floor_plan_image_exists(plan.id) is False
+
+
+async def test_failed_create_does_not_leave_an_orphan_image(monkeypatch, tmp_path):
+    """I12 — the JPEG is written before the DB commit, and only IntegrityError
+    cleaned it up. Any other failure left an orphan file with nothing pointing
+    at it and no reaper to collect it."""
+    from not_dot_net.backend import floorplan_service as fs
+
+    monkeypatch.setattr(fs, "FLOORPLAN_ROOT", tmp_path)
+    admin = await _make_admin()
+
+    class _Boom(Exception):
+        pass
+
+    real_scope = fs.session_scope
+
+    def exploding_scope(*a, **k):
+        raise _Boom("database unavailable")
+
+    monkeypatch.setattr(fs, "session_scope", exploding_scope)
+    with pytest.raises(_Boom):
+        await fs.create_floor_plan("Doomed Plan", _image_bytes(), actor=admin)
+
+    monkeypatch.setattr(fs, "session_scope", real_scope)
+    leftovers = list(tmp_path.glob("*.jpg"))
+    assert leftovers == [], f"orphan image left behind: {leftovers}"

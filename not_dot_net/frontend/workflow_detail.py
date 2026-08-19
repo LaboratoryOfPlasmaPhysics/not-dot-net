@@ -124,13 +124,8 @@ def setup():
                 and step_config.assignee == "target_person"
                 and req.target_email
             ):
-                from not_dot_net.backend.permissions import has_permissions as _has_perms
-                can_resend = (
-                    await _has_perms(user, "approve_workflows")
-                    or await _has_perms(user, "access_personal_data")
-                    or await _has_perms(user, "manage_users")
-                )
-                if can_resend:
+                from not_dot_net.backend.workflow_service import can_resend_notification
+                if await can_resend_notification(user):
                     with ui.card().classes("w-full q-pa-md mt-2").style(
                         "background: #fff8e1; border: 1px solid #ffe082;"
                     ):

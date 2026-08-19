@@ -86,19 +86,24 @@ async def create_floor_plan(name: str, content: bytes, actor=None) -> FloorPlan:
     image_path = FLOORPLAN_ROOT / f"{floor_plan_id}.jpg"
     image_path.write_bytes(jpeg_bytes)
 
-    async with session_scope() as session:
-        fp = FloorPlan(
-            id=floor_plan_id, name=name, image_path=str(image_path),
-            width_px=width, height_px=height,
-        )
-        session.add(fp)
-        try:
-            await session.commit()
-        except IntegrityError as exc:
-            await session.rollback()
-            image_path.unlink(missing_ok=True)
-            raise ValueError(f"Floor plan name '{name}' already exists") from exc
-        await session.refresh(fp)
+    # The JPEG is on disk before the row exists, so every failure path from here
+    # has to take it back out — nothing else ever collects orphaned plan images.
+    try:
+        async with session_scope() as session:
+            fp = FloorPlan(
+                id=floor_plan_id, name=name, image_path=str(image_path),
+                width_px=width, height_px=height,
+            )
+            session.add(fp)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ValueError(f"Floor plan name '{name}' already exists") from exc
+            await session.refresh(fp)
+    except Exception:
+        image_path.unlink(missing_ok=True)
+        raise
 
     from not_dot_net.backend.audit import log_audit
     await log_audit(

@@ -79,3 +79,58 @@ async def test_successful_resend_rotates_the_token(monkeypatch):
 
     assert sent == [request_id]
     assert await _token_of(request_id) != original_token
+
+
+class TestResendPermissionPredicate:
+    """D7 — the same three-permission OR-check lived in the UI and the service.
+
+    Drift showed or hid the button independently of what was enforced: a role
+    granted access_personal_data but not the others would see no button while
+    the service would have let them through, or worse the reverse.
+    """
+
+    async def test_predicate_matches_what_the_service_enforces(self):
+        from not_dot_net.backend.workflow_service import can_resend_notification
+
+        for permission in ("approve_workflows", "access_personal_data", "manage_users"):
+            user = await _user_with_permission(permission)
+            assert await can_resend_notification(user) is True, permission
+
+    async def test_predicate_rejects_a_user_with_none_of_them(self):
+        from not_dot_net.backend.workflow_service import can_resend_notification
+
+        user = await _user_with_permission("view_directory")
+        assert await can_resend_notification(user) is False
+
+    async def test_service_and_predicate_agree_on_refusal(self):
+        """The service must still refuse, not just the button disappear."""
+        from not_dot_net.backend.workflow_service import (
+            can_resend_notification, resend_notification,
+        )
+
+        user = await _user_with_permission("view_directory")
+        assert await can_resend_notification(user) is False
+
+        request_id = await _token_request()
+        with pytest.raises(PermissionError):
+            await resend_notification(request_id, actor_user=user)
+
+
+async def _user_with_permission(permission: str) -> User:
+    """A user whose role grants exactly `permission`."""
+    from not_dot_net.backend.roles import RoleDefinition, roles_config
+
+    role_key = f"role_{permission}"
+    cfg = await roles_config.get()
+    cfg.roles[role_key] = RoleDefinition(label=role_key, permissions=[permission])
+    await roles_config.set(cfg)
+
+    async with session_scope() as session:
+        user = User(
+            email=f"{role_key}-{uuid.uuid4().hex[:6]}@example.com",
+            hashed_password="x", is_active=True, role=role_key,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
