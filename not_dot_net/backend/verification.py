@@ -87,7 +87,9 @@ async def has_valid_code(request_id: uuid.UUID) -> bool:
 async def verify_code(request_id: uuid.UUID, code: str) -> bool:
     """Verify a code. Returns True on match. Raises PermissionError if rate-limited."""
     async with session_scope() as session:
-        req = await session.get(WorkflowRequest, request_id)
+        # Row lock: without it N parallel attempts all read code_attempts
+        # before any increments, and every one of them clears the gate below.
+        req = await session.get(WorkflowRequest, request_id, with_for_update=True)
         if req is None:
             raise ValueError(f"Request {request_id} not found")
 
@@ -108,6 +110,12 @@ async def verify_code(request_id: uuid.UUID, code: str) -> bool:
         req.code_attempts += 1
 
         if _hash_code(code) == req.verification_code_hash:
+            # Consume it. Keeping the hash left the code usable for its whole
+            # validity window, so anyone who saw it once — shared mailbox,
+            # forwarded mail, a glance at the screen — could re-open the form.
+            # The caller renders the form straight away and never re-verifies.
+            req.verification_code_hash = None
+            req.code_expires_at = None
             req.code_attempts = 0
             await session.commit()
             return True

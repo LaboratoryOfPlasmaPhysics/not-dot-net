@@ -91,15 +91,35 @@ async def test_reuse_valid_code():
 
 
 @pytest.mark.asyncio
-async def test_code_survives_verification():
-    """After verification, code stays in DB so has_valid_code still returns True."""
+async def test_code_is_consumed_by_a_successful_verification():
+    """A one-time code must not stay usable for the rest of its window (S4).
+
+    It used to survive so has_valid_code kept returning True. That is an
+    implementation detail, not a requirement: the regeneration lockout it
+    supports defends against spamming "resend" to reset code_attempts, and a
+    wrong code still cannot clear the hash. Only a correct one consumes it —
+    by which point the guesser already knows the code.
+    """
     req = await _create_test_request()
     code = await generate_verification_code(req.id)
     assert await has_valid_code(req.id) is True
+
     await verify_code(req.id, code)
+
+    assert await has_valid_code(req.id) is False
+    # A fresh code can now be issued — the previous one is spent.
+    assert await generate_verification_code(req.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_wrong_code_does_not_lift_the_regeneration_lockout():
+    """The brute-force protection this used to rest on stays intact."""
+    req = await _create_test_request()
+    await generate_verification_code(req.id)
+
+    assert await verify_code(req.id, "000000") is False
     assert await has_valid_code(req.id) is True
-    regenerated = await generate_verification_code(req.id)
-    assert regenerated is None
+    assert await generate_verification_code(req.id) is None
 
 
 @pytest.mark.asyncio

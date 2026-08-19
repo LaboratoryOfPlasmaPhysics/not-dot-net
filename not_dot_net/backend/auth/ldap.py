@@ -582,10 +582,7 @@ async def sync_user_from_ldap(user_id: uuid.UUID, info: LdapUserInfo) -> None:
         user = await session.get(User, user_id)
         if user is None:
             return
-        for info_field, user_field in _INFO_TO_USER.items():
-            setattr(user, user_field, getattr(info, info_field))
-        user.ldap_dn = info.dn
-        user.is_active = info.is_active
+        _apply_ldap_info(user, info)
         await session.commit()
 
 
@@ -598,16 +595,7 @@ async def provision_ldap_user(user_info: LdapUserInfo, default_role: str) -> "Us
     from not_dot_net.backend.db import User, AuthMethod, session_scope
 
     async with session_scope() as session:
-        fields = {user_field: getattr(user_info, info_field)
-                  for info_field, user_field in _INFO_TO_USER.items()}
-        user = User(
-            **fields,
-            hashed_password=NO_LOCAL_PASSWORD,
-            auth_method=AuthMethod.LDAP,
-            ldap_dn=user_info.dn,
-            role=default_role,
-            is_active=user_info.is_active,
-        )
+        user = _new_ldap_user(user_info, default_role)
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -692,6 +680,44 @@ def _search_all_user_entries(cfg: LdapConfig, bind_username: str, bind_password:
     return entries
 
 
+
+_SYNC_BATCH_SIZE = 100
+
+
+async def _existing_users_by_email(session) -> dict:
+    """All users keyed by lowercased email, without the LargeBinary photo."""
+    from not_dot_net.backend.db import User
+    from sqlalchemy import select
+    from sqlalchemy.orm import defer
+
+    result = await session.execute(select(User).options(defer(User.photo)))
+    return {u.email.lower(): u for u in result.scalars().all()}
+
+
+def _apply_ldap_info(user, info: LdapUserInfo) -> None:
+    """Copy AD-owned attributes onto a User. Local-only fields are untouched."""
+    for info_field, user_field in _INFO_TO_USER.items():
+        setattr(user, user_field, getattr(info, info_field))
+    user.ldap_dn = info.dn
+    user.is_active = info.is_active
+
+
+def _new_ldap_user(info: LdapUserInfo, default_role: str):
+    """Build (but do not persist) a local User from AD attributes."""
+    from not_dot_net.backend.db import User, AuthMethod
+
+    fields = {user_field: getattr(info, info_field)
+              for info_field, user_field in _INFO_TO_USER.items()}
+    return User(
+        **fields,
+        hashed_password=NO_LOCAL_PASSWORD,
+        auth_method=AuthMethod.LDAP,
+        ldap_dn=info.dn,
+        role=default_role,
+        is_active=info.is_active,
+    )
+
+
 async def sync_all_from_ldap(
     bind_username: str,
     bind_password: str,
@@ -711,31 +737,44 @@ async def sync_all_from_ldap(
         _search_all_user_entries, cfg, bind_username, bind_password,
     )
 
-    async with session_scope() as session:
-        existing = await session.execute(select(User))
-        users_by_email = {u.email.lower(): u for u in existing.scalars().all()}
-
     roles_cfg = await roles_config.get()
     default_role = roles_cfg.default_role or ""
     result = SyncResult()
 
-    for entry in entries:
-        info = _entry_to_user_info(entry)
-        if info is None:
-            result.skipped += 1
-            continue
-        try:
-            existing_user = users_by_email.get(info.email.lower())
-            if existing_user is not None:
-                await sync_user_from_ldap(existing_user.id, info)
-                result.synced += 1
-            else:
-                new_user = await provision_ldap_user(info, default_role)
-                users_by_email[info.email.lower()] = new_user
-                result.provisioned += 1
-        except Exception as e:
-            result.errors.append(f"{info.email}: {e}")
-            logger.warning("Failed to sync LDAP user '%s': %s", info.email, e)
+    # One session for the whole directory: a per-entry session + commit meant
+    # a 1000-user sync cost 1000 of each. Committing per batch keeps a failure
+    # from discarding everything already applied.
+    async with session_scope() as session:
+        users_by_email = await _existing_users_by_email(session)
+        pending = 0
+
+        for entry in entries:
+            info = _entry_to_user_info(entry)
+            if info is None:
+                result.skipped += 1
+                continue
+            try:
+                existing_user = users_by_email.get(info.email.lower())
+                if existing_user is not None:
+                    _apply_ldap_info(existing_user, info)
+                    result.synced += 1
+                else:
+                    new_user = _new_ldap_user(info, default_role)
+                    session.add(new_user)
+                    users_by_email[info.email.lower()] = new_user
+                    result.provisioned += 1
+                pending += 1
+            except Exception as e:
+                result.errors.append(f"{info.email}: {e}")
+                logger.warning("Failed to sync LDAP user '%s': %s", info.email, e)
+                continue
+
+            if pending >= _SYNC_BATCH_SIZE:
+                await session.commit()
+                pending = 0
+
+        if pending:
+            await session.commit()
 
     return result
 
