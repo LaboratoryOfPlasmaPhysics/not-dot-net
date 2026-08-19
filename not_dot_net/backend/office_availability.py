@@ -99,7 +99,9 @@ async def revoke_availability(window_id: uuid.UUID, actor=None) -> None:
         window = await session.get(OfficeAvailability, window_id)
         if window is None:
             raise ValueError(f"Availability window {window_id} not found")
-        resource = await session.get(Resource, window.resource_id)
+        # Same lock create_booking takes: without it a booking can commit
+        # against this window between the check below and the DELETE.
+        resource = await session.get(Resource, window.resource_id, with_for_update=True)
         await _check_owner_or_manager(resource, actor)
 
         conflicting = await session.execute(

@@ -8,19 +8,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-import not_dot_net.backend.db  # noqa: F401
-import not_dot_net.backend.workflow_models  # noqa: F401
-import not_dot_net.backend.booking_models  # noqa: F401
-import not_dot_net.backend.audit  # noqa: F401
-import not_dot_net.backend.app_config  # noqa: F401
-import not_dot_net.backend.page_models  # noqa: F401
-import not_dot_net.backend.encrypted_storage  # noqa: F401
-import not_dot_net.backend.tenure_service  # noqa: F401
-import not_dot_net.backend.mail_outbox  # noqa: F401
-import not_dot_net.backend.uid_allocator  # noqa: F401
-import not_dot_net.backend.effect_retry  # noqa: F401
-import not_dot_net.backend.floorplan_models  # noqa: F401
-import not_dot_net.backend.office_availability  # noqa: F401
+from not_dot_net.backend.models import register_all_models
+
+register_all_models()
 from not_dot_net.backend.db import Base
 
 config = context.config

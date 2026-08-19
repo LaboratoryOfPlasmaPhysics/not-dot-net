@@ -70,6 +70,18 @@ def process_profile_photo(content: bytes) -> bytes | None:
         return None
 
 
+
+async def process_profile_photo_async(content: bytes) -> bytes | None:
+    """process_profile_photo off the event loop.
+
+    Decode + LANCZOS resize + JPEG encode is tens to hundreds of ms of pure
+    CPU, and NiceGUI serves every client's websocket from the same loop.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(process_profile_photo, content)
+
+
 def validate_profile_photo(
     content: bytes,
     filename: str,
@@ -89,8 +101,14 @@ def validate_profile_photo(
 
 
 async def validate_profile_photo_upload(content: bytes, filename: str) -> str | None:
+    # Validation decodes the image too, so it is the same CPU cost as
+    # processing it — off the loop as well.
+    import asyncio
+
     cfg = await files_config.get()
-    return validate_profile_photo(content, filename, cfg.profile_photo_max_size_mb)
+    return await asyncio.to_thread(
+        validate_profile_photo, content, filename, cfg.profile_photo_max_size_mb,
+    )
 
 
 async def _check_photo_actor(user_id: uuid.UUID, actor) -> None:
@@ -103,7 +121,7 @@ async def _check_photo_actor(user_id: uuid.UUID, actor) -> None:
 
 async def save_profile_photo(user_id: uuid.UUID, content: bytes, actor=None) -> bytes | None:
     await _check_photo_actor(user_id, actor)
-    processed = process_profile_photo(content)
+    processed = await process_profile_photo_async(content)
     if processed is None:
         return None
 

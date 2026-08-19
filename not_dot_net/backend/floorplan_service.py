@@ -64,10 +64,19 @@ def process_floorplan_image(content: bytes) -> tuple[bytes, int, int] | None:
         return None
 
 
+
+async def process_floorplan_image_async(content: bytes) -> tuple[bytes, int, int] | None:
+    """process_floorplan_image off the event loop — same reasoning as photos,
+    on bigger inputs."""
+    import asyncio
+
+    return await asyncio.to_thread(process_floorplan_image, content)
+
+
 async def create_floor_plan(name: str, content: bytes, actor=None) -> FloorPlan:
     if actor is not None:
         await check_permission(actor, MANAGE_FLOORPLANS)
-    processed = process_floorplan_image(content)
+    processed = await process_floorplan_image_async(content)
     if processed is None:
         raise ValueError("Invalid image")
     jpeg_bytes, width, height = processed

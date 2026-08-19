@@ -94,3 +94,32 @@ async def test_non_overlapping_tenures_still_allowed():
         start_date=date(2024, 1, 1), end_date=None,
     )
     assert second.id is not None
+
+
+async def test_revoke_availability_locks_the_resource_row(spy_get):
+    """I8 — the conflicting-booking check and the window DELETE took no lock on
+    the resource, so a booking could commit against a window that no longer
+    exists."""
+    from not_dot_net.backend.booking_service import create_resource
+    from not_dot_net.backend.office_availability import offer_availability, revoke_availability
+
+    owner = await _make_user("office-owner@example.com")
+    resource = await create_resource(
+        name="Office 42", resource_type="office", location="Palaiseau",
+        owner_user_id=owner.id,
+    )
+    window = await offer_availability(
+        resource_id=resource.id,
+        start_date=date.today() + timedelta(days=10),
+        end_date=date.today() + timedelta(days=20),
+        actor=owner,
+    )
+
+    spy_get.clear()
+    await revoke_availability(window.id, actor=owner)
+
+    resource_gets = [kw for entity, kw in spy_get if entity is Resource]
+    assert resource_gets, "revoke_availability should fetch the resource"
+    assert any(kw.get("with_for_update") for kw in resource_gets), (
+        "revoke_availability ran its booking check without locking the resource"
+    )

@@ -1014,12 +1014,24 @@ async def resend_notification(
         await session.commit()
         await session.refresh(req)
 
+    from not_dot_net.backend.audit import log_audit
+
     try:
         await _send_token_link(req, wf)
     except Exception:
+        # Not swallowed: the token has already rotated, so the previous link is
+        # dead. Reporting "notification resent" here would leave the target
+        # holding a URL nobody knows is broken. The admin retries, which mints
+        # a fresh token and sends again.
         logger.exception("Failed to send notification for resend on request %s", request_id)
+        await log_audit(
+            "workflow", "resend_notification",
+            actor_id=actor_user.id, actor_email=actor_user.email,
+            target_type="request", target_id=req.id,
+            detail=f"step={req.current_step} send_failed=True",
+        )
+        raise
 
-    from not_dot_net.backend.audit import log_audit
     await log_audit(
         "workflow", "resend_notification",
         actor_id=actor_user.id, actor_email=actor_user.email,
