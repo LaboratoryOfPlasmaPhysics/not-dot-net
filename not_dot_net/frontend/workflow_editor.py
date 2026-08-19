@@ -145,7 +145,7 @@ class WorkflowEditorDialog:
             try:
                 self.apply_yaml(self._yaml_editor.value)
             except ValueError as err:
-                ui.notify(f"Invalid YAML: {err}", color="negative", multi_line=True)
+                ui.notify(t("invalid_yaml", error=err), color="negative", multi_line=True)
                 return  # stay on YAML so user can fix
         self._yaml_editor = None
         self._render_form_body()
@@ -420,7 +420,7 @@ class WorkflowEditorDialog:
         self._detail_container.clear()
         with self._detail_container:
             if self.selected_workflow is None:
-                ui.label("No workflow selected. Add one to begin.").classes("text-grey")
+                ui.label(t("no_workflow_selected")).classes("text-grey")
                 return
             wf = self.working_copy.workflows[self.selected_workflow]
             if self.selected_step is None:
@@ -430,7 +430,7 @@ class WorkflowEditorDialog:
                 self._render_step_editor(self.selected_workflow, step)
         if self._warnings_label is not None:
             if self._current_warnings:
-                self._warnings_label.set_text(f"⚠ {len(self._current_warnings)} issue(s) — click to view")
+                self._warnings_label.set_text(t("warnings_count", count=len(self._current_warnings)))
                 self._warnings_label.classes(replace="text-warning text-sm cursor-pointer")
             else:
                 self._warnings_label.set_text("")
@@ -547,7 +547,7 @@ class WorkflowEditorDialog:
                 ui.select(
                     options=event_opts,
                     value=rule.event or None,
-                    label="event",
+                    label=t("notification_event"),
                     on_change=lambda e, i=idx, k=wf_key: self.set_notification_event(k, i, e.value or ""),
                 ).props("dense outlined stack-label").classes("w-44")
 
@@ -555,7 +555,7 @@ class WorkflowEditorDialog:
                 ui.select(
                     options=step_choices,
                     value=rule.step,
-                    label="step",
+                    label=t("notification_step"),
                     on_change=lambda e, i=idx, k=wf_key: self.set_notification_step(k, i, e.value),
                 ).props("dense outlined stack-label").classes("w-40")
 
@@ -563,13 +563,13 @@ class WorkflowEditorDialog:
                 missing = [v for v in (rule.notify or []) if v not in recip_value_to_label]
                 effective_options = {o["value"]: o["label"] for o in recip_opts}
                 for v in missing:
-                    effective_options[v] = f"Unknown: {v}"
+                    effective_options[v] = t("unknown_value", value=v)
 
                 recip_select = ui.select(
                     options=effective_options,
                     value=list(rule.notify or []),
                     multiple=True,
-                    label="recipients",
+                    label=t("notification_recipients"),
                 ).props("dense outlined stack-label use-chips").classes("grow")
 
                 def _bind_recip(w=recip_select, i=idx, k=wf_key):
@@ -580,7 +580,7 @@ class WorkflowEditorDialog:
                           on_click=lambda i=idx, k=wf_key: self.delete_notification_rule(k, i)
                           ).props("flat dense round color=negative")
 
-        ui.button("+ Add notification rule",
+        ui.button(t("add_notification_rule"),
                   on_click=lambda k=wf_key: self.add_notification_rule(k)
                   ).props("flat dense color=primary")
 
@@ -689,7 +689,7 @@ class WorkflowEditorDialog:
                 "approval": t("step_type_approval"),
                 "ad_account_creation": t("step_type_ad_account_creation"),
             },
-            value=step.type, label="Type",
+            value=step.type, label=t("field_type"),
             on_change=lambda e, w=wf_key, k=step.key: self._on_step_type_change(w, k, e.value),
         ).classes("w-full").props("dense outlined stack-label")
 
@@ -782,7 +782,7 @@ class WorkflowEditorDialog:
             self._render_effects_table(wf_key, step)
 
         # --- Fields panel (hidden for ad_account_creation) ---
-        ui.label("Fields").classes("text-subtitle2 q-mt-md")
+        ui.label(t("fields")).classes("text-subtitle2 q-mt-md")
         if step.type == "ad_account_creation":
             ui.label(t("ad_account_creation_fields_locked")).classes("text-grey italic")
         else:
@@ -805,7 +805,7 @@ class WorkflowEditorDialog:
                                   on_change=lambda e, i=idx, w=wf_key, sk=step.key:
                                       self.set_field_attr(w, sk, i, "type", e.value)
                                   ).props("dense outlined stack-label").classes("w-32")
-                        ui.switch("Required", value=field.required,
+                        ui.switch(t("required"), value=field.required,
                                   on_change=lambda e, i=idx, w=wf_key, sk=step.key:
                                       self.set_field_attr(w, sk, i, "required", e.value))
                         ui.switch(t("field_half_width"), value=field.half_width,
@@ -824,7 +824,7 @@ class WorkflowEditorDialog:
                                       self.delete_field(w, sk, i)
                                   ).props("flat dense round color=negative")
 
-            ui.button("+ Add field",
+            ui.button(t("add_field"),
                       on_click=lambda w=wf_key, sk=step.key: self.add_field(w, sk)
                       ).props("flat dense color=primary")
             def_keys = sorted(self._field_defs)
@@ -1060,7 +1060,7 @@ class WorkflowEditorDialog:
 
             inp.on("keydown.enter", lambda e: confirm())
             with ui.row():
-                ui.button("OK", on_click=confirm).props("color=primary")
+                ui.button(t("ok"), on_click=confirm).props("color=primary")
                 ui.button(t("cancel"), on_click=dlg.close).props("flat")
         dlg.open()
 
@@ -1182,10 +1182,10 @@ class WorkflowEditorDialog:
     def _show_warnings(self, warnings: list[str]) -> None:
         dlg = ui.dialog()
         with dlg, ui.card():
-            ui.label("Configuration warnings").classes("text-h6")
+            ui.label(t("configuration_warnings")).classes("text-h6")
             for w in warnings:
                 ui.label(f"• {w}")
-            ui.button("Close", on_click=dlg.close).props("flat")
+            ui.button(t("close"), on_click=dlg.close).props("flat")
         dlg.open()
 
     def _confirm(self, message: str, on_confirm) -> None:
@@ -1217,10 +1217,10 @@ class WorkflowEditorDialog:
             return
         dlg = ui.dialog()
         with dlg, ui.card():
-            ui.label("Discard unsaved changes?")
+            ui.label(t("confirm_discard_changes"))
             with ui.row():
-                ui.button("Discard", on_click=lambda: (dlg.close(), self.close())).props("color=negative")
-                ui.button("Keep editing", on_click=dlg.close).props("flat")
+                ui.button(t("discard"), on_click=lambda: (dlg.close(), self.close())).props("color=negative")
+                ui.button(t("keep_editing"), on_click=dlg.close).props("flat")
         dlg.open()
 
     # --- lifecycle ---
@@ -1238,7 +1238,7 @@ class WorkflowEditorDialog:
             try:
                 self.apply_yaml(self._yaml_editor.value)
             except ValueError as err:
-                ui.notify(f"Invalid YAML: {err}", color="negative", multi_line=True)
+                ui.notify(t("invalid_yaml", error=err), color="negative", multi_line=True)
                 return
         else:
             self._collect_widget_state()

@@ -1,6 +1,8 @@
 """Pure-functional option builders for the workflow editor's smart pickers.
 
-No NiceGUI imports — keep this testable in isolation.
+Builds no UI — keep this testable in isolation. `t` is fine here: get_locale()
+falls back to the default outside a request context, so these stay callable
+from a plain unit test.
 """
 
 import re
@@ -8,6 +10,7 @@ from typing import Mapping
 
 from not_dot_net.backend.permissions import PermissionInfo
 from not_dot_net.backend.roles import RoleDefinition
+from not_dot_net.frontend.i18n import t
 
 
 def assignee_options(
@@ -23,23 +26,23 @@ def assignee_options(
     for key, definition in sorted(roles.items()):
         out.append({
             "value": f"role:{key}",
-            "label": f"Anyone with role: {definition.label or key}",
+            "label": t("assignee_anyone_with_role", role=definition.label or key),
             "kind": "role",
         })
     for key, info in sorted(permissions.items()):
         out.append({
             "value": f"permission:{key}",
-            "label": f"Anyone with permission: {info.label or key}",
+            "label": t("assignee_anyone_with_permission", permission=info.label or key),
             "kind": "permission",
         })
     out.append({
         "value": "contextual:requester",
-        "label": "The person who created the request",
+        "label": t("assignee_requester_long"),
         "kind": "contextual_requester",
     })
     out.append({
         "value": "contextual:target_person",
-        "label": "The person this request is about",
+        "label": t("assignee_target_long"),
         "kind": "contextual_target_person",
     })
     return out
@@ -51,22 +54,22 @@ def recipient_options(
 ) -> list[dict]:
     """Build labeled options for the notification recipients multi-select."""
     out: list[dict] = [
-        {"value": "requester", "label": "Requester",
-         "group": "People in this request"},
-        {"value": "target_person", "label": "Target person",
-         "group": "People in this request"},
+        {"value": "requester", "label": t("recipient_requester"),
+         "group": t("recipient_group_people")},
+        {"value": "target_person", "label": t("recipient_target_person"),
+         "group": t("recipient_group_people")},
     ]
     for key, definition in sorted(roles.items()):
         out.append({
             "value": key,
-            "label": f"Role: {definition.label or key}",
-            "group": "Roles",
+            "label": t("recipient_role", role=definition.label or key),
+            "group": t("recipient_group_roles"),
         })
     for key, info in sorted(permissions.items()):
         out.append({
             "value": f"permission:{key}",
-            "label": f"Permission: {info.label or key}",
-            "group": "Permissions",
+            "label": t("recipient_permission", permission=info.label or key),
+            "group": t("recipient_group_permissions"),
         })
     return out
 
@@ -74,19 +77,18 @@ def recipient_options(
 def event_options() -> list[dict]:
     """Build labeled options for the event trigger multi-select."""
     return [
-        {"value": "submit", "label": "When submitted"},
-        {"value": "approve", "label": "When approved"},
-        {"value": "reject", "label": "When rejected"},
-        {"value": "request_corrections", "label": "When changes are requested"},
-        {"value": "complete", "label": "When completed"},
-        {"value": "cancel", "label": "When cancelled"},
+        {"value": "submit", "label": t("event_when_submitted")},
+        {"value": "approve", "label": t("event_when_approved")},
+        {"value": "reject", "label": t("event_when_rejected")},
+        {"value": "request_corrections", "label": t("event_when_corrections")},
+        {"value": "complete", "label": t("event_when_completed")},
+        {"value": "cancel", "label": t("event_when_cancelled")},
     ]
 
 
 def action_options(existing: list[str] | None = None) -> list[dict]:
     """Labeled options for the step actions picker. The engine treats reject and
     request_corrections specially; every other action just advances — say so."""
-    from not_dot_net.frontend.i18n import t
     out = [
         {"value": "submit", "label": t("action_submit")},
         {"value": "approve", "label": t("action_approve")},
@@ -109,7 +111,6 @@ def assignee_summary(step, roles: Mapping[str, RoleDefinition],
     Same precedence as workflow_engine.effective_assignee:
     contextual assignee > permission > role.
     """
-    from not_dot_net.frontend.i18n import t
     if step.assignee == "target_person":
         return t("assignee_kind_target")
     if step.assignee == "requester":
@@ -127,7 +128,6 @@ def assignee_summary(step, roles: Mapping[str, RoleDefinition],
 
 def effect_kind_options() -> list[dict]:
     """Labeled options for the four AD effect kinds."""
-    from not_dot_net.frontend.i18n import t
     return [
         {"value": "ad_add_to_groups", "label": t("effect_kind_ad_add_to_groups")},
         {"value": "ad_remove_from_groups", "label": t("effect_kind_ad_remove_from_groups")},
