@@ -83,6 +83,8 @@ def setup():
         with ui.column().classes("w-full max-w-3xl mx-auto pa-6"):
             _render_header(req, wf, age, dash_cfg, actor_names, user)
 
+            await _render_failed_effects(req, user, request_id)
+
             step_config = get_current_step_config(req, wf)
             render_step_progress(req.current_step, req.status, wf.steps)
 
@@ -146,6 +148,57 @@ def setup():
                                 on_click=handle_resend,
                             ).props("flat color=primary size=sm")
                             ui.label(f"→ {req.target_email}").classes("text-xs text-grey")
+
+
+async def _render_failed_effects(req, user, request_id: str) -> None:
+    """Banner for AD effects that failed after this request's step was committed.
+
+    Retrying binds to AD as the acting admin, so it goes through the same
+    credential prompt as any other AD write — there is no service account that
+    could drain these in the background.
+    """
+    from not_dot_net.backend.effect_retry import pending_effects, retry_pending_effects
+    from not_dot_net.backend.permissions import has_permissions
+    from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
+
+    pending = await pending_effects(req.id)
+    if not pending:
+        return
+    if not (await has_permissions(user, "approve_workflows")
+            or await has_permissions(user, "manage_users")):
+        return
+
+    async def handle_retry():
+        async def _run(bind_user, bind_password):
+            try:
+                ok, failed = await retry_pending_effects(
+                    req.id, ad_creds=(bind_user, bind_password), actor=user,
+                )
+            except Exception as e:
+                ui.notify(str(e), color="negative")
+                return
+            ui.notify(
+                t("ad_effects_retried", ok=ok, failed=failed),
+                color="positive" if not failed else "warning",
+            )
+            ui.navigate.to(f"/workflow/request/{request_id}")
+
+        await prompt_ad_credentials(user, _run)
+
+    with ui.card().classes("w-full q-pa-md mt-2").style(
+        "background: #ffebee; border: 1px solid #ef9a9a;"
+    ):
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.icon("error_outline").classes("text-negative")
+            ui.label(t("ad_effects_failed", count=len(pending))).classes(
+                "text-sm text-weight-medium"
+            )
+            ui.space()
+            ui.button(t("retry"), icon="refresh", on_click=handle_retry).props(
+                "flat color=negative size=sm"
+            )
+        for row in pending:
+            ui.label(f"{row.kind} — {row.last_error or ''}").classes("text-xs text-grey-8")
 
 
 def _render_not_found():

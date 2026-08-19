@@ -5,6 +5,8 @@ At step transition time, matching effects fire in declared order.
 Failures are collected and audit-logged; they do not abort the chain.
 """
 from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -17,6 +19,8 @@ from not_dot_net.backend.auth.ldap import (
     LdapModifyError,
 )
 from not_dot_net.backend.ad_account_config import ad_account_config
+
+logger = logging.getLogger("not_dot_net.workflow_effects")
 
 
 class AdCredentialsRequired(Exception):
@@ -221,6 +225,9 @@ async def run_effects(
             res = await handler.run(request, step, action, effect.params, ad_creds, actor)
         except ValueError as e:
             res = EffectResult(kind=effect.kind, succeeded=False, failures={"_validation": str(e)})
+        except Exception as e:
+            logger.exception("Effect %s raised for request %s", effect.kind, request.id)
+            res = EffectResult(kind=effect.kind, succeeded=False, failures={"_error": str(e)})
         results.append(res)
         failures_summary = ",".join(res.failures) if res.failures else ""
         await log_audit(
@@ -229,4 +236,24 @@ async def run_effects(
             target_id=None,
             detail=f"succeeded={res.succeeded} failures={failures_summary}",
         )
+        if not res.succeeded:
+            await _queue_for_retry(request, step, action, effect, res)
     return results
+
+
+async def _queue_for_retry(request, step, action: str, effect, result) -> None:
+    """Persist a failed effect. The step transition is already committed, so
+    losing this row means AD silently diverges from the workflow's own record."""
+    from not_dot_net.backend.effect_retry import describe_failure, enqueue_failed_effect
+
+    try:
+        await enqueue_failed_effect(
+            request_id=request.id,
+            step_key=getattr(step, "key", "") or "",
+            action=action,
+            kind=effect.kind,
+            params=effect.params,
+            error=describe_failure(result),
+        )
+    except Exception:
+        logger.exception("Could not queue failed effect %s for retry", effect.kind)

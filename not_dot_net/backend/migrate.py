@@ -52,6 +52,7 @@ async def _create_all(database_url: str) -> None:
     import not_dot_net.backend.tenure_service  # noqa: F401
     import not_dot_net.backend.mail_outbox  # noqa: F401
     import not_dot_net.backend.uid_allocator  # noqa: F401
+    import not_dot_net.backend.effect_retry  # noqa: F401 — register FailedEffect with Base
     import not_dot_net.backend.floorplan_models  # noqa: F401 — register FloorPlan/MapPoint with Base
     import not_dot_net.backend.office_availability  # noqa: F401 — register OfficeAvailability with Base
 

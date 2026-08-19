@@ -76,6 +76,7 @@ async def create_db_and_tables() -> None:
     import not_dot_net.backend.tenure_service  # noqa: F401 — register UserTenure with Base
     import not_dot_net.backend.mail_outbox  # noqa: F401 — register MailOutbox with Base
     import not_dot_net.backend.uid_allocator  # noqa: F401 — register UidAllocation with Base
+    import not_dot_net.backend.effect_retry  # noqa: F401 — register FailedEffect with Base
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
