@@ -77,7 +77,7 @@ async def _render_page_list(container, user: User):
                                 except PermissionError:
                                     ui.notify(t("permission_denied"), color="negative")
                                     return
-                                await delete_page(p.id)
+                                await delete_page(p.id, actor=user)
                                 ui.notify(t("page_deleted"), color="positive")
                                 await _render_page_list(container, user)
 
@@ -132,6 +132,7 @@ async def _show_editor(container, user: User, page=None):
                     if editing:
                         await update_page(
                             page.id,
+                            actor=user,
                             title=title_input.value.strip(),
                             slug=slug_val,
                             content=content_input.value,
@@ -146,6 +147,7 @@ async def _show_editor(container, user: User, page=None):
                             author_id=user.id,
                             sort_order=int(order_input.value or 0),
                             published=published_toggle.value,
+                            actor=user,
                         )
                 except ValueError as e:
                     ui.notify(str(e), color="negative")

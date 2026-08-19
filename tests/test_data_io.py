@@ -410,3 +410,79 @@ async def test_import_tenures_matches_email_case_insensitively():
     async with session_scope() as session:
         tenure = (await session.execute(select(UserTenure))).scalars().one()
     assert tenure.user_id == user_id
+
+
+class TestResourceSpecsRoundTrip:
+    """D4 — the importer ran the JSON `specs` dict through _as_str, which
+    returns the default for anything that isn't a str. Every imported resource
+    silently lost its hardware specs, with no error and no skip count."""
+
+    async def test_specs_survive_export_then_import(self):
+        from not_dot_net.backend.booking_models import Resource
+        from not_dot_net.backend.data_io import export_resources, import_resources
+        from not_dot_net.backend.db import session_scope
+
+        specs = {"cpu": "Xeon 6338", "ram": "256GB", "gpu": "A100"}
+        async with session_scope() as session:
+            session.add(Resource(
+                name="Compute Node 1", resource_type="server",
+                location="LPP", specs=specs,
+            ))
+            await session.commit()
+
+        exported = await export_resources()
+        assert exported[0]["specs"] == specs
+
+        async with session_scope() as session:
+            resource = (await session.execute(
+                select(Resource).where(Resource.name == "Compute Node 1")
+            )).scalar_one()
+            await session.delete(resource)
+            await session.commit()
+
+        result = await import_resources(exported)
+        assert result["created"] == 1
+
+        async with session_scope() as session:
+            restored = (await session.execute(
+                select(Resource).where(Resource.name == "Compute Node 1")
+            )).scalar_one()
+            assert restored.specs == specs
+
+    async def test_replace_updates_specs(self):
+        from not_dot_net.backend.booking_models import Resource
+        from not_dot_net.backend.data_io import import_resources
+        from not_dot_net.backend.db import session_scope
+
+        async with session_scope() as session:
+            session.add(Resource(
+                name="Node 2", resource_type="server", specs={"cpu": "old"},
+            ))
+            await session.commit()
+
+        await import_resources(
+            [{"name": "Node 2", "resource_type": "server", "specs": {"cpu": "new"}}],
+            replace=True,
+        )
+        async with session_scope() as session:
+            resource = (await session.execute(
+                select(Resource).where(Resource.name == "Node 2")
+            )).scalar_one()
+            assert resource.specs == {"cpu": "new"}
+
+    async def test_garbage_specs_falls_back_to_the_default(self):
+        """A non-dict must not reach a JSON column and abort the batch."""
+        from not_dot_net.backend.booking_models import Resource
+        from not_dot_net.backend.data_io import import_resources
+        from not_dot_net.backend.db import session_scope
+
+        await import_resources([
+            {"name": "Node 3", "resource_type": "server", "specs": "not-a-dict"},
+            {"name": "Node 4", "resource_type": "server", "specs": None},
+        ])
+        async with session_scope() as session:
+            for name in ("Node 3", "Node 4"):
+                resource = (await session.execute(
+                    select(Resource).where(Resource.name == name)
+                )).scalar_one()
+                assert resource.specs is None

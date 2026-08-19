@@ -108,14 +108,27 @@ async def _update_user(user_id, updates: dict, actor_email: str | None = None):
 
 
 async def _delete_user(user_id, actor=None):
-    """Delete a user via UserManager (respects FastAPI-Users hooks)."""
+    """Delete a user via UserManager (respects FastAPI-Users hooks).
+
+    Audited before the delete: this cascades tenures, bookings and availability
+    windows and SET NULLs the user out of workflow history, so afterwards there
+    is nothing left to describe who was removed.
+    """
     if actor is not None and not await has_permissions(actor, "manage_users"):
         raise PermissionError("manage_users required to delete users")
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
+                victim = f"{user.full_name or ''} <{user.email}>".strip()
                 await manager.delete(user)
+    await log_audit(
+        "users", "delete",
+        actor_id=getattr(actor, "id", None),
+        actor_email=getattr(actor, "email", None),
+        target_type="user", target_id=user_id,
+        detail=f"hard delete of {victim}",
+    )
 
 
 def render(current_user: User):

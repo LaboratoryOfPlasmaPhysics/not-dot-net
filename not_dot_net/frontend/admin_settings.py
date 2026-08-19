@@ -23,6 +23,17 @@ from not_dot_net.frontend.widgets import chip_list_editor, confirm_dialog, keyed
 logger = logging.getLogger(__name__)
 
 
+
+def _is_secret_field(field_info) -> bool:
+    """Whether a config field carries a secret, per its schema declaration.
+
+    Declared on the model rather than guessed from the field name: a name
+    heuristic silently stops masking the day someone adds `api_key`.
+    """
+    extra = field_info.json_schema_extra or {}
+    return bool(extra.get("secret")) if isinstance(extra, dict) else False
+
+
 def _is_enum(annotation) -> bool:
     return isinstance(annotation, type) and issubclass(annotation, Enum)
 
@@ -122,7 +133,11 @@ async def _render_form(prefix, cfg_section, current, user):
         elif annotation is int:
             widget = ui.number(field_name, value=value)
         elif annotation is str:
-            widget = ui.input(field_name, value=value).classes("w-full")
+            widget = ui.input(
+                field_name, value=value,
+                password=_is_secret_field(field_info),
+                password_toggle_button=_is_secret_field(field_info),
+            ).classes("w-full")
         elif _is_list_int(annotation):
             widget = chip_list_editor([str(item) for item in value or []], label=field_name)
         elif annotation == list[str]:

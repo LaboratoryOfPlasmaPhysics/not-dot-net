@@ -34,6 +34,15 @@ def _as_int(value, default: int) -> int:
         return default
 
 
+def _as_dict(value, default):
+    """Coerce a JSON object to dict; fall back to `default` on null/garbage.
+
+    `Resource.specs` is a JSON column, not a string — running it through
+    _as_str discarded every imported resource's hardware specs silently.
+    """
+    return value if isinstance(value, dict) else default
+
+
 def _as_str(value, default):
     """Coerce a JSON scalar to str; fall back to `default` on null/garbage.
 
@@ -179,7 +188,7 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     existing.resource_type = _as_str(item.get("resource_type"), existing.resource_type)
                     existing.description = _as_str(item.get("description"), existing.description)
                     existing.location = _as_str(item.get("location"), existing.location)
-                    existing.specs = _as_str(item.get("specs"), existing.specs)
+                    existing.specs = _as_dict(item.get("specs"), existing.specs)
                     existing.active = _as_bool(item.get("active", existing.active), existing.active)
                     updated += 1
                 else:
@@ -190,7 +199,7 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     resource_type=_as_str(item.get("resource_type"), "desktop"),
                     description=_as_str(item.get("description"), None),
                     location=_as_str(item.get("location"), None),
-                    specs=_as_str(item.get("specs"), None),
+                    specs=_as_dict(item.get("specs"), None),
                     active=_as_bool(item.get("active", True), True),
                 ))
                 created += 1

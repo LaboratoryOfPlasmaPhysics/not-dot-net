@@ -162,3 +162,30 @@ async def test_import_upload_does_not_audit_invalid_json():
         await _handle_import_upload(event, replace=False, user=admin)
 
     audit.assert_not_awaited()
+
+
+class TestSecretFieldsAreMasked:
+    """S3 — the auto-generated settings form rendered every `str` field as a
+    plain ui.input, so smtp_password sat in the DOM in clear for anyone holding
+    manage_settings (and anyone shoulder-surfing them)."""
+
+    def test_smtp_password_is_marked_secret(self):
+        from not_dot_net.backend.mail import MailConfig
+
+        field = MailConfig.model_fields["smtp_password"]
+        assert (field.json_schema_extra or {}).get("secret") is True
+
+    def test_non_secret_fields_are_not_marked(self):
+        from not_dot_net.backend.mail import MailConfig
+
+        for name in ("smtp_host", "smtp_user", "from_address"):
+            field = MailConfig.model_fields[name]
+            assert not (field.json_schema_extra or {}).get("secret"), name
+
+    def test_renderer_consults_the_marker(self):
+        """The form must consult the marker, not just have one available."""
+        from not_dot_net.backend.mail import MailConfig
+        from not_dot_net.frontend.admin_settings import _is_secret_field
+
+        assert _is_secret_field(MailConfig.model_fields["smtp_password"]) is True
+        assert _is_secret_field(MailConfig.model_fields["smtp_host"]) is False

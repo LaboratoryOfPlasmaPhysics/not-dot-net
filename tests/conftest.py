@@ -84,6 +84,7 @@ async def setup_db(request, monkeypatch):
     import not_dot_net.backend.office_availability  # noqa: F401
     import not_dot_net.backend.audit  # noqa: F401
     import not_dot_net.backend.app_config  # noqa: F401
+    import not_dot_net.backend.page_models  # noqa: F401 — register Page with Base
     import not_dot_net.backend.encrypted_storage  # noqa: F401
     import not_dot_net.backend.tenure_service  # noqa: F401
     import not_dot_net.backend.mail_outbox  # noqa: F401
@@ -93,11 +94,14 @@ async def setup_db(request, monkeypatch):
     # Each test gets a fresh in-memory DB, but the ConfigSection cache is module
     # state — without this a section read in one test is served to the next.
     from not_dot_net.backend.app_config import invalidate_config_cache
+    from not_dot_net.frontend import login_throttle
     invalidate_config_cache()
+    login_throttle.reset()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
     invalidate_config_cache()
+    login_throttle.reset()
     await engine.dispose()
     db_module._engine, db_module._async_session_maker = old_engine, old_session

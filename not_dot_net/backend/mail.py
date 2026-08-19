@@ -29,7 +29,11 @@ class MailConfig(BaseModel):
     smtp_port: int = 587
     smtp_tls_mode: SmtpTlsMode = SmtpTlsMode.NONE
     smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_password: str = Field(
+        "",
+        description="SMTP password. Stored in the app_setting row; masked in the settings form.",
+        json_schema_extra={"secret": True},
+    )
     from_address: str = "noreply@not-dot-net.dev"
     dev_mode: bool = Field(
         True, description="Log emails instead of sending them. Turn OFF in production."

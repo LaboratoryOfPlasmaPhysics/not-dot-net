@@ -41,6 +41,18 @@ def _validate_slug(slug: str) -> str:
     return slug
 
 
+async def _audit_page(action: str, page, actor, detail: str = "") -> None:
+    from not_dot_net.backend.audit import log_audit
+
+    await log_audit(
+        "pages", action,
+        actor_id=getattr(actor, "id", None),
+        actor_email=getattr(actor, "email", None),
+        target_type="page", target_id=getattr(page, "id", None),
+        detail=detail or f"slug={getattr(page, 'slug', '?')}",
+    )
+
+
 async def create_page(
     title: str,
     slug: str,
@@ -48,6 +60,7 @@ async def create_page(
     author_id: uuid.UUID | None,
     sort_order: int = 0,
     published: bool = False,
+    actor=None,
 ) -> Page:
     slug = _validate_slug(slug)
     existing = await get_page(slug)
@@ -70,13 +83,14 @@ async def create_page(
             await session.rollback()
             raise ValueError(f"Page with slug '{slug}' already exists") from exc
         await session.refresh(page)
-        return page
+    await _audit_page("create", page, actor)
+    return page
 
 
 _PAGE_MUTABLE = frozenset({"title", "slug", "content", "sort_order", "published"})
 
 
-async def update_page(page_id: uuid.UUID, **kwargs) -> Page:
+async def update_page(page_id: uuid.UUID, actor=None, **kwargs) -> Page:
     async with session_scope() as session:
         page = await session.get(Page, page_id)
         if page is None:
@@ -98,13 +112,28 @@ async def update_page(page_id: uuid.UUID, **kwargs) -> Page:
             await session.rollback()
             raise ValueError("Page update violates a uniqueness constraint") from exc
         await session.refresh(page)
-        return page
+    await _audit_page(
+        "update", page, actor,
+        detail=f"slug={page.slug} fields={','.join(sorted(kwargs))}",
+    )
+    return page
 
 
-async def delete_page(page_id: uuid.UUID) -> None:
+async def delete_page(page_id: uuid.UUID, actor=None) -> None:
     async with session_scope() as session:
         page = await session.get(Page, page_id)
         if page is None:
             raise ValueError(f"Page {page_id} not found")
+        slug, title, published = page.slug, page.title, page.published
         await session.delete(page)
         await session.commit()
+    # Audited after the fact: the row is gone, so record what it was.
+    from not_dot_net.backend.audit import log_audit
+
+    await log_audit(
+        "pages", "delete",
+        actor_id=getattr(actor, "id", None),
+        actor_email=getattr(actor, "email", None),
+        target_type="page", target_id=page_id,
+        detail=f"slug={slug} title={title} published={published}",
+    )
