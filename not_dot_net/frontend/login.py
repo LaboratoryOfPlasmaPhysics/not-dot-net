@@ -22,6 +22,7 @@ from not_dot_net.backend import security_alerts
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import get_user_manager, cookie_transport, get_jwt_strategy, current_active_user_optional
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend import login_throttle
 
 logger = logging.getLogger("not_dot_net.login")
 
@@ -50,6 +51,13 @@ async def handle_login(
     username = str(form.get("username", ""))
     password = str(form.get("password", ""))
 
+    # Refuse before touching AD: the LDAP fallback binds with whatever arrives,
+    # so unthrottled attempts can trip AD-side lockouts on named accounts.
+    ip = request_ip(request) or ""
+    if login_throttle.retry_after_seconds(username, ip):
+        logger.warning("Throttled login attempt for '%s' from %s", username, ip or "unknown")
+        return RedirectResponse("/login?error=throttled", status_code=303)
+
     # Try local auth first
     credentials = OAuth2PasswordRequestForm(
         username=username, password=password, scope="", grant_type="password",
@@ -66,8 +74,11 @@ async def handle_login(
         user = await _try_ldap_auth(username, password)
 
     if user is None or not user.is_active:
+        login_throttle.record_failure(username, ip)
         await _audit_failed_superuser_login(username, request)
         return RedirectResponse("/login?error=1", status_code=303)
+
+    login_throttle.record_success(username, ip)
 
     strategy = get_jwt_strategy()
     token = await strategy.write_token(user)
@@ -207,7 +218,9 @@ def setup():
                 "color: #0F52AC"
             )
             with ui.card().classes("w-80"):
-                if error:
+                if error == "throttled":
+                    ui.label(t("login_throttled")).classes("text-negative")
+                elif error:
                     ui.label(t("invalid_credentials")).classes("text-negative")
 
                 ui.html(f"""

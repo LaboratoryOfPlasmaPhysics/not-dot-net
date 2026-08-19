@@ -4,6 +4,7 @@ from nicegui import ui
 from sqlalchemy import select
 
 from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.mail import mail_config
 from not_dot_net.backend.users import ensure_default_admin
 from not_dot_net.config import org_config, OrgConfig
 from not_dot_net.frontend.i18n import t
@@ -17,12 +18,32 @@ async def has_superuser() -> bool:
         return result.scalar_one_or_none() is not None
 
 
-async def complete_setup(email: str, password: str) -> bool:
+async def complete_setup(
+    email: str,
+    password: str,
+    *,
+    smtp_host: str = "",
+    smtp_port: int = 587,
+    from_address: str = "",
+) -> bool:
     """Create the bootstrap super-user; refuse if one appeared since the page
-    loaded (a stale /setup tab must not mint a second superuser)."""
+    loaded (a stale /setup tab must not mint a second superuser).
+
+    Given an SMTP host, also writes the mail config and turns dev_mode off.
+    Without one the safe default stands: mail is logged, not sent — better a
+    blackhole than a misconfigured instance mailing real people.
+    """
     if await has_superuser():
         return False
     await ensure_default_admin(email, password)
+    if smtp_host.strip():
+        cfg = await mail_config.get()
+        await mail_config.set(cfg.model_copy(update={
+            "smtp_host": smtp_host.strip(),
+            "smtp_port": smtp_port,
+            "from_address": from_address.strip() or cfg.from_address,
+            "dev_mode": False,
+        }))
     return True
 
 
@@ -37,11 +58,22 @@ def setup():
         password = ui.input(t("setup_admin_password"), password=True, password_toggle_button=True).props("outlined")
         app_name = ui.input(t("setup_app_name"), value="LPP Intranet").props("outlined")
 
+        ui.label(t("setup_mail_heading")).classes("text-sm text-weight-medium mt-4")
+        ui.label(t("setup_mail_hint")).classes("text-xs text-grey")
+        smtp_host = ui.input(t("smtp_host")).props("outlined")
+        smtp_port = ui.number(t("smtp_port"), value=587, format="%d").props("outlined")
+        from_address = ui.input(t("from_address")).props("outlined")
+
         async def on_submit():
             if not email.value or not password.value:
                 ui.notify(t("setup_email_password_required"), color="negative")
                 return
-            if not await complete_setup(email.value, password.value):
+            if not await complete_setup(
+                email.value, password.value,
+                smtp_host=smtp_host.value or "",
+                smtp_port=int(smtp_port.value or 587),
+                from_address=from_address.value or "",
+            ):
                 ui.navigate.to("/login")
                 return
             if app_name.value:
