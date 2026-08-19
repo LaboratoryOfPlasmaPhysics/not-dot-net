@@ -66,7 +66,7 @@ def generate_initial_password(length: int = 16) -> str:
 # LDAP primitives — imported directly so tests can monkeypatch them via this module's namespace.
 from not_dot_net.backend.auth.ldap import (  # noqa: F401
     ldap_config as _ldap_cfg_section,
-    ldap_user_exists_by_sam,
+    ldap_lookup_by_sam,
     ldap_create_user,
     ldap_reset_password,
     ldap_add_to_groups,
@@ -1054,6 +1054,33 @@ class AdAccountCreationResult:
     group_failures: dict[str, str]
 
 
+
+def should_adopt_orphan_account(
+    *,
+    existing: dict | None,
+    intended_mail: str,
+    target_ldap_username: str | None,
+    target_ldap_dn: str | None,
+) -> bool:
+    """Whether an existing AD account is this target's, left by a failed retry.
+
+    The AD account is created before the local write-back that records ldap_dn /
+    ldap_username. If that write-back never lands, the account exists but nothing
+    locally points at it, and every retry dead-ends on "already exists" — with no
+    fix short of editing the database by hand.
+
+    Adoption requires AD itself to confirm the account carries the mail we were
+    about to set. Without that proof we refuse: a same-named colleague who left
+    years ago would otherwise get their password reset out from under them.
+    """
+    if not existing:
+        return False
+    if target_ldap_username or target_ldap_dn:
+        return False  # already linked — that is the ordinary reprovision path
+    existing_mail = (existing.get("mail") or "").strip().lower()
+    return bool(existing_mail) and existing_mail == (intended_mail or "").strip().lower()
+
+
 async def _handle_ad_account_creation(
     request,
     form_data: dict,
@@ -1072,7 +1099,7 @@ async def _handle_ad_account_creation(
     from sqlalchemy import func, select
 
     # Use module-level names so tests can monkeypatch them.
-    _ldap_user_exists = _ws.ldap_user_exists_by_sam
+    _ldap_lookup = _ws.ldap_lookup_by_sam
     _ldap_create = _ws.ldap_create_user
     _ldap_reset = _ws.ldap_reset_password
     _ldap_add_groups = _ws.ldap_add_to_groups
@@ -1104,22 +1131,6 @@ async def _handle_ad_account_creation(
     if not target:
         raise ValueError(f"No local User for target_email={request.target_email!r}")
 
-    # ldap3 is synchronous — run AD round-trips off the event loop so a slow
-    # DC doesn't freeze every connected client.
-    import asyncio
-    sam_exists = await asyncio.to_thread(_ldap_user_exists, sam, bind_user, bind_pw, ldap_cfg, _connect)
-    # A retry after a partial failure (AD account created, but the workflow step
-    # never committed) leaves the account existing AND already linked to this
-    # target. Reprovision idempotently instead of dead-ending on "already
-    # exists" — the one-time password is unrecoverable, so reset it afresh.
-    reprovision = (
-        sam_exists
-        and (target.ldap_username or "").lower() == sam.lower()
-        and bool(target.ldap_dn)
-    )
-    if sam_exists and not reprovision:
-        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
-
     first = form_data["first_name"]
     last = form_data["last_name"]
     display_name = form_data.get("display_name") or f"{first} {last}"
@@ -1128,9 +1139,42 @@ async def _handle_ad_account_creation(
     description = form_data.get("description")
     initial_password = generate_initial_password(ad_cfg.password_length)
 
+    # ldap3 is synchronous — run AD round-trips off the event loop so a slow
+    # DC doesn't freeze every connected client.
+    import asyncio
+    existing = await asyncio.to_thread(_ldap_lookup, sam, bind_user, bind_pw, ldap_cfg, _connect)
+    sam_exists = existing is not None
+    # A retry after a partial failure (AD account created, but the workflow step
+    # never committed) leaves the account existing AND already linked to this
+    # target. Reprovision idempotently instead of dead-ending on "already
+    # exists" — the one-time password is unrecoverable, so reset it afresh.
+    relinked = (
+        sam_exists
+        and (target.ldap_username or "").lower() == sam.lower()
+        and bool(target.ldap_dn)
+    )
+    # Same partial failure, one step earlier: the AD account exists but the
+    # local write-back never landed, so nothing points at it. Adopt it when AD
+    # confirms the mail matches — otherwise this dead-ends forever.
+    adopted = should_adopt_orphan_account(
+        existing=existing,
+        intended_mail=mail,
+        target_ldap_username=target.ldap_username,
+        target_ldap_dn=target.ldap_dn,
+    )
+    reprovision = relinked or adopted
+    if sam_exists and not reprovision:
+        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
+
     if reprovision:
-        uid = target.uid_number
-        new_dn = target.ldap_dn
+        uid = target.uid_number or (existing or {}).get("uid_number")
+        new_dn = target.ldap_dn or (existing or {}).get("dn")
+        if adopted:
+            logger.warning(
+                "Adopting orphan AD account %s for %s — a previous creation "
+                "wrote to AD but never linked it locally",
+                new_dn, target.email,
+            )
         try:
             await asyncio.to_thread(
                 _ldap_reset, new_dn, initial_password, bind_user, bind_pw, ldap_cfg, _connect,

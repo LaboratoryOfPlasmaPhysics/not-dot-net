@@ -99,6 +99,7 @@ class SeedResult:
 _PAGED_RESULTS_OID = "1.2.840.113556.1.4.319"
 
 
+
 def _search_ad_uids(ldap_cfg, bind_username: str, bind_password: str):
     """Bind and paged-search AD for entries with uidNumber. Returns all entries.
 

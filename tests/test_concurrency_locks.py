@@ -1,4 +1,8 @@
-"""I4, I5 — check-then-act windows with no row lock.
+"""I5 — check-then-act window with no row lock.
+
+I4 (tenure overlap) is deliberately NOT locked — see the comment in
+tenure_service.add_tenure: it runs inside submit_step's open session, so a
+nested lock deadlocks. The overlap validation itself is still pinned below.
 
 SQLite serialises writers, so a genuine interleaving cannot be provoked here.
 These follow the project's existing convention (test_booking_service_fixes.py):
@@ -58,27 +62,6 @@ async def test_delete_resource_locks_the_resource_row(spy_get):
     assert resource_gets, "delete_resource should fetch the resource via session.get"
     assert any(kw.get("with_for_update") for kw in resource_gets), (
         "delete_resource read the resource without the lock create_booking takes"
-    )
-
-
-async def test_add_tenure_locks_the_user_row(spy_get):
-    """I4 — the overlap check was read-all-then-insert with no lock and no DB
-    exclusion constraint, so two concurrent add_tenure calls both passed and
-    every downstream stat (headcount_at_date, avg_duration_by_status) went wrong."""
-    from not_dot_net.backend.tenure_service import add_tenure
-
-    user = await _make_user("tenure-lock@example.com")
-
-    spy_get.clear()
-    await add_tenure(
-        user_id=user.id, status="PhD", employer="CNRS",
-        start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
-    )
-
-    user_gets = [kw for entity, kw in spy_get if entity is User]
-    assert user_gets, "add_tenure should fetch the user row to serialise on it"
-    assert any(kw.get("with_for_update") for kw in user_gets), (
-        "add_tenure ran its overlap check without locking the user"
     )
 
 

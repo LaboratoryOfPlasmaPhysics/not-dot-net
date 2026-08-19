@@ -40,7 +40,7 @@ async def test_ad_account_creation_happy_submit(monkeypatch):
     }))
 
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: False, raising=False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None, raising=False)
     monkeypatch.setattr(ws, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},{new_user.ou_dn}",
                         raising=False)
@@ -88,7 +88,9 @@ async def test_ad_account_creation_rejects_existing_sam(monkeypatch):
     await ad_account_config.set(cfg.model_copy(update={
         "users_ous": ["OU=Users,DC=x,DC=y"], "eligible_groups": [],
     }))
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: True, raising=False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam",
+                        lambda *a, **kw: {"dn": "CN=x,DC=x", "mail": "other@x", "uid_number": None},
+                        raising=False)
 
     async with session_scope() as session:
         session.add(User(email="t2@example.com", full_name="T2", hashed_password="x",
@@ -113,7 +115,7 @@ async def test_ad_account_creation_group_failures_returned_not_raised(monkeypatc
     await ad_account_config.set(cfg.model_copy(update={
         "users_ous": ["OU=Users,DC=x"], "eligible_groups": ["CN=g,DC=x"],
     }))
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: False, raising=False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None, raising=False)
     monkeypatch.setattr(ws, "ldap_create_user",
                         lambda new, *a, **kw: f"CN=x,{new.ou_dn}", raising=False)
     monkeypatch.setattr(ws, "ldap_add_to_groups",
@@ -147,7 +149,7 @@ async def test_ad_account_creation_ad_create_failure_keeps_uid(monkeypatch):
     await ad_account_config.set(cfg.model_copy(update={
         "users_ous": ["OU=Users,DC=x"], "eligible_groups": [],
     }))
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: False, raising=False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None, raising=False)
 
     def fail_create(*a, **kw):
         raise LdapModifyError("simulated AD failure")
@@ -193,7 +195,9 @@ async def test_ad_account_creation_idempotent_retry_resets_password(monkeypatch)
     existing_dn = "CN=Alice Smith,OU=Users,DC=x,DC=y"
     reset_calls = []
 
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: True, raising=False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam",
+                        lambda *a, **kw: {"dn": "CN=x,DC=x", "mail": "other@x", "uid_number": None},
+                        raising=False)
 
     def _boom_create(*a, **kw):
         raise AssertionError("must not re-create the account when reprovisioning")

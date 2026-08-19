@@ -56,20 +56,6 @@ def _fake_connect_returning(conn):
     return _connect
 
 
-def test_ldap_user_exists_by_sam_true():
-    from not_dot_net.backend.auth.ldap import ldap_user_exists_by_sam, LdapConfig
-    conn = _FakeConn(search_returns_entries=[_FakeEntry({"sAMAccountName": "alice"})])
-    cfg = LdapConfig(base_dn="DC=x,DC=y")
-    assert ldap_user_exists_by_sam("alice", "admin", "pw", cfg, _fake_connect_returning(conn)) is True
-
-
-def test_ldap_user_exists_by_sam_false():
-    from not_dot_net.backend.auth.ldap import ldap_user_exists_by_sam, LdapConfig
-    conn = _FakeConn(search_returns_entries=[])
-    cfg = LdapConfig(base_dn="DC=x,DC=y")
-    assert ldap_user_exists_by_sam("nope", "admin", "pw", cfg, _fake_connect_returning(conn)) is False
-
-
 def _new_user_kwargs(**overrides):
     base = dict(
         sam_account="alice",

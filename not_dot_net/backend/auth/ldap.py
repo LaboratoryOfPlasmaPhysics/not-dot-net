@@ -490,22 +490,33 @@ def ldap_set_account_enabled(
         conn.unbind()
 
 
-def ldap_user_exists_by_sam(
+def ldap_lookup_by_sam(
     sam: str,
     bind_username: str,
     bind_password: str,
     ldap_cfg: LdapConfig,
     connect: Callable[..., Connection] = default_ldap_connect,
-) -> bool:
-    """Return True if a user with this sAMAccountName exists in AD."""
+) -> dict | None:
+    """Return {"dn", "mail", "uid_number"} for a sAMAccountName, or None.
+
+    Used to decide whether an AD account that already exists is the one a
+    previous, half-finished creation left behind.
+    """
     conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
     try:
         ok = conn.search(
             ldap_cfg.base_dn,
             f"(sAMAccountName={escape_filter_chars(sam)})",
-            attributes=["sAMAccountName"],
+            attributes=["mail", "uidNumber"],
         )
-        return bool(ok and conn.entries)
+        if not ok or not conn.entries:
+            return None
+        entry = conn.entries[0]
+        return {
+            "dn": entry.entry_dn,
+            "mail": _attr_value(entry, "mail"),
+            "uid_number": _attr_int(entry, "uidNumber"),
+        }
     finally:
         conn.unbind()
 

@@ -160,7 +160,7 @@ async def test_onboarding_complete_notification_does_not_include_token_link(monk
 
     # Monkeypatch AD primitives to bypass LDAP
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_user_exists_by_sam", lambda *a, **kw: False)
+    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
     monkeypatch.setattr(ws, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
     monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
