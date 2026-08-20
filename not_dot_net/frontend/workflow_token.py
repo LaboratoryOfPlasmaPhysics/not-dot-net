@@ -26,6 +26,40 @@ from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.workflow_step import render_step_form
 
 
+
+def _make_submit_handler(request_id, token: str, *, on_success):
+    """Submit handler that reports failures instead of dying silently.
+
+    The person on the other end of a token link has no account and no way to
+    ask what happened: an unhandled exception here left them staring at a dead
+    form with everything they had typed still in it and no idea it had failed.
+    """
+    async def handle_submit(data):
+        try:
+            await submit_step(
+                request_id, actor_id=None, action="submit", data=data,
+                actor_token=token,
+            )
+        except Exception as exc:
+            notify_error(exc)
+            return
+        on_success()
+
+    return handle_submit
+
+
+def _make_save_draft_handler(request_id, token: str):
+    async def handle_save_draft(data):
+        try:
+            await save_draft(request_id, data=data, actor_token=token)
+        except Exception as exc:
+            notify_error(exc)
+            return
+        ui.notify(t("draft_saved"), color="positive")
+
+    return handle_save_draft
+
+
 def setup():
     @ui.page("/workflow/token/{token}")
     async def token_page(token: str):
@@ -156,19 +190,16 @@ def setup():
                     uploaded_files[field_name] = filename
                     ui.notify(t("uploaded").format(filename=filename), color="positive")
 
-                async def handle_submit(data):
-                    await submit_step(
-                        request.id, actor_id=None, action="submit", data=data,
-                        actor_token=tok,
-                    )
+                def _show_submitted():
                     cont.clear()
                     with cont:
                         ui.icon("check_circle", size="xl", color="positive")
                         ui.label(t("step_submitted")).classes("text-h6")
 
-                async def handle_save_draft(data):
-                    await save_draft(request.id, data=data, actor_token=tok)
-                    ui.notify(t("draft_saved"), color="positive")
+                handle_submit = _make_submit_handler(
+                    request.id, tok, on_success=_show_submitted,
+                )
+                handle_save_draft = _make_save_draft_handler(request.id, tok)
 
                 await render_step_form(
                     step,
