@@ -110,6 +110,16 @@ def _severity_filter_options() -> dict:
     return options
 
 
+
+def normalize_filter(value: str | None) -> str | None:
+    """Trim a clearable filter input to a value or None.
+
+    Quasar emits None when a `clearable` input is cleared, which made the
+    Filter button raise AttributeError on `.strip()`.
+    """
+    return (value or "").strip() or None
+
+
 def render():
     container = ui.column().classes("w-full")
 
@@ -263,7 +273,7 @@ async def _render_log(
 
             async def apply():
                 c = cat_select.value or None
-                e = email_input.value.strip() or None
+                e = normalize_filter(email_input.value)
                 p = period_select.value
                 s = severity_select.value or ""
                 await _render_log(

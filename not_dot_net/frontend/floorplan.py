@@ -42,6 +42,10 @@ _KIND_COLOR = {
 # NiceGUI page/client context; calling it at import time raises. Build the
 # translated {key: label} dict inside a render function instead (see
 # `_pin_kind_select_options` below).
+# Plans are re-encoded to FLOORPLAN_MAX_DIMENSION_PX on the way in; this only
+# bounds what an admin can push through memory before that happens.
+FLOORPLAN_MAX_UPLOAD_MB = 25
+
 PIN_KINDS = ["room", "desk", "wall_plug", "asset", "other"]
 
 
@@ -330,11 +334,22 @@ async def _show_add_plan_dialog(container, user):
         name_input = ui.input(t("floorplan_name")).props("outlined dense").classes("w-full")
         state = {"content": None}
 
+        max_bytes = FLOORPLAN_MAX_UPLOAD_MB * 1024 * 1024
+
         async def handle_upload(e):
-            state["content"] = await e.file.read()
+            content = await e.file.read()
+            if len(content) > max_bytes:
+                state["content"] = None
+                ui.notify(
+                    t("floorplan_too_large", max_size_mb=FLOORPLAN_MAX_UPLOAD_MB),
+                    color="negative",
+                )
+                return
+            state["content"] = content
 
         ui.upload(
             label=t("floorplan_upload_image"), on_upload=handle_upload, auto_upload=True,
+            max_file_size=max_bytes,
         ).props("accept=.jpg,.jpeg,.png").classes("w-full")
 
         with ui.row().classes("justify-end gap-2 mt-2"):

@@ -1243,6 +1243,16 @@ class WorkflowEditorDialog:
                 return
         else:
             self._collect_widget_state()
+        # Re-check at the sink, as admin_settings and pages do. The dialog may
+        # have been open across a role change, and this is the most powerful
+        # config write in the app.
+        from not_dot_net.backend.permissions import check_permission
+        try:
+            await check_permission(self.user, "manage_settings")
+        except PermissionError:
+            ui.notify(t("permission_denied"), color="negative")
+            return
+
         try:
             validated = WorkflowsConfig.model_validate(self.working_copy.model_dump())
         except ValidationError as e:

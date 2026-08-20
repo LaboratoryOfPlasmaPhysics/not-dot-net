@@ -694,10 +694,24 @@ async def _existing_users_by_email(session) -> dict:
     return {u.email.lower(): u for u in result.scalars().all()}
 
 
+def _ldap_fields(info: LdapUserInfo) -> dict:
+    """AD-owned attributes as User kwargs.
+
+    Emails are lowercased on write everywhere else in the codebase; AD returns
+    whatever casing it stores, so normalise here — the one place both the
+    provision and the sync path go through.
+    """
+    fields = {user_field: getattr(info, info_field)
+              for info_field, user_field in _INFO_TO_USER.items()}
+    if fields.get("email"):
+        fields["email"] = fields["email"].strip().lower()
+    return fields
+
+
 def _apply_ldap_info(user, info: LdapUserInfo) -> None:
     """Copy AD-owned attributes onto a User. Local-only fields are untouched."""
-    for info_field, user_field in _INFO_TO_USER.items():
-        setattr(user, user_field, getattr(info, info_field))
+    for user_field, value in _ldap_fields(info).items():
+        setattr(user, user_field, value)
     user.ldap_dn = info.dn
     user.is_active = info.is_active
 
@@ -706,10 +720,8 @@ def _new_ldap_user(info: LdapUserInfo, default_role: str):
     """Build (but do not persist) a local User from AD attributes."""
     from not_dot_net.backend.db import User, AuthMethod
 
-    fields = {user_field: getattr(info, info_field)
-              for info_field, user_field in _INFO_TO_USER.items()}
     return User(
-        **fields,
+        **_ldap_fields(info),
         hashed_password=NO_LOCAL_PASSWORD,
         auth_method=AuthMethod.LDAP,
         ldap_dn=info.dn,

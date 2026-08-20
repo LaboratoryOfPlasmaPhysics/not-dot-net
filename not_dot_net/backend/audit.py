@@ -146,6 +146,22 @@ async def log_audit(
         logger.exception("Failed to write audit event to DB")
 
 
+
+def actor_email_clause(actor_email: str):
+    """Filter clause for the audit actor search.
+
+    A complete address — the common case, since the column stores addresses —
+    matches exactly and can use the index. Anything else falls back to the
+    leading-wildcard scan, which is the only way to match a fragment.
+    """
+    from sqlalchemy import func
+
+    value = actor_email.strip()
+    if "@" in value:
+        return func.lower(AuditEvent.actor_email) == value.lower()
+    return AuditEvent.actor_email.ilike(f"%{value}%")
+
+
 async def list_audit_events(
     category: str | None = None,
     action: str | None = None,
@@ -163,7 +179,7 @@ async def list_audit_events(
         if action:
             query = query.where(AuditEvent.action == action)
         if actor_email:
-            query = query.where(AuditEvent.actor_email.ilike(f"%{actor_email}%"))
+            query = query.where(actor_email_clause(actor_email))
         if since:
             query = query.where(AuditEvent.created_at >= since)
         query = query.offset(offset).limit(limit)

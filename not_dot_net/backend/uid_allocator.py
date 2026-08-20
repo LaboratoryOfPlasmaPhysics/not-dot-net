@@ -1,5 +1,6 @@
 """Centralized Unix UID allocator. PK enforces no-reuse."""
 from __future__ import annotations
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -9,6 +10,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, MappedAsDataclass
 
 from not_dot_net.backend.db import Base, session_scope
+
+
+logger = logging.getLogger("not_dot_net.uid_allocator")
+
+_ALLOCATION_ATTEMPTS = 5
+
+
+class UidAllocationRaced(Exception):
+    """A concurrent allocator took the chosen UID. Retrying is safe."""
 
 
 class UidRangeExhausted(Exception):
@@ -54,33 +64,41 @@ async def allocate_uid(user_id: uuid.UUID, sam_account: str) -> int:
     cfg = await ad_account_config.get()
     lo, hi = cfg.uid_min, cfg.uid_max
 
-    async with session_scope() as session:
-        rows = (await session.execute(
-            select(UidAllocation.uid).where(
-                UidAllocation.uid >= lo, UidAllocation.uid <= hi,
-            ).order_by(UidAllocation.uid.asc())
-        )).scalars().all()
+    # A concurrent allocator taking the UID we picked is a transient race, not a
+    # full range: re-scan and take the next one. Reporting it as exhaustion sent
+    # operators hunting a capacity problem that did not exist.
+    chosen: int | None = None
+    for attempt in range(_ALLOCATION_ATTEMPTS):
+        async with session_scope() as session:
+            rows = (await session.execute(
+                select(UidAllocation.uid).where(
+                    UidAllocation.uid >= lo, UidAllocation.uid <= hi,
+                ).order_by(UidAllocation.uid.asc())
+            )).scalars().all()
 
-        used = set(rows)
-        chosen: int | None = None
-        for n in range(lo, hi + 1):
-            if n not in used:
-                chosen = n
+            used = set(rows)
+            chosen = next((n for n in range(lo, hi + 1) if n not in used), None)
+            if chosen is None:
+                raise UidRangeExhausted(f"No free UID in [{lo}, {hi}]")
+
+            session.add(UidAllocation(
+                uid=chosen, source="allocated",
+                user_id=user_id, sam_account=sam_account,
+            ))
+            try:
+                await session.commit()
                 break
-        if chosen is None:
-            raise UidRangeExhausted(f"No free UID in [{lo}, {hi}]")
-
-        session.add(UidAllocation(
-            uid=chosen, source="allocated",
-            user_id=user_id, sam_account=sam_account,
-        ))
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            raise UidRangeExhausted(
-                f"UID {chosen} was taken concurrently — retry with a fresh session"
-            )
+            except IntegrityError:
+                await session.rollback()
+                logger.info(
+                    "UID %s taken concurrently, retrying (attempt %s)",
+                    chosen, attempt + 1,
+                )
+    else:
+        raise UidAllocationRaced(
+            f"Could not claim a UID after {_ALLOCATION_ATTEMPTS} attempts — "
+            "concurrent allocations are contending; retry the operation"
+        )
 
     await log_audit(
         category="ad", action="allocate_uid",

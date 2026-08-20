@@ -21,6 +21,21 @@ class AppSecrets(BaseModel):
     file_encryption_key: str = ""
 
 
+def _write_private(path: Path, content: str) -> None:
+    """Write `content` to `path` with 0600 from the moment it exists.
+
+    write_text + chmod leaves the file readable by anyone for the width of that
+    gap; the mode has to come from the open() call itself.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(content)
+    finally:
+        # An existing file keeps its old mode through O_CREAT — enforce it.
+        os.chmod(path, 0o600)
+
+
 def generate_secrets_file(path: Path) -> AppSecrets:
     app_secrets = AppSecrets(
         jwt_secret=secrets.token_urlsafe(32),
@@ -28,8 +43,7 @@ def generate_secrets_file(path: Path) -> AppSecrets:
         file_encryption_key=secrets.token_urlsafe(32),
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(app_secrets.model_dump(), indent=2))
-    os.chmod(path, 0o600)
+    _write_private(path, json.dumps(app_secrets.model_dump(), indent=2))
     logger.info("Generated secrets file: %s", path)
     return app_secrets
 
@@ -47,8 +61,7 @@ def load_or_create(path: Path, dev_mode: bool) -> AppSecrets:
         if not app_secrets.file_encryption_key:
             if dev_mode:
                 app_secrets.file_encryption_key = secrets.token_urlsafe(32)
-                path.write_text(json.dumps(app_secrets.model_dump(), indent=2))
-                os.chmod(path, 0o600)
+                _write_private(path, json.dumps(app_secrets.model_dump(), indent=2))
                 logger.info("Generated missing file_encryption_key in %s", path)
             else:
                 raise RuntimeError(

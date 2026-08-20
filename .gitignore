@@ -121,6 +121,8 @@ tests/failles_securite_intranet.md
 .codex
 *.key
 data/encrypted/
+data/uploads/
+data/floorplans/
 
 # Local data / inventory files — never commit
 old-intranet-pages/

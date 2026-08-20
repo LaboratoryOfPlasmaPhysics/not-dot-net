@@ -1,5 +1,7 @@
 """First-run setup wizard — shown when no super-user exists (production only)."""
 
+import re
+
 from nicegui import ui
 from sqlalchemy import select
 
@@ -8,6 +10,27 @@ from not_dot_net.backend.mail import mail_config
 from not_dot_net.backend.users import ensure_default_admin
 from not_dot_net.config import org_config, OrgConfig
 from not_dot_net.frontend.i18n import t
+
+
+MIN_SETUP_PASSWORD_LEN = 12
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def validate_setup_credentials(email: str, password: str) -> str | None:
+    """i18n key for what is wrong with the first super-user's credentials.
+
+    This account cannot be recovered from inside the app — there is no other
+    admin to reset it — so a typo in the address or a three-character password
+    is worth catching before it becomes the only way in.
+    """
+    if not email or not password:
+        return "setup_email_password_required"
+    if not _EMAIL_RE.match(email.strip()):
+        return "setup_invalid_email"
+    if len(password) < MIN_SETUP_PASSWORD_LEN:
+        return "setup_password_too_short"
+    return None
 
 
 async def has_superuser() -> bool:
@@ -56,6 +79,9 @@ def setup():
 
         email = ui.input(t("setup_admin_email")).props("outlined")
         password = ui.input(t("setup_admin_password"), password=True, password_toggle_button=True).props("outlined")
+        confirm = ui.input(
+            t("setup_confirm_password"), password=True, password_toggle_button=True,
+        ).props("outlined")
         app_name = ui.input(t("setup_app_name"), value="LPP Intranet").props("outlined")
 
         ui.label(t("setup_mail_heading")).classes("text-sm text-weight-medium mt-4")
@@ -65,8 +91,12 @@ def setup():
         from_address = ui.input(t("from_address")).props("outlined")
 
         async def on_submit():
-            if not email.value or not password.value:
-                ui.notify(t("setup_email_password_required"), color="negative")
+            problem = validate_setup_credentials(email.value or "", password.value or "")
+            if problem:
+                ui.notify(t(problem), color="negative")
+                return
+            if password.value != confirm.value:
+                ui.notify(t("setup_passwords_differ"), color="negative")
                 return
             if not await complete_setup(
                 email.value, password.value,
