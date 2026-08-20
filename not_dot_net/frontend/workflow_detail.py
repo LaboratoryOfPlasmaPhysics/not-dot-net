@@ -10,6 +10,7 @@ from nicegui import app, ui
 from not_dot_net.backend.db import User
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_service import (
     cancel_request,
     can_view_request,
@@ -19,7 +20,6 @@ from not_dot_net.backend.workflow_service import (
     list_events,
     resolve_actor_names,
     submit_step,
-    workflows_config,
 )
 from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import get_locale, t
@@ -340,7 +340,7 @@ def _render_file_download(f, field_label, user):
             ui.download(data, name)
     else:
         async def download(fp=f.storage_path, fname=f.filename):
-            from not_dot_net.backend.workflow_service import _safe_upload_path
+            from not_dot_net.backend.workflow_uploads import _safe_upload_path
             try:
                 path = _safe_upload_path(fp)
             except ValueError:

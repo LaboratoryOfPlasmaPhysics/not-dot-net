@@ -105,7 +105,8 @@ class TestResendPermissionPredicate:
     async def test_service_and_predicate_agree_on_refusal(self):
         """The service must still refuse, not just the button disappear."""
         from not_dot_net.backend.workflow_service import (
-            can_resend_notification, resend_notification,
+            can_resend_notification,
+            resend_notification,
         )
 
         user = await _user_with_permission("view_directory")

@@ -196,7 +196,7 @@ async def test_mail_config_registered():
 # --- WorkflowsConfig ---
 
 async def test_workflows_config_defaults():
-    from not_dot_net.backend.workflow_service import workflows_config
+    from not_dot_net.backend.workflow_config import workflows_config
     cfg = await workflows_config.get()
     assert cfg.token_expiry_days == 30
     assert cfg.verification_code_expiry_minutes == 15
@@ -207,7 +207,7 @@ async def test_workflows_config_defaults():
 
 
 async def test_workflows_config_onboarding_v2_defaults():
-    from not_dot_net.backend.workflow_service import workflows_config
+    from not_dot_net.backend.workflow_config import workflows_config
 
     cfg = await workflows_config.get()
     onboarding = cfg.workflows["onboarding"]
@@ -237,7 +237,7 @@ async def test_workflows_config_onboarding_v2_defaults():
 
 
 async def test_workflows_config_roundtrip():
-    from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+    from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
     from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
     custom = WorkflowsConfig(
         token_expiry_days=7,
@@ -265,7 +265,7 @@ async def test_workflows_config_roundtrip():
 
 async def test_workflows_config_registered():
     from not_dot_net.backend.app_config import get_registry
-    from not_dot_net.backend.workflow_service import workflows_config  # noqa: F401
+    from not_dot_net.backend.workflow_config import workflows_config  # noqa: F401
     assert "workflows" in get_registry()
 
 

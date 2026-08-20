@@ -11,6 +11,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from not_dot_net.backend.app_config import section
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.config import FieldConfig, FieldRef, WorkflowStepConfig, resolve_field_ref
 
 _log = logging.getLogger(__name__)
@@ -70,7 +71,6 @@ async def save_field_definition(defn: FieldDefinition) -> None:
 
 
 async def definition_usages(key: str) -> list[str]:
-    from not_dot_net.backend.workflow_service import workflows_config
     wf_cfg = await workflows_config.get()
     usages: list[str] = []
     for wf_key, wf in wf_cfg.workflows.items():

@@ -12,7 +12,7 @@ from yaml import safe_dump, safe_load
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.permissions import get_permissions
 from not_dot_net.backend.roles import roles_config
-from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
 from not_dot_net.config import FieldConfig, FieldRef, NotificationRuleConfig, StepEffectConfig, WorkflowConfig, WorkflowStepConfig, resolve_field_ref
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error

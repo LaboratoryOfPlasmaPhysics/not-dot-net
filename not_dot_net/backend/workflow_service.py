@@ -1,107 +1,59 @@
-"""Workflow service layer — DB operations that use the step machine engine."""
+"""Workflow service layer — the request lifecycle on top of the step machine.
+
+File uploads live in `workflow_uploads`, AD account creation in
+`workflow_ad_account`, and the config section in `workflow_config`.
+"""
 
 import logging
-import os
-import re
-import secrets
 import shutil
-import string
-import unicodedata
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import date as dt_date, datetime, timedelta, timezone
 
-UPLOAD_ROOT = Path(os.environ.get("NDN_DATA_DIR", "data")) / "uploads"
+from sqlalchemy import and_, delete as sa_delete, func as sa_func, or_, select
 
-
-# --- AD account creation helpers ---
-
-def _normalize_name(s: str) -> str:
-    """Lowercase + accent-strip + drop non-alphanumeric."""
-    if not s:
-        return ""
-    decomposed = unicodedata.normalize("NFKD", s)
-    no_accent = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return re.sub(r"[^a-z0-9]", "", no_accent.lower())
-
-
-def derive_sam_candidates(first_name: str, last_name: str, max_steps: int = 5) -> list[str]:
-    """Return sAM candidates in cascading order: {last}, {last}{first[0]}, {last}{first[:2]}, ..."""
-    last = _normalize_name(last_name)
-    first = _normalize_name(first_name)
-    candidates = [last]
-    for i in range(1, min(len(first), max_steps) + 1):
-        candidates.append(f"{last}{first[:i]}")
-    seen: set[str] = set()
-    out: list[str] = []
-    for c in candidates:
-        if c and c not in seen:
-            seen.add(c)
-            out.append(c)
-    return out
-
-
-def render_mail(template: str, first_name: str, last_name: str) -> str:
-    return template.format(first=_normalize_name(first_name), last=_normalize_name(last_name))
-
-
-def render_home(template: str, sam: str) -> str:
-    return template.format(sam=sam)
-
-
-def generate_initial_password(length: int = 16) -> str:
-    """Strong password with at least one upper, lower, digit, symbol — passes AD complexity."""
-    alpha = string.ascii_letters
-    digits = string.digits
-    symbols = "!@#$%^&*-_=+"
-    pool = alpha + digits + symbols
-    while True:
-        pwd = "".join(secrets.choice(pool) for _ in range(length))
-        if (any(c.islower() for c in pwd) and any(c.isupper() for c in pwd)
-                and any(c.isdigit() for c in pwd) and any(c in symbols for c in pwd)):
-            return pwd
-
-
-# LDAP primitives — imported directly so tests can monkeypatch them via this module's namespace.
-from not_dot_net.backend.auth.ldap import (  # noqa: F401
-    ldap_config as _ldap_cfg_section,
-    ldap_lookup_by_sam,
-    ldap_create_user,
-    ldap_reset_password,
-    ldap_add_to_groups,
-    NewAdUser,
-    LdapModifyError,
-    get_ldap_connect,
-    USERNAME_RE,
+from not_dot_net.backend import workflow_uploads
+from not_dot_net.backend.audit import log_audit
+from not_dot_net.backend.db import User, resolve_user_names, session_scope
+from not_dot_net.backend import mail
+from not_dot_net.backend.email_templates import render_email
+from not_dot_net.backend.encrypted_storage import (
+    EncryptedFile,
+    _resolve_encrypted_blob_path,
+    mark_for_retention,
 )
-
-
-def _safe_upload_path(stored_path: str, root: Path | None = None) -> Path:
-    """Resolve a WorkflowFile.storage_path and confirm it sits under the
-    upload root. Defends against corrupted DB rows pointing outside the
-    expected directory.
-
-    Returns the resolved absolute Path. Raises ValueError otherwise.
-    """
-    base = (root or UPLOAD_ROOT).resolve()
-    candidate = Path(stored_path).resolve()
-    try:
-        candidate.relative_to(base)
-    except ValueError as exc:
-        raise ValueError(
-            f"Refusing to serve file outside upload root: {stored_path!r}"
-        ) from exc
-    return candidate
-
-
-from pydantic import BaseModel, Field
-from sqlalchemy import select, or_, and_
-
+from not_dot_net.backend.field_definitions import resolve_step_fields
+from not_dot_net.backend.notifications import notify
+from not_dot_net.backend.permissions import (
+    check_permission,
+    has_permissions,
+    permission,
+    users_with_permission,
+)
+from not_dot_net.backend.tenure_service import add_tenure
+from not_dot_net.backend.workflow_ad_account import handle_ad_account_creation
+from not_dot_net.backend.workflow_config import workflows_config
+from not_dot_net.backend.workflow_effects import (
+    AdCredentialsRequired,
+    ensure_effect_credentials,
+    run_effects,
+)
+from not_dot_net.backend.workflow_engine import (
+    can_user_act,
+    compute_next_step,
+    effective_assignee,
+    get_current_step_config,
+)
+from not_dot_net.backend.workflow_models import (
+    RequestStatus,
+    WorkflowEvent,
+    WorkflowFile,
+    WorkflowRequest,
+)
+from not_dot_net.config import org_config
 logger = logging.getLogger(__name__)
 
-from not_dot_net.backend.app_config import section
-from not_dot_net.backend.db import session_scope
+CREATE_WORKFLOWS = permission("create_workflows", "Create workflows", "Start new workflow requests")
+APPROVE_WORKFLOWS = permission("approve_workflows", "Approve workflows", "Act on role-assigned workflow steps")
 
 
 def _token_is_expired(expires_at: datetime | None) -> bool:
@@ -111,160 +63,10 @@ def _token_is_expired(expires_at: datetime | None) -> bool:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     return expires_at < now
-from not_dot_net.backend.permissions import permission, check_permission, has_permissions
-
-CREATE_WORKFLOWS = permission("create_workflows", "Create workflows", "Start new workflow requests")
-APPROVE_WORKFLOWS = permission("approve_workflows", "Approve workflows", "Act on role-assigned workflow steps")
-
-from not_dot_net.backend.workflow_engine import (
-    compute_next_step,
-    get_current_step_config,
-)
-from not_dot_net.backend.workflow_models import (
-    RequestStatus,
-    WorkflowEvent,
-    WorkflowFile,
-    WorkflowRequest,
-)
-from not_dot_net.backend.notifications import notify
-from not_dot_net.backend.default_workflows import default_workflows
-from not_dot_net.config import (
-    WorkflowConfig,
-    WorkflowStepConfig,
-    FieldConfig,
-    NotificationRuleConfig,
-    StepEffectConfig,
-)
-
-
-ALLOWED_EXTENSIONS: set[str] = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
-
-# Magic bytes → expected extensions
-_MAGIC_SIGNATURES: list[tuple[bytes, set[str]]] = [
-    (b"%PDF", {".pdf"}),
-    (b"\xff\xd8\xff", {".jpg", ".jpeg"}),
-    (b"\x89PNG\r\n\x1a\n", {".png"}),
-    (b"PK\x03\x04", {".docx"}),  # ZIP-based (OOXML)
-    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", {".doc"}),  # OLE2 (legacy Word)
-]
-
-
-def _check_magic(content: bytes, ext: str) -> bool:
-    """Check if file content matches its extension via magic bytes."""
-    for signature, valid_exts in _MAGIC_SIGNATURES:
-        if content[:len(signature)] == signature:
-            return ext in valid_exts
-    return True  # no signature match → skip check (don't block unknown formats)
-
-
-def validate_upload(content: bytes, filename: str, content_type: str, max_size_mb: int) -> str | None:
-    """Validate file upload. Returns error message or None if valid."""
-    max_bytes = max_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        return f"File too large (max {max_size_mb} MB)"
-    from pathlib import PurePosixPath
-    ext = PurePosixPath(filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return f"File type not allowed: {ext}"
-    if not _check_magic(content, ext):
-        return "File content does not match its extension"
-    return None
-
-
-async def persist_workflow_upload(
-    *,
-    request_id: uuid.UUID,
-    step_key: str,
-    field_name: str,
-    content: bytes,
-    filename: str,
-    content_type: str,
-    encrypted: bool,
-    uploaded_by: uuid.UUID | None,
-    expected_step_key: str | None = None,
-) -> WorkflowFile:
-    """Persist one uploaded file as a new WorkflowFile (a new current version).
-
-    Plain files go to UPLOAD_ROOT/<request_id>/<file_id>/<filename> — a unique
-    folder per upload — so a re-upload, or a same-named file in another field,
-    never overwrites an earlier version's blob on disk. Encrypted files already
-    get a unique blob per call via store_encrypted.
-
-    `expected_step_key` closes the gap between a caller's own staleness check
-    and this write: the request is locked and re-checked inside the same
-    transaction, so a submit_step landing in between cannot leave the file
-    attached to a step that has already been reviewed.
-    """
-    # Reduce to a basename at the sink so a '..'-laden name can never escape the
-    # per-upload directory, regardless of what a caller passes.
-    filename = Path(filename).name
-    file_id = uuid.uuid4()
-    written_paths: list[Path] = []
-    async with session_scope() as session:
-        if expected_step_key is not None:
-            req = await session.get(WorkflowRequest, request_id, with_for_update=True)
-            if req is None:
-                raise PermissionError("Request no longer exists")
-            if req.status != RequestStatus.IN_PROGRESS:
-                raise PermissionError("Request is no longer open for uploads")
-            if req.current_step != expected_step_key:
-                raise PermissionError(
-                    f"Request moved to step '{req.current_step}' — "
-                    f"upload for '{expected_step_key}' rejected"
-                )
-        try:
-            if encrypted:
-                from not_dot_net.backend.encrypted_storage import prepare_encrypted_file_record
-                enc_file, blob_path = prepare_encrypted_file_record(
-                    content, filename, content_type, uploaded_by,
-                )
-                written_paths.append(blob_path)
-                session.add(enc_file)
-                wf_file = WorkflowFile(
-                    id=file_id, request_id=request_id, step_key=step_key,
-                    field_name=field_name, filename=filename, storage_path="encrypted",
-                    uploaded_by=uploaded_by, encrypted_file_id=enc_file.id,
-                )
-            else:
-                dest_dir = UPLOAD_ROOT / str(request_id) / str(file_id)
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                dest = dest_dir / filename
-                dest.write_bytes(content)
-                written_paths.append(dest)
-                wf_file = WorkflowFile(
-                    id=file_id, request_id=request_id, step_key=step_key,
-                    field_name=field_name, filename=filename, storage_path=str(dest),
-                    uploaded_by=uploaded_by,
-            )
-            session.add(wf_file)
-            await session.commit()
-            return wf_file
-        except Exception:
-            await session.rollback()
-            for path in written_paths:
-                try:
-                    if path.exists():
-                        path.unlink()
-                except OSError:
-                    logger.exception("Failed to clean up workflow upload path %s", path)
-            raise
-
-
-class WorkflowsConfig(BaseModel):
-    token_expiry_days: int = 30
-    verification_code_expiry_minutes: int = 15
-    max_upload_size_mb: int = 10
-    workflows: dict[str, WorkflowConfig] = Field(default_factory=default_workflows)
-
-
-workflows_config = section("workflows", WorkflowsConfig, label="Workflows")
 
 
 async def _send_token_link(req, wf):
     """Send the token link email directly to the target person."""
-    from not_dot_net.backend.mail import send_mail
-    from not_dot_net.backend.email_templates import render_email
-    from not_dot_net.config import org_config
 
     if not req.target_email or not req.token:
         return
@@ -279,7 +81,7 @@ async def _send_token_link(req, wf):
         "token_url": f"{base_url}/workflow/token/{req.token}",
     }
     subject, body = await render_email("token_link", ctx)
-    await send_mail(req.target_email, subject, body)
+    await mail.send_mail(req.target_email, subject, body)
 
 
 async def _fire_notifications(req, event: str, step_key: str, wf):
@@ -287,8 +89,6 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
 
     Uses a single session for all user lookups to avoid N+1 queries.
     """
-    from not_dot_net.backend.db import User
-    from not_dot_net.backend.permissions import has_permissions
 
     async with session_scope() as session:
         async def get_user_email(user_id):
@@ -309,7 +109,6 @@ async def _fire_notifications(req, event: str, step_key: str, wf):
             return list(result.scalars().all())
 
         async def get_users_by_permission(perm):
-            from not_dot_net.backend.permissions import users_with_permission
             return await users_with_permission(session, perm)
 
         await notify(
@@ -334,7 +133,6 @@ async def _filter_step_data(step_cfg, data: dict | None) -> dict:
     """
     if not data:
         return {}
-    from not_dot_net.backend.field_definitions import resolve_step_fields
     allowed = {f.name for f in await resolve_step_fields(step_cfg)}
     return {k: v for k, v in data.items() if k in allowed}
 
@@ -391,7 +189,6 @@ async def create_request(
         await session.commit()
         await session.refresh(req)
 
-        from not_dot_net.backend.audit import log_audit
         await log_audit(
             "workflow", "create",
             actor_id=created_by,
@@ -403,8 +200,6 @@ async def create_request(
 
 async def _create_tenure_from_onboarding(req: WorkflowRequest, user_id: uuid.UUID) -> None:
     """Create a tenure record from a completed onboarding request."""
-    from not_dot_net.backend.tenure_service import add_tenure
-    from datetime import date as dt_date
 
     status = req.data.get("status")
     employer = req.data.get("employer")
@@ -465,7 +260,6 @@ async def submit_step(
             if req.token != actor_token or _token_is_expired(req.token_expires_at):
                 raise PermissionError("Invalid or expired token")
         elif actor_user is not None:
-            from not_dot_net.backend.workflow_engine import can_user_act
             if not await can_user_act(actor_user, req, wf):
                 raise PermissionError("User cannot act on this step")
         else:
@@ -488,7 +282,6 @@ async def submit_step(
         # Effects needing AD credentials must fail before any state change —
         # the frontend prompts for credentials and retries this same call.
         if getattr(step_cfg, "effects", None):
-            from not_dot_net.backend.workflow_effects import ensure_effect_credentials
             ensure_effect_credentials(step_cfg, action, ad_creds)
 
         next_step, new_status = compute_next_step(wf, req.current_step, action)
@@ -496,9 +289,8 @@ async def submit_step(
         # Handle ad_account_creation step type before the standard transition
         if getattr(step_cfg, "type", None) == "ad_account_creation" and action == "complete":
             if not ad_creds:
-                from not_dot_net.backend.workflow_effects import AdCredentialsRequired
                 raise AdCredentialsRequired("ad_account_creation step requires AD admin credentials")
-            ad_result = await _handle_ad_account_creation(
+            ad_result = await handle_ad_account_creation(
                 request=req, form_data=data or {}, ad_creds=ad_creds, actor_user=actor_user,
             )
             if _out is not None:
@@ -570,11 +362,9 @@ async def submit_step(
                         target_user_id = uuid.UUID(req.data["returning_user_id"])
                     elif req.target_email:
                         async with session_scope() as tenure_session:
-                            from not_dot_net.backend.db import User as UserModel
-                            from sqlalchemy import func as sa_func
                             result = await tenure_session.execute(
-                                select(UserModel).where(
-                                    sa_func.lower(UserModel.email)
+                                select(User).where(
+                                    sa_func.lower(User.email)
                                     == req.target_email.strip().lower()
                                 )
                             )
@@ -589,7 +379,6 @@ async def submit_step(
         # Audit. Token submissions have no logged-in actor (actor_id is None);
         # attribute them to the target person's email so the trail isn't blank.
         try:
-            from not_dot_net.backend.audit import log_audit
             await log_audit(
                 "workflow", action,
                 actor_id=actor_id,
@@ -603,7 +392,6 @@ async def submit_step(
         # Fire any AD effects declared on the step for this action.
         if getattr(step_cfg, "effects", None):
             try:
-                from not_dot_net.backend.workflow_effects import run_effects
                 await run_effects(
                     request=req, step=step_cfg, action=action,
                     ad_creds=ad_creds, actor=actor_user,
@@ -642,8 +430,6 @@ async def schedule_file_retention(request_id: uuid.UUID, status) -> None:
 
     Best-effort: a retention failure must not undo a committed transition.
     """
-    from not_dot_net.backend.encrypted_storage import mark_for_retention
-    from not_dot_net.backend.workflow_models import WorkflowFile
 
     days = _RETENTION_DAYS.get(status)
     if days is None:
@@ -696,7 +482,6 @@ async def cancel_request(
 
         await schedule_file_retention(req.id, RequestStatus.CANCELLED)
 
-        from not_dot_net.backend.audit import log_audit
         await log_audit(
             "workflow", "cancel",
             actor_id=actor_id,
@@ -711,12 +496,6 @@ async def delete_request(request_id: uuid.UUID, actor_user) -> None:
     real conditions. Audit log entries survive; the deletion itself is logged."""
     if not getattr(actor_user, "is_superuser", False):
         raise PermissionError("Only superusers can delete requests")
-
-    from sqlalchemy import delete as sa_delete
-    from not_dot_net.backend.encrypted_storage import (
-        EncryptedFile,
-        _resolve_encrypted_blob_path,
-    )
 
     async with session_scope() as session:
         req = await session.get(WorkflowRequest, request_id)
@@ -749,11 +528,10 @@ async def delete_request(request_id: uuid.UUID, actor_user) -> None:
     for blob_path in blob_paths:
         if blob_path.exists():
             blob_path.unlink()
-    upload_dir = UPLOAD_ROOT / str(request_id)
+    upload_dir = workflow_uploads.UPLOAD_ROOT / str(request_id)
     if upload_dir.exists():
         shutil.rmtree(upload_dir, ignore_errors=True)
 
-    from not_dot_net.backend.audit import log_audit
     await log_audit(
         "workflow", "delete",
         actor_id=actor_user.id,
@@ -785,7 +563,6 @@ async def save_draft(
             if req.token != actor_token or _token_is_expired(req.token_expires_at):
                 raise PermissionError("Invalid or expired token")
         elif actor_user is not None:
-            from not_dot_net.backend.workflow_engine import can_user_act
             if not await can_user_act(actor_user, req, wf):
                 raise PermissionError("User cannot act on this step")
         else:
@@ -932,8 +709,6 @@ async def _build_actionable_filters(user, cfg):
     Must mirror `workflow_engine.can_user_act` exactly — both resolve the
     step's assignee via `effective_assignee`.
     """
-    from sqlalchemy import func as sa_func
-    from not_dot_net.backend.workflow_engine import effective_assignee
     filters = []
     user_email_lc = (user.email or "").strip().lower()
     for wf_type, wf in cfg.workflows.items():
@@ -966,7 +741,6 @@ async def get_actionable_count(user) -> int:
     if not filters:
         return 0
 
-    from sqlalchemy import func as sa_func
     async with session_scope() as session:
         result = await session.execute(
             select(sa_func.count())
@@ -978,7 +752,6 @@ async def get_actionable_count(user) -> int:
 
 async def resolve_actor_names(actor_ids) -> dict[uuid.UUID, str]:
     """Resolve actor UUIDs to display names. Single query."""
-    from not_dot_net.backend.db import resolve_user_names
     return await resolve_user_names(actor_ids)
 
 
@@ -1038,7 +811,6 @@ async def resend_notification(
         await session.commit()
         await session.refresh(req)
 
-    from not_dot_net.backend.audit import log_audit
 
     try:
         await _send_token_link(req, wf)
@@ -1068,7 +840,6 @@ async def resend_notification(
 
 async def can_view_request(user, req: WorkflowRequest) -> bool:
     """Check if user is allowed to view this request."""
-    from not_dot_net.backend.workflow_engine import can_user_act
     if str(user.id) == str(req.created_by):
         return True
     if await has_permissions(user, "view_audit_log"):
@@ -1078,243 +849,3 @@ async def can_view_request(user, req: WorkflowRequest) -> bool:
     if wf and await can_user_act(user, req, wf):
         return True
     return False
-
-
-@dataclass(frozen=True)
-class AdAccountCreationResult:
-    request_id: uuid.UUID
-    new_dn: str
-    sam_account: str
-    uid: int
-    initial_password: str
-    group_failures: dict[str, str]
-
-
-
-def should_adopt_orphan_account(
-    *,
-    existing: dict | None,
-    intended_mail: str,
-    target_ldap_username: str | None,
-    target_ldap_dn: str | None,
-) -> bool:
-    """Whether an existing AD account is this target's, left by a failed retry.
-
-    The AD account is created before the local write-back that records ldap_dn /
-    ldap_username. If that write-back never lands, the account exists but nothing
-    locally points at it, and every retry dead-ends on "already exists" — with no
-    fix short of editing the database by hand.
-
-    Adoption requires AD itself to confirm the account carries the mail we were
-    about to set. Without that proof we refuse: a same-named colleague who left
-    years ago would otherwise get their password reset out from under them.
-    """
-    if not existing:
-        return False
-    if target_ldap_username or target_ldap_dn:
-        return False  # already linked — that is the ordinary reprovision path
-    existing_mail = (existing.get("mail") or "").strip().lower()
-    return bool(existing_mail) and existing_mail == (intended_mail or "").strip().lower()
-
-
-async def _handle_ad_account_creation(
-    request,
-    form_data: dict,
-    ad_creds: tuple[str, str],
-    actor_user,
-) -> AdAccountCreationResult:
-    """Allocate UID → create AD user → write back → apply groups.
-
-    Raises on AD create failure (step stays pending). Group-add failures are returned, not raised.
-    """
-    import not_dot_net.backend.workflow_service as _ws
-    from not_dot_net.backend.uid_allocator import allocate_uid
-    from not_dot_net.backend.ad_account_config import ad_account_config
-    from not_dot_net.backend.db import session_scope, User
-    from not_dot_net.backend.audit import log_audit
-    from sqlalchemy import func, select
-
-    # Use module-level names so tests can monkeypatch them.
-    _ldap_lookup = _ws.ldap_lookup_by_sam
-    _ldap_create = _ws.ldap_create_user
-    _ldap_reset = _ws.ldap_reset_password
-    _ldap_add_groups = _ws.ldap_add_to_groups
-    _NewAdUser = _ws.NewAdUser
-    _LdapModifyError = _ws.LdapModifyError
-    _connect = _ws.get_ldap_connect()
-
-    ad_cfg = await ad_account_config.get()
-    ldap_cfg = await _ws._ldap_cfg_section.get()
-    bind_user, bind_pw = ad_creds
-
-    sam = form_data["sam_account"].strip()
-    if not sam or not USERNAME_RE.fullmatch(sam):
-        raise ValueError(f"Invalid sAMAccountName: {sam!r} — must match [a-zA-Z0-9._-]{{1,64}}")
-
-    ou_dn = form_data["ou_dn"]
-    if ou_dn not in ad_cfg.users_ous:
-        raise ValueError(f"OU not in eligible list: {ou_dn}")
-
-    chosen_groups = list(form_data.get("groups") or [])
-    bad_groups = [g for g in chosen_groups if g not in ad_cfg.eligible_groups]
-    if bad_groups:
-        raise ValueError(f"groups not in eligible_groups: {bad_groups}")
-
-    async with session_scope() as session:
-        target = (await session.execute(
-            select(User).where(func.lower(User.email) == (request.target_email or "").lower())
-        )).scalar_one_or_none()
-    if not target:
-        raise ValueError(f"No local User for target_email={request.target_email!r}")
-
-    first = form_data["first_name"]
-    last = form_data["last_name"]
-    display_name = form_data.get("display_name") or f"{first} {last}"
-    mail = form_data["mail"]
-    gid_number = int(form_data.get("gid_number") or ad_cfg.default_gid_number)
-    description = form_data.get("description")
-    initial_password = generate_initial_password(ad_cfg.password_length)
-
-    # ldap3 is synchronous — run AD round-trips off the event loop so a slow
-    # DC doesn't freeze every connected client.
-    import asyncio
-    existing = await asyncio.to_thread(_ldap_lookup, sam, bind_user, bind_pw, ldap_cfg, _connect)
-    sam_exists = existing is not None
-    # A retry after a partial failure (AD account created, but the workflow step
-    # never committed) leaves the account existing AND already linked to this
-    # target. Reprovision idempotently instead of dead-ending on "already
-    # exists" — the one-time password is unrecoverable, so reset it afresh.
-    relinked = (
-        sam_exists
-        and (target.ldap_username or "").lower() == sam.lower()
-        and bool(target.ldap_dn)
-    )
-    # Same partial failure, one step earlier: the AD account exists but the
-    # local write-back never landed, so nothing points at it. Adopt it when AD
-    # confirms the mail matches — otherwise this dead-ends forever.
-    adopted = should_adopt_orphan_account(
-        existing=existing,
-        intended_mail=mail,
-        target_ldap_username=target.ldap_username,
-        target_ldap_dn=target.ldap_dn,
-    )
-    reprovision = relinked or adopted
-    if sam_exists and not reprovision:
-        raise ValueError(f"sAMAccountName already exists in AD: {sam}")
-
-    if reprovision:
-        uid = target.uid_number or (existing or {}).get("uid_number")
-        new_dn = target.ldap_dn or (existing or {}).get("dn")
-        if adopted:
-            logger.warning(
-                "Adopting orphan AD account %s for %s — a previous creation "
-                "wrote to AD but never linked it locally",
-                new_dn, target.email,
-            )
-        try:
-            await asyncio.to_thread(
-                _ldap_reset, new_dn, initial_password, bind_user, bind_pw, ldap_cfg, _connect,
-            )
-        except _LdapModifyError as e:
-            await log_audit(
-                category="ad", action="reset_password",
-                actor_id=str(actor_user.id) if actor_user else None,
-                target_id=str(target.id),
-                detail=f"sam={sam} dn={new_dn} error={e} succeeded=False",
-            )
-            raise
-        await log_audit(
-            category="ad", action="reset_password",
-            actor_id=str(actor_user.id) if actor_user else None,
-            target_id=str(target.id),
-            detail=f"sam={sam} uid={uid} dn={new_dn} idempotent_retry succeeded=True",
-        )
-    else:
-        uid = await allocate_uid(target.id, sam)
-        new_user = _NewAdUser(
-            sam_account=sam,
-            given_name=first,
-            surname=last,
-            display_name=display_name,
-            mail=mail,
-            description=description,
-            ou_dn=ou_dn,
-            uid_number=uid,
-            gid_number=gid_number,
-            login_shell=form_data.get("login_shell") or ad_cfg.default_login_shell,
-            home_directory=form_data["home_directory"],
-            initial_password=initial_password,
-            must_change_password=True,
-        )
-        try:
-            new_dn = await asyncio.to_thread(_ldap_create, new_user, bind_user, bind_pw, ldap_cfg, _connect)
-        except _LdapModifyError as e:
-            # The UID row is deliberately NOT released here: UIDs are never
-            # reused (see uid_allocator), because a UID that was handed out may
-            # already own files on disk. Leaking one on a failed create is the
-            # cheaper half of that trade — the range holds 50k of them.
-            await log_audit(
-                category="ad", action="create_user",
-                actor_id=str(actor_user.id) if actor_user else None,
-                target_id=str(target.id),
-                detail=f"sam={sam} uid={uid} error={e} succeeded=False",
-            )
-            raise
-        await log_audit(
-            category="ad", action="create_user",
-            actor_id=str(actor_user.id) if actor_user else None,
-            target_id=str(target.id),
-            detail=f"sam={sam} uid={uid} dn={new_dn} ou={ou_dn} succeeded=True",
-        )
-
-    async with session_scope() as session:
-        u = await session.get(User, target.id)
-        if u is not None:
-            u.ldap_dn = new_dn
-            u.ldap_username = sam
-            u.uid_number = uid
-            u.gid_number = gid_number
-            u.description = description
-            u.is_active = True
-            await session.commit()
-
-    group_failures: dict[str, str] = {}
-    if chosen_groups:
-        group_failures = await asyncio.to_thread(
-            _ldap_add_groups, new_dn, chosen_groups, bind_user, bind_pw, ldap_cfg, _connect,
-        )
-        await log_audit(
-            category="ad", action="add_to_groups",
-            actor_id=str(actor_user.id) if actor_user else None,
-            target_id=str(target.id),
-            detail=f"groups={chosen_groups} failures={group_failures}",
-        )
-
-    from not_dot_net.backend.mail import send_mail
-    from not_dot_net.backend.email_templates import render_email
-    from not_dot_net.config import org_config as _org_config
-    contact_email = (request.target_email or "").strip()
-    if contact_email:
-        # Look up the workflow label for the email subject.
-        wf_cfg = await workflows_config.get()
-        wf = wf_cfg.workflows.get(request.type)
-        workflow_label = (wf.label if wf else request.type) or "Workflow"
-        _org_cfg = await _org_config.get()
-        _base_url = _org_cfg.base_url.rstrip("/")
-        _app_name = (_org_cfg.app_name or "not-dot-net").strip() or "not-dot-net"
-        ctx = {
-            "app_name": _app_name,
-            "app_url": f"{_base_url}/",
-            "recipient_name": display_name,
-            "workflow_label": workflow_label,
-            "sam": sam,
-            "display_name": display_name,
-            "mail": mail,
-        }
-        subject, body = await render_email("account_created", ctx)
-        await send_mail(contact_email, subject, body)
-
-    return AdAccountCreationResult(
-        request_id=request.id, new_dn=new_dn, sam_account=sam,
-        uid=uid, initial_password=initial_password, group_failures=group_failures,
-    )

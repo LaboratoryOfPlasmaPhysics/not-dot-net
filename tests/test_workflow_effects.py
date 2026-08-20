@@ -200,7 +200,10 @@ async def test_submit_step_without_creds_leaves_request_untouched():
     call. That only works if the no-creds attempt changed nothing."""
     from not_dot_net.backend.workflow_effects import AdCredentialsRequired
     from not_dot_net.backend.workflow_service import (
-        create_request, get_request_by_id, list_events, submit_step,
+        create_request,
+        get_request_by_id,
+        list_events,
+        submit_step,
     )
 
     staff, director = await _r01_setup_users()

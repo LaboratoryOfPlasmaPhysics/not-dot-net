@@ -6,6 +6,7 @@ from pathlib import Path
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.workflow_models import WorkflowRequest
+import not_dot_net.backend.workflow_uploads as wu
 import not_dot_net.backend.workflow_service as ws
 
 
@@ -21,15 +22,15 @@ async def _make_request() -> uuid.UUID:
 
 
 async def test_plain_reupload_keeps_both_versions_on_disk(tmp_path, monkeypatch):
-    monkeypatch.setattr(ws, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(wu, "UPLOAD_ROOT", tmp_path)
     rid = await _make_request()
 
-    v1 = await ws.persist_workflow_upload(
+    v1 = await wu.persist_workflow_upload(
         request_id=rid, step_key="docs", field_name="doc",
         content=b"VERSION-1", filename="report.pdf",
         content_type="application/pdf", encrypted=False, uploaded_by=None,
     )
-    v2 = await ws.persist_workflow_upload(
+    v2 = await wu.persist_workflow_upload(
         request_id=rid, step_key="docs", field_name="doc",
         content=b"VERSION-2", filename="report.pdf",
         content_type="application/pdf", encrypted=False, uploaded_by=None,
@@ -42,15 +43,15 @@ async def test_plain_reupload_keeps_both_versions_on_disk(tmp_path, monkeypatch)
 
 
 async def test_plain_same_filename_different_fields_do_not_collide(tmp_path, monkeypatch):
-    monkeypatch.setattr(ws, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(wu, "UPLOAD_ROOT", tmp_path)
     rid = await _make_request()
 
-    a = await ws.persist_workflow_upload(
+    a = await wu.persist_workflow_upload(
         request_id=rid, step_key="docs", field_name="invitation",
         content=b"AAA", filename="report.pdf",
         content_type="application/pdf", encrypted=False, uploaded_by=None,
     )
-    b = await ws.persist_workflow_upload(
+    b = await wu.persist_workflow_upload(
         request_id=rid, step_key="docs", field_name="budget",
         content=b"BBB", filename="report.pdf",
         content_type="application/pdf", encrypted=False, uploaded_by=None,

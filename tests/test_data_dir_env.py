@@ -12,7 +12,7 @@ from pathlib import Path
 def _resolved_roots(env_value: str | None) -> tuple[str, str]:
     code = (
         "from not_dot_net.backend.encrypted_storage import ENCRYPTED_DIR\n"
-        "from not_dot_net.backend.workflow_service import UPLOAD_ROOT\n"
+        "from not_dot_net.backend.workflow_uploads import UPLOAD_ROOT\n"
         "print(ENCRYPTED_DIR); print(UPLOAD_ROOT)"
     )
     env = {"PATH": __import__("os").environ.get("PATH", "")}

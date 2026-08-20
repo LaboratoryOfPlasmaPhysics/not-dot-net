@@ -13,11 +13,7 @@ from sqlalchemy import select
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.workflow_models import WorkflowEvent
-from not_dot_net.backend.workflow_service import (
-    create_request,
-    save_draft,
-    submit_step,
-)
+from not_dot_net.backend.workflow_service import create_request, save_draft, submit_step
 from tests.test_workflow_service import _create_user, _setup_roles
 
 

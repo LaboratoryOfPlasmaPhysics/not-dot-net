@@ -4,7 +4,7 @@ import pytest
 from nicegui import ui
 from nicegui.testing import User
 
-from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
 from not_dot_net.config import FieldConfig, NotificationRuleConfig, WorkflowConfig, WorkflowStepConfig
 
 
@@ -1248,7 +1248,7 @@ async def test_visible_when_picker_does_not_rebuild_detail_pane(user: User, admi
 def test_compute_warnings_flags_effect_unknown_action():
     from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
     from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, StepEffectConfig
-    from not_dot_net.backend.workflow_service import WorkflowsConfig
+    from not_dot_net.backend.workflow_config import WorkflowsConfig
 
     step = WorkflowStepConfig(key="s", type="approval", actions=["approve"], effects=[
         StepEffectConfig(on_action="nonexistent", kind="ad_enable_account", params={}),
@@ -1267,7 +1267,7 @@ def test_compute_warnings_flags_effect_unknown_action():
 def test_compute_warnings_flags_effect_groups_not_eligible():
     from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
     from not_dot_net.config import WorkflowConfig, WorkflowStepConfig, StepEffectConfig
-    from not_dot_net.backend.workflow_service import WorkflowsConfig
+    from not_dot_net.backend.workflow_config import WorkflowsConfig
 
     step = WorkflowStepConfig(key="s", type="approval", actions=["approve"], effects=[
         StepEffectConfig(on_action="approve", kind="ad_add_to_groups",

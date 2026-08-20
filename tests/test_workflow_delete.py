@@ -93,8 +93,8 @@ async def test_delete_request_unknown_id():
 
 
 async def test_delete_request_removes_everything(tmp_path, monkeypatch):
-    import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "UPLOAD_ROOT", tmp_path)
+    import not_dot_net.backend.workflow_uploads as wu
+    monkeypatch.setattr(wu, "UPLOAD_ROOT", tmp_path)
 
     user = await _create_user()
     admin = await _create_user(email="root@test.com", is_superuser=True)

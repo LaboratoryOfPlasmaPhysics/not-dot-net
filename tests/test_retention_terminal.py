@@ -64,9 +64,7 @@ async def test_cancelling_a_request_schedules_its_files_for_deletion():
 
 
 async def test_completed_keeps_the_longer_retention():
-    from not_dot_net.backend.workflow_service import (
-        _RETENTION_DAYS, schedule_file_retention,
-    )
+    from not_dot_net.backend.workflow_service import _RETENTION_DAYS, schedule_file_retention
 
     creator = await _make_user("creator-done@example.com")
     request_id, enc_id = await _request_with_encrypted_file(creator.id)

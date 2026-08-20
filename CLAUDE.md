@@ -77,6 +77,30 @@ Both must be initialized before dependencies are usable. `create_app()` orchestr
 - `backend/secrets.py`: `AppSecrets` lives in a 0o600 JSON file (`secrets.key` by default). Library functions raise (`FileNotFoundError`, `RuntimeError`); `app.create_app` translates failures into `SystemExit(1)`.
 - The only env var is `DATABASE_URL` (and optional `ALLOWED_ORIGINS` for Socket.IO CORS).
 
+### Workflow modules
+
+The request lifecycle is split across four modules — importing the wrong one is
+the usual mistake:
+
+- `backend/workflow_config.py` — the `workflows` `ConfigSection` (`WorkflowsConfig`,
+  `workflows_config`). Separate from the service so `field_definitions` and
+  `verification` can import it at module level; importing it from the service
+  created a cycle both sides dodged with function-local imports.
+- `backend/workflow_uploads.py` — `UPLOAD_ROOT`, `validate_upload`,
+  `_safe_upload_path`, `persist_workflow_upload`.
+- `backend/workflow_ad_account.py` — the `ad_account_creation` step type:
+  sAM/mail/home derivation, password generation, `handle_ad_account_creation`.
+- `backend/workflow_service.py` — create/submit/cancel/delete/save_draft, queries,
+  notification fan-out.
+
+**Test seams live where the name is used, not where it is defined.** The LDAP
+primitives are imported into `workflow_ad_account`'s namespace so tests
+monkeypatch them *there*; `UPLOAD_ROOT` is patched on `workflow_uploads` (and
+`delete_request` reads it as `workflow_uploads.UPLOAD_ROOT`, never a copy); and
+`_send_token_link` calls `mail.send_mail` through the module so
+`patch("not_dot_net.backend.mail.send_mail")` still reaches it. Patch the wrong
+module and the AD tests hit real DNS.
+
 ### Workflow tokens
 
 - `WorkflowRequest.token` is a UUID4 string. `submit_step` regenerates it whenever the next step is assigned to `target_person`; the matching email goes out via `_fire_notifications` / `_send_token_link`.

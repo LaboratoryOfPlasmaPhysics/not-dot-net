@@ -11,13 +11,15 @@ from not_dot_net.backend.verification import (
     verify_code,
 )
 from not_dot_net.backend.field_definitions import resolve_step_fields
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_service import (
     get_request_by_token,
-    persist_workflow_upload,
     save_draft,
     submit_step,
+)
+from not_dot_net.backend.workflow_uploads import (
+    persist_workflow_upload,
     validate_upload,
-    workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config
 from not_dot_net.backend.mail import send_mail

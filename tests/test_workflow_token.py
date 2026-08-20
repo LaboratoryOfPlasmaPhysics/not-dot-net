@@ -13,7 +13,7 @@ from not_dot_net.backend.field_definitions import (
     field_definitions_config,
 )
 from not_dot_net.backend.workflow_models import WorkflowFile, WorkflowRequest
-from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_config
+from not_dot_net.backend.workflow_config import WorkflowsConfig, workflows_config
 from not_dot_net.config import FieldRef, WorkflowConfig, WorkflowStepConfig
 
 

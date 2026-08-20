@@ -216,7 +216,7 @@ async def test_list_actionable_matches_can_user_act_for_permission_steps():
     must not match via the step's assignee_role fallback — can_user_act
     refuses them, so the actionable list must too."""
     from not_dot_net.backend.workflow_engine import can_user_act
-    from not_dot_net.backend.workflow_service import workflows_config
+    from not_dot_net.backend.workflow_config import workflows_config
 
     await _setup_roles()
     cfg = await roles_config.get()
@@ -385,11 +385,12 @@ async def test_onboarding_v2_full_flow(monkeypatch):
     admin = await _create_user(email="admin@test.com", role="admin")
 
     # Monkeypatch AD primitives to bypass LDAP
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
-    monkeypatch.setattr(ws, "ldap_create_user",
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
-    monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
 
     # Create target user for ad_account_creation step
     newcomer = await _create_user(email="newcomer@example.com", role="staff")
@@ -564,11 +565,12 @@ async def test_onboarding_completion_marks_encrypted_files_for_retention(monkeyp
     admin = await _create_user(email="admin@test.com", role="admin")
 
     # Monkeypatch AD primitives to bypass LDAP
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
-    monkeypatch.setattr(ws, "ldap_create_user",
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
-    monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
 
     # Create target user for ad_account_creation step
     newcomer = await _create_user(email="newcomer@example.com", role="staff")

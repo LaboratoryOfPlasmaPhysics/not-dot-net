@@ -1,6 +1,6 @@
 import pytest
 from not_dot_net.config import WorkflowStepConfig, WorkflowConfig
-from not_dot_net.backend.workflow_service import workflows_config
+from not_dot_net.backend.workflow_config import workflows_config
 
 
 async def test_settings_has_workflows():
@@ -61,7 +61,7 @@ async def test_field_config_round_trips_visible_when_and_checkbox():
     """A FieldConfig with type=checkbox and visible_when serializes and
     re-parses without loss through the workflows ConfigSection."""
     from not_dot_net.config import FieldConfig, WorkflowConfig, WorkflowStepConfig
-    from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+    from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
 
     cfg = WorkflowsConfig(workflows={
         "demo": WorkflowConfig(

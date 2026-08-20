@@ -7,7 +7,11 @@ from contextlib import asynccontextmanager
 from not_dot_net.backend.db import User, get_async_session
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.workflow_service import (
-    create_request, submit_step, save_draft, get_request_by_token, list_actionable,
+    create_request,
+    submit_step,
+    save_draft,
+    get_request_by_token,
+    list_actionable,
 )
 from not_dot_net.backend.encrypted_storage import store_encrypted, read_encrypted, EncryptedFile
 from not_dot_net.backend.verification import generate_verification_code, verify_code
@@ -44,11 +48,12 @@ async def test_full_onboarding_with_encrypted_files(monkeypatch):
     admin = await _create_user(email="admin@test.com", role="admin")
 
     # Monkeypatch AD primitives to bypass LDAP
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
-    monkeypatch.setattr(ws, "ldap_create_user",
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
-    monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
 
     # Step 1: Initiation
     req = await create_request(
@@ -141,8 +146,9 @@ async def test_request_corrections_regenerates_token(monkeypatch):
     admin = await _create_user(email="adm@test.com", role="admin")
 
     # Monkeypatch AD primitives (not needed for this test but ensures consistency)
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
 
     req = await create_request(
         workflow_type="onboarding",
@@ -176,8 +182,9 @@ async def test_save_draft_preserves_data(monkeypatch):
     initiator = await _create_user(email="init2@test.com", role="staff")
 
     # Monkeypatch AD primitives (not needed for this test but ensures consistency)
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
 
     req = await create_request(
         workflow_type="onboarding",

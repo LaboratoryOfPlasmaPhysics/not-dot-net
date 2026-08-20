@@ -14,7 +14,7 @@ from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.workflow_models import (
     RequestStatus, WorkflowFile, WorkflowRequest,
 )
-from not_dot_net.backend.workflow_service import persist_workflow_upload
+from not_dot_net.backend.workflow_uploads import persist_workflow_upload
 
 
 async def _request(step: str = "newcomer_info", **kwargs) -> WorkflowRequest:

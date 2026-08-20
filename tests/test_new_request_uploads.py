@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.encrypted_storage import EncryptedFile
-from not_dot_net.backend import workflow_service
+from not_dot_net.backend import workflow_service, workflow_uploads
 from not_dot_net.backend.workflow_models import WorkflowFile, WorkflowRequest
 from not_dot_net.frontend import new_request
 from not_dot_net.config import FieldConfig, WorkflowStepConfig
@@ -15,7 +15,7 @@ from not_dot_net.config import FieldConfig, WorkflowStepConfig
 
 async def test_new_request_persists_staged_plain_upload(tmp_path, monkeypatch):
     monkeypatch.setattr(new_request, "UPLOAD_ROOT", tmp_path)
-    monkeypatch.setattr(workflow_service, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(workflow_uploads, "UPLOAD_ROOT", tmp_path)
 
     user_id = uuid.uuid4()
     request_id = uuid.uuid4()
@@ -75,7 +75,7 @@ async def test_new_request_persists_staged_plain_upload(tmp_path, monkeypatch):
 
 async def test_new_request_plain_uploads_are_namespaced_by_field(tmp_path, monkeypatch):
     monkeypatch.setattr(new_request, "UPLOAD_ROOT", tmp_path)
-    monkeypatch.setattr(workflow_service, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(workflow_uploads, "UPLOAD_ROOT", tmp_path)
 
     user_id = uuid.uuid4()
     request_id = uuid.uuid4()
@@ -332,7 +332,7 @@ async def test_submit_post_commit_audit_failure_keeps_submitted_request(monkeypa
 async def test_persist_workflow_upload_contains_traversal_filename(tmp_path, monkeypatch):
     """A filename with '..' must be reduced to its basename so the blob stays
     inside the unique per-upload directory and can't escape it."""
-    monkeypatch.setattr(workflow_service, "UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(workflow_uploads, "UPLOAD_ROOT", tmp_path)
 
     user = User(id=uuid.uuid4(), email="trav@test.com", hashed_password="x",
                 is_superuser=True)
@@ -345,7 +345,7 @@ async def test_persist_workflow_upload_contains_traversal_filename(tmp_path, mon
         data={"target_name": "A", "target_email": "a@test.com"}, actor=user,
     )
 
-    wf_file = await workflow_service.persist_workflow_upload(
+    wf_file = await workflow_uploads.persist_workflow_upload(
         request_id=req.id, step_key="request", field_name="doc",
         content=b"payload", filename="../escape.txt",
         content_type="text/plain", encrypted=False, uploaded_by=user.id,

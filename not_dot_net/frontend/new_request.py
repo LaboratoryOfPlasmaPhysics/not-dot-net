@@ -13,13 +13,12 @@ from not_dot_net.backend.encrypted_storage import delete_encrypted_by_id, unlink
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowFile, WorkflowRequest
-from not_dot_net.backend.workflow_service import (
+from not_dot_net.backend.workflow_config import workflows_config
+from not_dot_net.backend.workflow_service import create_request, submit_step
+from not_dot_net.backend.workflow_uploads import (
     UPLOAD_ROOT,
-    create_request,
     persist_workflow_upload,
-    submit_step,
     validate_upload,
-    workflows_config,
 )
 from not_dot_net.config import WorkflowStepConfig
 from not_dot_net.frontend.i18n import t

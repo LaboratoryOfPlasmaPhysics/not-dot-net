@@ -7,10 +7,7 @@ locked out of their own workflow step.
 
 import uuid
 
-from not_dot_net.backend.workflow_service import (
-    create_request,
-    list_actionable,
-)
+from not_dot_net.backend.workflow_service import create_request, list_actionable
 from not_dot_net.backend.workflow_engine import can_user_act
 from not_dot_net.backend.workflow_models import WorkflowRequest
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig

@@ -4,7 +4,7 @@ not be able to make the server read arbitrary files."""
 
 import pytest
 
-from not_dot_net.backend.workflow_service import _safe_upload_path, UPLOAD_ROOT
+from not_dot_net.backend.workflow_uploads import _safe_upload_path, UPLOAD_ROOT
 
 
 def test_safe_upload_path_accepts_subpath(tmp_path):

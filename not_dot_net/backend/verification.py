@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from not_dot_net.backend.db import session_scope
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_models import WorkflowRequest
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,6 @@ async def generate_verification_code(request_id: uuid.UUID) -> str | None:
             if datetime.now(timezone.utc) < expires:
                 return None
 
-        from not_dot_net.backend.workflow_service import workflows_config
         wf_cfg = await workflows_config.get()
 
         code = f"{secrets.randbelow(1_000_000):06d}"

@@ -4,9 +4,8 @@ from contextlib import asynccontextmanager
 from datetime import date
 
 from not_dot_net.backend.db import User, get_async_session
-from not_dot_net.backend.workflow_service import (
-    create_request, submit_step, workflows_config,
-)
+from not_dot_net.backend.workflow_service import create_request, submit_step
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.roles import RoleDefinition, roles_config
 from not_dot_net.backend.tenure_service import list_tenures
 
@@ -216,11 +215,12 @@ async def test_onboarding_completion_creates_tenure_for_target_email_user(monkey
     target = await _create_user("target-newcomer@test.com", role="staff")
 
     # Monkeypatch AD primitives to bypass LDAP
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
-    monkeypatch.setattr(ws, "ldap_create_user",
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
-    monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
 
     # Set up AD config
     from not_dot_net.backend.ad_account_config import ad_account_config
@@ -277,11 +277,12 @@ async def test_onboarding_completion_uses_returning_user_id_for_tenure_target(mo
     returning_user = await _create_user("returning@test.com", role="staff")
 
     # Monkeypatch AD primitives to bypass LDAP
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: None)
-    monkeypatch.setattr(ws, "ldap_create_user",
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
                         lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
-    monkeypatch.setattr(ws, "ldap_add_to_groups", lambda *a, **kw: {})
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
 
     # Set up AD config
     from not_dot_net.backend.ad_account_config import ad_account_config

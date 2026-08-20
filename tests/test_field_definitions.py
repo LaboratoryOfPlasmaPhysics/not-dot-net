@@ -8,7 +8,8 @@ from not_dot_net.backend.field_definitions import (
     field_definitions_config, save_field_definition, delete_field_definition,
     FieldDefinitionInUse, definition_usages,
 )
-from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig, _filter_step_data
+from not_dot_net.backend.workflow_service import _filter_step_data
+from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
 from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
 
 

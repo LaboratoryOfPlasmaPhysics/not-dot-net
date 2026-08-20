@@ -6,7 +6,7 @@ import pytest
 from nicegui import ui
 from nicegui.testing import User
 
-from not_dot_net.backend.workflow_service import workflows_config, WorkflowsConfig
+from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
 from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
 
 

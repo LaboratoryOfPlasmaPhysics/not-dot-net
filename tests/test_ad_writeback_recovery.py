@@ -1,6 +1,6 @@
 """I3 — AD create succeeded, local write-back failed: permanently wedged.
 
-_handle_ad_account_creation creates the AD account, then writes ldap_dn /
+handle_ad_account_creation creates the AD account, then writes ldap_dn /
 ldap_username / uid_number back to the local User in a separate session. If that
 write fails (or the process dies in between), every retry hits:
 
@@ -71,7 +71,7 @@ def test_lookup_returns_dn_and_mail(monkeypatch):
 
 
 def test_orphan_account_with_matching_mail_is_adopted():
-    from not_dot_net.backend.workflow_service import should_adopt_orphan_account
+    from not_dot_net.backend.workflow_ad_account import should_adopt_orphan_account
 
     assert should_adopt_orphan_account(
         existing={"dn": "CN=x,dc=y", "mail": "a.b@lpp.fr", "uid_number": 10042},
@@ -83,7 +83,7 @@ def test_orphan_account_with_matching_mail_is_adopted():
 
 def test_orphan_with_a_different_mail_is_not_adopted():
     """A same-named person who already left must not have their password reset."""
-    from not_dot_net.backend.workflow_service import should_adopt_orphan_account
+    from not_dot_net.backend.workflow_ad_account import should_adopt_orphan_account
 
     assert should_adopt_orphan_account(
         existing={"dn": "CN=x,dc=y", "mail": "someone.else@lpp.fr", "uid_number": 1},
@@ -95,7 +95,7 @@ def test_orphan_with_a_different_mail_is_not_adopted():
 
 def test_account_with_no_mail_is_not_adopted():
     """Without proof of identity, refuse rather than guess."""
-    from not_dot_net.backend.workflow_service import should_adopt_orphan_account
+    from not_dot_net.backend.workflow_ad_account import should_adopt_orphan_account
 
     assert should_adopt_orphan_account(
         existing={"dn": "CN=x,dc=y", "mail": None, "uid_number": 1},
@@ -107,7 +107,7 @@ def test_account_with_no_mail_is_not_adopted():
 
 def test_already_linked_target_is_not_an_orphan_case():
     """That is the existing reprovision path, not adoption."""
-    from not_dot_net.backend.workflow_service import should_adopt_orphan_account
+    from not_dot_net.backend.workflow_ad_account import should_adopt_orphan_account
 
     assert should_adopt_orphan_account(
         existing={"dn": "CN=x,dc=y", "mail": "a.b@lpp.fr", "uid_number": 1},
@@ -122,10 +122,11 @@ async def test_retry_recovers_when_the_write_back_never_landed(monkeypatch):
     """End to end: AD has the account, the local User has no link, retry works."""
     from unittest.mock import MagicMock
 
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
     from not_dot_net.backend.ad_account_config import ad_account_config
     from not_dot_net.backend.db import AuthMethod, User, session_scope
-    from not_dot_net.backend.workflow_service import _handle_ad_account_creation
+    from not_dot_net.backend.workflow_ad_account import handle_ad_account_creation
 
     cfg = await ad_account_config.get()
     await ad_account_config.set(cfg.model_copy(update={
@@ -133,20 +134,20 @@ async def test_retry_recovers_when_the_write_back_never_landed(monkeypatch):
     }))
 
     # AD already holds the account a previous attempt created.
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: {
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: {
         "dn": "CN=orphan,OU=Users,DC=x",
         "mail": "orphan@lpp.fr",
         "uid_number": 10099,
-    }, raising=False)
+    })
 
     reset_calls = []
-    monkeypatch.setattr(ws, "ldap_reset_password",
-                        lambda dn, *a, **kw: reset_calls.append(dn), raising=False)
+    monkeypatch.setattr(wa, "ldap_reset_password",
+                        lambda dn, *a, **kw: reset_calls.append(dn))
 
     def must_not_create(*a, **kw):
         raise AssertionError("tried to create an account that already exists")
 
-    monkeypatch.setattr(ws, "ldap_create_user", must_not_create, raising=False)
+    monkeypatch.setattr(wa, "ldap_create_user", must_not_create)
 
     # ...but the local user was never linked to it.
     async with session_scope() as session:
@@ -166,7 +167,7 @@ async def test_retry_recovers_when_the_write_back_never_landed(monkeypatch):
         "ou_dn": "OU=Users,DC=x", "mail": "orphan@lpp.fr", "home_directory": "/h",
     }
 
-    await _handle_ad_account_creation(request, form, ("a", "p"), MagicMock())
+    await handle_ad_account_creation(request, form, ("a", "p"), MagicMock())
 
     assert reset_calls == ["CN=orphan,OU=Users,DC=x"], "password was not reset on adoption"
     async with session_scope() as session:
@@ -180,20 +181,21 @@ async def test_retry_recovers_when_the_write_back_never_landed(monkeypatch):
 async def test_retry_still_refuses_a_stranger_with_the_same_sam(monkeypatch):
     from unittest.mock import MagicMock
 
+    import not_dot_net.backend.workflow_ad_account as wa
     import not_dot_net.backend.workflow_service as ws
     from not_dot_net.backend.ad_account_config import ad_account_config
     from not_dot_net.backend.db import AuthMethod, User, session_scope
-    from not_dot_net.backend.workflow_service import _handle_ad_account_creation
+    from not_dot_net.backend.workflow_ad_account import handle_ad_account_creation
 
     cfg = await ad_account_config.get()
     await ad_account_config.set(cfg.model_copy(update={
         "users_ous": ["OU=Users,DC=x"], "eligible_groups": [],
     }))
-    monkeypatch.setattr(ws, "ldap_lookup_by_sam", lambda *a, **kw: {
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: {
         "dn": "CN=jdupont,OU=Users,DC=x",
         "mail": "jean.dupont.senior@lpp.fr",   # a different person
         "uid_number": 10001,
-    }, raising=False)
+    })
 
     async with session_scope() as session:
         session.add(User(
@@ -208,4 +210,4 @@ async def test_retry_still_refuses_a_stranger_with_the_same_sam(monkeypatch):
         "ou_dn": "OU=Users,DC=x", "mail": "jean.dupont@lpp.fr", "home_directory": "/h",
     }
     with pytest.raises(ValueError, match="already exists"):
-        await _handle_ad_account_creation(request, form, ("a", "p"), MagicMock())
+        await handle_ad_account_creation(request, form, ("a", "p"), MagicMock())

@@ -11,10 +11,7 @@ from not_dot_net.backend.verification import (
     has_valid_code,
     verify_code,
 )
-from not_dot_net.backend.workflow_service import (
-    create_request,
-    submit_step,
-)
+from not_dot_net.backend.workflow_service import create_request, submit_step
 from tests.test_workflow_service import _create_user, _setup_roles
 
 

@@ -13,8 +13,8 @@ from not_dot_net.backend.workflow_service import (
     create_request,
     resend_notification,
     submit_step,
-    validate_upload,
 )
+from not_dot_net.backend.workflow_uploads import validate_upload
 from tests.test_workflow_service import _create_user, _setup_roles
 from tests.test_token_security import _start_onboarding_to_newcomer
 

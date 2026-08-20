@@ -265,7 +265,7 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
     home dir from template + sam, groups pre-checked by status.
     """
     from not_dot_net.backend.ad_account_config import ad_account_config
-    from not_dot_net.backend.workflow_service import (
+    from not_dot_net.backend.workflow_ad_account import (
         derive_sam_candidates,
         render_home,
         render_mail,

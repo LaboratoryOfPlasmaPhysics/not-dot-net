@@ -19,7 +19,7 @@ from not_dot_net.backend.vocabularies import (
     VocabularyTerm,
     vocabularies_config,
 )
-from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_config
+from not_dot_net.backend.workflow_config import WorkflowsConfig, workflows_config
 from not_dot_net.config import FieldConfig, FieldRef, WorkflowConfig, WorkflowStepConfig
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.i18n import t

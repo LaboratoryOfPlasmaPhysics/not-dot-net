@@ -8,6 +8,7 @@ from nicegui import ui
 
 from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
+from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_service import (
     list_user_requests,
     list_all_requests,
@@ -15,7 +16,6 @@ from not_dot_net.backend.workflow_service import (
     list_events_batch,
     compute_step_age_days,
     resolve_actor_names,
-    workflows_config,
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
 from not_dot_net.config import dashboard_config, step_display

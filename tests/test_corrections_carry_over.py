@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.workflow_models import WorkflowFile, WorkflowRequest
-from not_dot_net.backend.workflow_service import WorkflowsConfig, workflows_config
+from not_dot_net.backend.workflow_config import WorkflowsConfig, workflows_config
 from not_dot_net.config import FieldConfig, WorkflowConfig, WorkflowStepConfig
 
 
