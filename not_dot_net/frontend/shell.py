@@ -1,10 +1,10 @@
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
 from fastapi import Depends
 from nicegui import app, ui
-
 
 from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
@@ -21,6 +21,8 @@ from not_dot_net.frontend.user_management import render as render_user_managemen
 from not_dot_net.frontend.new_request import render as render_new_request
 from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, get_locale, set_locale, t
 
+logger = logging.getLogger("not_dot_net.shell")
+
 
 _GUEST_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
@@ -34,6 +36,23 @@ class GuestUser:
     full_name: str | None = None
     is_active: bool = False
     is_superuser: bool = False
+
+
+
+async def _safe_actionable_count(user) -> int:
+    """Actionable count for the badge, or 0 if the query fails.
+
+    The badge runs on a 60s timer for every connected client; a transient DB
+    error used to escape as an unhandled timer exception once a minute, per
+    client, forever.
+    """
+    from not_dot_net.backend.workflow_service import get_actionable_count
+
+    try:
+        return await get_actionable_count(user)
+    except Exception:
+        logger.exception("Failed to compute actionable count for the badge")
+        return 0
 
 
 def setup():
@@ -187,7 +206,7 @@ def setup():
             async def update_badge():
                 nonlocal last_count
                 try:
-                    count = await get_actionable_count(effective_user)
+                    count = await _safe_actionable_count(effective_user)
                     tab_text = f"{dashboard_label} ({count})" if count > 0 else dashboard_label
                     dashboard_tab._props["label"] = tab_text
                     dashboard_tab.update()
@@ -198,6 +217,7 @@ def setup():
                     title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
                     await ui.run_javascript(f"document.title = {title!r}")
                 except (RuntimeError, TimeoutError):
+                    # Client vanished mid-update (disconnect, reload) — expected.
                     pass
 
             ui.timer(60, update_badge)

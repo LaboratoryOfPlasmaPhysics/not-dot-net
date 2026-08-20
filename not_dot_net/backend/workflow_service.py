@@ -181,6 +181,7 @@ async def persist_workflow_upload(
     content_type: str,
     encrypted: bool,
     uploaded_by: uuid.UUID | None,
+    expected_step_key: str | None = None,
 ) -> WorkflowFile:
     """Persist one uploaded file as a new WorkflowFile (a new current version).
 
@@ -188,6 +189,11 @@ async def persist_workflow_upload(
     folder per upload — so a re-upload, or a same-named file in another field,
     never overwrites an earlier version's blob on disk. Encrypted files already
     get a unique blob per call via store_encrypted.
+
+    `expected_step_key` closes the gap between a caller's own staleness check
+    and this write: the request is locked and re-checked inside the same
+    transaction, so a submit_step landing in between cannot leave the file
+    attached to a step that has already been reviewed.
     """
     # Reduce to a basename at the sink so a '..'-laden name can never escape the
     # per-upload directory, regardless of what a caller passes.
@@ -195,6 +201,17 @@ async def persist_workflow_upload(
     file_id = uuid.uuid4()
     written_paths: list[Path] = []
     async with session_scope() as session:
+        if expected_step_key is not None:
+            req = await session.get(WorkflowRequest, request_id, with_for_update=True)
+            if req is None:
+                raise PermissionError("Request no longer exists")
+            if req.status != RequestStatus.IN_PROGRESS:
+                raise PermissionError("Request is no longer open for uploads")
+            if req.current_step != expected_step_key:
+                raise PermissionError(
+                    f"Request moved to step '{req.current_step}' — "
+                    f"upload for '{expected_step_key}' rejected"
+                )
         try:
             if encrypted:
                 from not_dot_net.backend.encrypted_storage import prepare_encrypted_file_record

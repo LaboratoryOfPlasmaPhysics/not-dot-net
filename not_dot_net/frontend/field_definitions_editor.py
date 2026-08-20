@@ -37,7 +37,7 @@ async def render(user) -> None:
                               ).props("flat dense")
                     ui.button(icon="delete",
                               on_click=lambda k=key: _confirm_delete(k, refresh)
-                              ).props("flat dense color=negative")
+                              ).props("flat dense color=negative").tooltip(t("delete"))
             ui.button(t("field_defs_new"), icon="add",
                       on_click=lambda c=cfg: _prompt_new(c, refresh)).props("flat")
 

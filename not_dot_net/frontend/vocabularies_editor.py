@@ -121,16 +121,18 @@ def _open_term_editor(vocabulary: StoredVocabulary, on_done) -> None:
                         up_btn = ui.button(icon="keyboard_arrow_up",
                                            on_click=lambda i=i: (_move(working, i, -1), render_rows())
                                            ).props("flat dense")
+                        up_btn.tooltip(t("move_up"))
                         if i == 0:
                             up_btn.props("disable")
                         down_btn = ui.button(icon="keyboard_arrow_down",
                                              on_click=lambda i=i: (_move(working, i, +1), render_rows())
                                              ).props("flat dense")
+                        down_btn.tooltip(t("move_down"))
                         if i == last:
                             down_btn.props("disable")
                         ui.button(icon="delete",
                                   on_click=lambda i=i: (_del(working, i), render_rows())
-                                  ).props("flat dense color=negative")
+                                  ).props("flat dense color=negative").tooltip(t("delete"))
 
         def add_row():
             working.terms.append(VocabularyTerm(code="", labels={}))

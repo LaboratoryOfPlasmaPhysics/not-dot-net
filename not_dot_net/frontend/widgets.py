@@ -135,7 +135,9 @@ class KeyedChipEditor:
         with row_container:
             key_input = ui.input(label=self._key_label, value=key).props("dense outlined stack-label").classes("w-40")
             chip = chip_list_editor(values)
-            ui.button(icon="delete", on_click=lambda k=key: self.remove_key(k)).props("flat dense round color=negative")
+            ui.button(
+                icon="delete", on_click=lambda k=key: self.remove_key(k),
+            ).props("flat dense round color=negative").tooltip(t("delete"))
         self._rows[key] = {"container": row_container, "key_input": key_input, "chip": chip}
 
     def _on_add(self):

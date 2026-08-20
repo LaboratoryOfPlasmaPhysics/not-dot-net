@@ -346,14 +346,17 @@ async def _render_edit(container, person: User, current_user: User, state: dict)
 
     conn = get_user_connection(str(current_user.id))
     writable: set[str] | None = set()
+    probe_failed = conn is None
     if conn is not None:
         try:
             writable = await asyncio.to_thread(_query_writable_attributes, conn, person.ldap_dn)
         except Exception:
+            probe_failed = True
             writable = set()
 
     await _render_edit_form(container, person, current_user, state,
-                            ad_writable=writable, stored_conn=conn)
+                            ad_writable=writable, stored_conn=conn,
+                            ad_probe_failed=probe_failed)
 
 
 def _prompt_ad_credentials_then_save(person, current_user, save_callback):
@@ -470,12 +473,19 @@ def _is_ad_writable(field_name: str, ad_writable: set[str] | None) -> bool:
 
 
 async def _render_edit_form(container, person: User, current_user: User, state: dict,
-                            *, ad_writable: set[str] | None, stored_conn=None):
+                            *, ad_writable: set[str] | None, stored_conn=None,
+                            ad_probe_failed: bool = False):
     container.clear()
     is_admin = await has_permissions(current_user, "manage_users")
     is_own = person.id == current_user.id
 
     with container:
+        if ad_probe_failed:
+            # Otherwise every AD-backed field just greys out with no reason
+            # given, and the user assumes they lack permission.
+            with ui.row().classes("items-center gap-1 mb-2"):
+                ui.icon("info", color="warning").classes("text-sm")
+                ui.label(t("ad_fields_readonly")).classes("text-xs text-grey-8")
         ui.separator()
 
         fields = {}
@@ -727,7 +737,9 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
         if is_admin:
             async def do_edit(t_id=tenure.id):
                 await _tenure_edit_dialog(t_id, person, current_user, on_refresh)
-            ui.button(icon="edit", on_click=do_edit).props("flat dense round size=xs")
+            ui.button(icon="edit", on_click=do_edit).props(
+                "flat dense round size=xs"
+            ).tooltip(t("edit"))
 
             async def do_delete(t_id=tenure.id):
                 from not_dot_net.backend.tenure_service import delete_tenure as _del
@@ -739,7 +751,9 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
                 )
                 ui.notify(t("tenure_deleted"), color="positive")
                 await on_refresh()
-            ui.button(icon="delete", on_click=do_delete).props("flat dense round size=xs color=negative")
+            ui.button(icon="delete", on_click=do_delete).props(
+                "flat dense round size=xs color=negative"
+            ).tooltip(t("delete"))
 
 
 async def _tenure_options(locale: str) -> tuple[dict[str, str], dict[str, str]]:

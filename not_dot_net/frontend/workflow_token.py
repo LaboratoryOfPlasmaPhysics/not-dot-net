@@ -32,9 +32,10 @@ def setup():
         req = await get_request_by_token(token)
 
         if req is None:
-            with ui.column().classes("absolute-center items-center"):
+            with ui.column().classes("absolute-center items-center gap-2 text-center"):
                 ui.icon("error", size="xl", color="negative")
                 ui.label(t("token_expired")).classes("text-h6")
+                ui.label(t("token_expired_help")).classes("text-sm text-grey")
             return
 
         cfg = await workflows_config.get()
@@ -134,16 +135,23 @@ def setup():
                         ui.notify(error, color="negative")
                         return
 
-                    await persist_workflow_upload(
-                        request_id=request.id,
-                        step_key=step.key,
-                        field_name=field_name,
-                        content=content,
-                        filename=filename,
-                        content_type=content_type,
-                        encrypted=field_name in encrypted_fields,
-                        uploaded_by=None,
-                    )
+                    try:
+                        await persist_workflow_upload(
+                            request_id=request.id,
+                            step_key=step.key,
+                            field_name=field_name,
+                            content=content,
+                            filename=filename,
+                            content_type=content_type,
+                            encrypted=field_name in encrypted_fields,
+                            uploaded_by=None,
+                            # The token check above is a separate transaction;
+                            # this re-checks under a lock at the write itself.
+                            expected_step_key=step.key,
+                        )
+                    except PermissionError:
+                        ui.notify(t("token_expired"), color="negative")
+                        return
 
                     uploaded_files[field_name] = filename
                     ui.notify(t("uploaded").format(filename=filename), color="positive")
@@ -176,6 +184,7 @@ def setup():
                 if await is_locked_out(req.id):
                     ui.label(t("token_welcome")).classes("text-grey mb-4")
                     ui.label(t("too_many_attempts")).classes("text-negative")
+                    ui.label(t("too_many_attempts_help")).classes("text-sm text-grey")
                 elif await has_valid_code(req.id):
                     _render_code_input(container, req, token, step_config, wf, send_code)
                 else:
