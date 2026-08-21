@@ -273,7 +273,7 @@ async def _handle_import_upload(e, *, replace: bool, user):
         ui.notify(t("import_invalid_json"), color="negative")
         return
     try:
-        result = await import_all(data, replace=replace)
+        result = await import_all(data, replace=replace, actor=user)
     except Exception:
         logger.exception("Import failed")
         ui.notify(t("import_failed"), color="negative")

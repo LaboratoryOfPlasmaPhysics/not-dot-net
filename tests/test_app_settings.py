@@ -123,7 +123,8 @@ async def test_import_upload_logs_audit_on_success():
     from tests.test_import_upload import _make_event
     from not_dot_net.frontend.admin_settings import _handle_import_upload
 
-    admin = SimpleNamespace(id="00000000-0000-0000-0000-000000000000", email="admin@test.local")
+    admin = SimpleNamespace(id="00000000-0000-0000-0000-000000000000",
+                                email="admin@test.local", role="admin", is_superuser=True)
     payload = {
         "version": 1,
         "resources": [
@@ -151,7 +152,8 @@ async def test_import_upload_does_not_audit_invalid_json():
     from tests.test_import_upload import FakeFileUpload, FakeUploadEvent
     from not_dot_net.frontend.admin_settings import _handle_import_upload
 
-    admin = SimpleNamespace(id="00000000-0000-0000-0000-000000000000", email="admin@test.local")
+    admin = SimpleNamespace(id="00000000-0000-0000-0000-000000000000",
+                                email="admin@test.local", role="admin", is_superuser=True)
     event = FakeUploadEvent(file=FakeFileUpload(b"not json{{{"))
 
     with (

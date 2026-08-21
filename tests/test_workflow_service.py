@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from not_dot_net.backend.workflow_service import (
@@ -57,7 +58,7 @@ async def test_create_request():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     assert req.type == "vpn_access"
     assert req.current_step == "request"
@@ -72,7 +73,7 @@ async def test_submit_step_advances():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     updated = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert updated.current_step == "approval"
@@ -93,7 +94,7 @@ async def test_submit_step_survives_post_commit_session_error(monkeypatch):
     req = await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +120,7 @@ async def test_approve_completes_workflow():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
@@ -133,7 +134,7 @@ async def test_reject_terminates_workflow():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "reject", data={}, comment="Not justified", actor_user=director)
@@ -146,7 +147,7 @@ async def test_save_draft():
     req = await create_request(
         workflow_type="onboarding",
         created_by=user.id,
-        data={"contact_email": "bob@test.com", "status": "Intern"},
+        data={"contact_email": "bob@test.com", "status": "Intern"}, actor=SYSTEM_ACTOR
     )
     # Advance to newcomer_info step (generates token for target_person)
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
@@ -162,12 +163,12 @@ async def test_list_user_requests():
     await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "B", "target_email": "b@test.com"},
+        data={"target_name": "B", "target_email": "b@test.com"}, actor=SYSTEM_ACTOR
     )
     requests = await list_user_requests(user.id)
     assert len(requests) == 2
@@ -180,7 +181,7 @@ async def test_list_actionable_by_role():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     # Submit first step to move to approval
     await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
@@ -228,7 +229,7 @@ async def test_list_actionable_matches_can_user_act_for_permission_steps():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     # approval step: assignee_role="director" + assignee_permission="approve_workflows";
@@ -244,7 +245,7 @@ async def test_get_request_by_id():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=user.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     fetched = await get_request_by_id(req.id)
     assert fetched is not None
@@ -263,7 +264,7 @@ async def test_token_generated_for_target_person_step():
     req = await create_request(
         workflow_type="onboarding",
         created_by=user.id,
-        data={"contact_email": "bob@test.com", "status": "Intern"},
+        data={"contact_email": "bob@test.com", "status": "Intern"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.current_step == "newcomer_info"
@@ -279,7 +280,7 @@ async def test_token_cleared_on_approval():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
@@ -295,7 +296,7 @@ async def test_authorization_check_blocks_wrong_user():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     # member has no create_workflows permission — blocked by submit_step
     with pytest.raises(PermissionError):
@@ -310,7 +311,7 @@ async def test_save_draft_rejects_step_without_partial_save():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     assert req.current_step == "approval"
@@ -325,7 +326,7 @@ async def test_submit_step_rejects_unknown_action():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     with pytest.raises(ValueError, match="not allowed"):
         await submit_step(req.id, staff.id, "evil_action", data={}, actor_user=staff)
@@ -339,7 +340,7 @@ async def test_list_actionable_returns_only_in_progress():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
@@ -654,7 +655,7 @@ async def test_submit_step_rejects_action_on_completed_request():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))
@@ -671,7 +672,7 @@ async def test_submit_step_rejects_action_on_rejected_request():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     req = await submit_step(req.id, director.id, "reject", data={}, comment="no", actor_user=director)
@@ -694,11 +695,11 @@ async def test_list_events_batch_groups_by_request():
     staff = await _create_user(email="staff@test.com", role="staff")
     r1 = await create_request(
         workflow_type="vpn_access", created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     r2 = await create_request(
         workflow_type="vpn_access", created_by=staff.id,
-        data={"target_name": "B", "target_email": "b@test.com"},
+        data={"target_name": "B", "target_email": "b@test.com"}, actor=SYSTEM_ACTOR
     )
     await submit_step(r1.id, staff.id, "submit", data={}, actor_user=staff)
 

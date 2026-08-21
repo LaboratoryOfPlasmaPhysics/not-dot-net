@@ -5,6 +5,7 @@ Background: AD often returns mixed-case `mail`; users sometimes type
 locked out of their own workflow step.
 """
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 from not_dot_net.backend.workflow_service import create_request, list_actionable
@@ -49,7 +50,7 @@ async def test_create_request_normalizes_target_email():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=creator.id,
-        data={"target_name": "Bob", "target_email": "Bob@Example.COM"},
+        data={"target_name": "Bob", "target_email": "Bob@Example.COM"}, actor=SYSTEM_ACTOR
     )
     assert req.target_email == "bob@example.com"
 
@@ -66,7 +67,7 @@ async def test_list_actionable_target_person_case_insensitive():
             "contact_email": "Newcomer@lpp.fr",  # mismatched casing
             "status": "Intern",
             "employer": "CNRS",
-        },
+        }, actor=SYSTEM_ACTOR
     )
     # Drive the workflow to newcomer_info (the target_person step)
     from not_dot_net.backend.workflow_service import submit_step

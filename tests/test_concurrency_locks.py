@@ -9,6 +9,8 @@ These follow the project's existing convention (test_booking_service_fixes.py):
 assert the lock is actually taken, since that is what closes the window on
 PostgreSQL where the interleaving is real.
 """
+
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 from datetime import date, timedelta
 
@@ -51,12 +53,12 @@ async def test_delete_resource_locks_the_resource_row(spy_get):
     )
 
     resource = await create_resource(
-        name="Doomed PC", resource_type="desktop", location="Palaiseau",
+        name="Doomed PC", resource_type="desktop", location="Palaiseau", actor=SYSTEM_ACTOR
     )
-    await update_resource(resource.id, active=False)  # retire before deleting
+    await update_resource(resource.id, active=False, actor=SYSTEM_ACTOR)  # retire before deleting
 
     spy_get.clear()
-    await delete_resource(resource.id)
+    await delete_resource(resource.id, actor=SYSTEM_ACTOR)
 
     resource_gets = [kw for entity, kw in spy_get if entity is Resource]
     assert resource_gets, "delete_resource should fetch the resource via session.get"
@@ -72,12 +74,12 @@ async def test_overlapping_tenures_are_still_rejected():
     user = await _make_user("tenure-overlap@example.com")
     await add_tenure(
         user_id=user.id, status="PhD", employer="CNRS",
-        start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+        start_date=date(2024, 1, 1), end_date=date(2024, 12, 31), actor=SYSTEM_ACTOR
     )
     with pytest.raises(ValueError, match="overlap"):
         await add_tenure(
             user_id=user.id, status="Postdoc", employer="CNRS",
-            start_date=date(2024, 6, 1), end_date=date(2025, 6, 1),
+            start_date=date(2024, 6, 1), end_date=date(2025, 6, 1), actor=SYSTEM_ACTOR
         )
 
 
@@ -87,11 +89,11 @@ async def test_non_overlapping_tenures_still_allowed():
     user = await _make_user("tenure-ok@example.com")
     await add_tenure(
         user_id=user.id, status="PhD", employer="CNRS",
-        start_date=date(2020, 1, 1), end_date=date(2023, 12, 31),
+        start_date=date(2020, 1, 1), end_date=date(2023, 12, 31), actor=SYSTEM_ACTOR
     )
     second = await add_tenure(
         user_id=user.id, status="Postdoc", employer="CNRS",
-        start_date=date(2024, 1, 1), end_date=None,
+        start_date=date(2024, 1, 1), end_date=None, actor=SYSTEM_ACTOR
     )
     assert second.id is not None
 
@@ -106,7 +108,7 @@ async def test_revoke_availability_locks_the_resource_row(spy_get):
     owner = await _make_user("office-owner@example.com")
     resource = await create_resource(
         name="Office 42", resource_type="office", location="Palaiseau",
-        owner_user_id=owner.id,
+        owner_user_id=owner.id, actor=SYSTEM_ACTOR
     )
     window = await offer_availability(
         resource_id=resource.id,

@@ -2,6 +2,7 @@
 hand-back-day notice recipient, corrupt-status transitions, audit actor,
 and status immutability via update_resource."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from datetime import date, timedelta
@@ -48,7 +49,8 @@ async def _create_user(email="user@test.com", role="staff") -> User:
 
 
 async def _create_test_resource(**kwargs) -> Resource:
-    defaults = {"name": "Test PC", "resource_type": "desktop", "location": "Palaiseau"}
+    defaults = {"name": "Test PC", "resource_type": "desktop", "location": "Palaiseau",
+                "actor": SYSTEM_ACTOR}
     defaults.update(kwargs)
     return await create_resource(**defaults)
 
@@ -69,7 +71,7 @@ async def test_create_booking_locks_resource_row(monkeypatch):
         return await original_get(self, entity, ident, **kwargs)
 
     monkeypatch.setattr(AsyncSession, "get", spy_get)
-    await create_booking(r.id, user.id, start, start + timedelta(days=2))
+    await create_booking(r.id, user.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     resource_gets = [kw for entity, kw in calls if entity is Resource]
     assert resource_gets, "create_booking should fetch the resource via session.get"
@@ -132,12 +134,12 @@ async def test_create_booking_audit_records_actor_not_beneficiary():
     assert event.actor_id == str(manager.id)
 
 
-async def test_create_booking_audit_falls_back_to_user_without_actor():
+async def test_create_booking_audit_falls_back_to_user_for_a_system_actor():
     user = await _create_user(email="self-audit@test.com")
     r = await _create_test_resource(name="PC-AUDIT2")
     start = _valid_start()
 
-    await create_booking(r.id, user.id, start, start + timedelta(days=2))
+    await create_booking(r.id, user.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     async with session_scope() as session:
         result = await session.execute(
@@ -154,6 +156,6 @@ async def test_create_booking_audit_falls_back_to_user_without_actor():
 async def test_update_resource_rejects_status_field():
     r = await _create_test_resource(name="PC-IMMUT")
     with pytest.raises(ValueError, match="Cannot update field"):
-        await update_resource(r.id, status="in_use")
-    fetched_status = (await update_resource(r.id, name="PC-IMMUT")).status
+        await update_resource(r.id, status="in_use", actor=SYSTEM_ACTOR)
+    fetched_status = (await update_resource(r.id, name="PC-IMMUT", actor=SYSTEM_ACTOR)).status
     assert fetched_status == "available"

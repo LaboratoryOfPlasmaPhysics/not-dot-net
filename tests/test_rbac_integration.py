@@ -1,5 +1,6 @@
 """End-to-end RBAC integration test — roles, permissions, enforcement."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 from datetime import date, timedelta
 import pytest
@@ -118,7 +119,7 @@ async def test_unknown_role_has_no_permissions():
 async def test_readonly_user_can_create_booking_for_self():
     await _setup()
     user = await _create_user("selfbook@test.com", "readonly")
-    resource = await create_resource("Self Service Laptop", "laptop")
+    resource = await create_resource("Self Service Laptop", "laptop", actor=SYSTEM_ACTOR)
 
     booking = await create_booking(
         resource_id=resource.id,
@@ -136,7 +137,7 @@ async def test_readonly_user_cannot_create_booking_for_another_user():
     await _setup()
     user = await _create_user("readonly-book@test.com", "readonly")
     other = await _create_user("target-book@test.com", "readonly")
-    resource = await create_resource("Shared Laptop", "laptop")
+    resource = await create_resource("Shared Laptop", "laptop", actor=SYSTEM_ACTOR)
 
     with pytest.raises(PermissionError):
         await create_booking(
@@ -152,7 +153,7 @@ async def test_booker_can_create_booking_for_another_user():
     await _setup()
     manager = await _create_user("manager-book@test.com", "booker")
     other = await _create_user("beneficiary-book@test.com", "readonly")
-    resource = await create_resource("Managed Laptop", "laptop")
+    resource = await create_resource("Managed Laptop", "laptop", actor=SYSTEM_ACTOR)
 
     booking = await create_booking(
         resource_id=resource.id,
@@ -169,7 +170,7 @@ async def test_readonly_user_cannot_cancel_another_users_booking():
     await _setup()
     owner = await _create_user("owner-book@test.com", "readonly")
     other = await _create_user("other-book@test.com", "readonly")
-    resource = await create_resource("Booked Resource", "desktop")
+    resource = await create_resource("Booked Resource", "desktop", actor=SYSTEM_ACTOR)
     booking = await create_booking(
         resource_id=resource.id,
         user_id=owner.id,
@@ -186,7 +187,7 @@ async def test_booker_can_cancel_another_users_booking():
     await _setup()
     owner = await _create_user("owner-book2@test.com", "readonly")
     manager = await _create_user("manager-book2@test.com", "booker")
-    resource = await create_resource("Managed Resource", "desktop")
+    resource = await create_resource("Managed Resource", "desktop", actor=SYSTEM_ACTOR)
     booking = await create_booking(
         resource_id=resource.id,
         user_id=owner.id,

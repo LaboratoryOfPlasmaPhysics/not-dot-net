@@ -32,13 +32,37 @@ MANAGE_ROLES = permission("manage_roles", "Manage roles", "Create/edit roles and
 MANAGE_SETTINGS = permission("manage_settings", "Manage settings", "Access admin settings page")
 
 
+@dataclass(frozen=True)
+class _SystemActor:
+    """The application itself acting with no user behind it.
+
+    Services refuse a missing actor, so an internal caller with genuinely no
+    user — the workflow engine recording a tenure on completion, dev seeding —
+    passes this instead. It has to be named and imported, which keeps such
+    calls greppable; omitting the argument no longer silently authorizes.
+    """
+    id = None
+    email = None
+    role = ""
+    is_superuser = True
+
+
+SYSTEM_ACTOR = _SystemActor()
+
+
 async def has_permissions(user, *permissions: str) -> bool:
-    """Check if user's role grants all given permissions."""
+    """Check if user's role grants all given permissions.
+
+    No user means no permissions. Authorization is never opt-in: a caller that
+    passes None gets refused rather than skipping the check.
+    """
+    if user is None:
+        return False
     if getattr(user, "is_superuser", False):
         return True
     from not_dot_net.backend.roles import roles_config
     cfg = await roles_config.get()
-    role_def = cfg.roles.get(user.role)
+    role_def = cfg.roles.get(getattr(user, "role", None))
     if role_def is None:
         return False
     return all(p in role_def.permissions for p in permissions)
@@ -89,6 +113,11 @@ def require(*permissions: str):
 
 
 async def check_permission(user, *permissions: str) -> None:
-    """NiceGUI callback guard — raises PermissionError on failure."""
+    """Guard for NiceGUI callbacks and service entry points.
+
+    Raises PermissionError on failure, including when `user` is None.
+    """
+    if user is None:
+        raise PermissionError("No actor provided")
     if not await has_permissions(user, *permissions):
         raise PermissionError("Insufficient permissions")

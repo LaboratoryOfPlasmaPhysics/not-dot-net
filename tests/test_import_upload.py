@@ -28,7 +28,8 @@ def _make_event(payload) -> FakeUploadEvent:
     return FakeUploadEvent(file=FakeFileUpload(json.dumps(payload).encode()))
 
 
-ADMIN = SimpleNamespace(id="00000000-0000-0000-0000-000000000000", email="admin@test.local")
+ADMIN = SimpleNamespace(id="00000000-0000-0000-0000-000000000000",
+                        email="admin@test.local", role="admin", is_superuser=True)
 
 
 @pytest.fixture
@@ -90,7 +91,7 @@ async def test_import_upload_summarizes_missing_result_counters(ui_mocks):
     ) as import_all:
         await _handle_import_upload(_make_event(payload), replace=True, user=ADMIN)
 
-    import_all.assert_awaited_once_with(payload, replace=True)
+    import_all.assert_awaited_once_with(payload, replace=True, actor=ADMIN)
     ui_mocks.notify.assert_called_once()
     message = ui_mocks.notify.call_args.args[0]
     assert message == "resources: 0 created, 0 updated, 0 skipped"

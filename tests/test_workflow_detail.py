@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from contextlib import asynccontextmanager
@@ -48,7 +49,7 @@ async def test_can_view_request_creator():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     assert await can_view_request(staff, req) is True
 
@@ -62,7 +63,7 @@ async def test_can_view_request_admin():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     assert await can_view_request(admin, req) is True
 
@@ -79,7 +80,7 @@ async def test_cannot_view_request_unrelated():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     assert await can_view_request(other, req) is False
 
@@ -93,7 +94,7 @@ async def test_can_view_request_current_step_assignee():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     assert req.current_step == "approval"
@@ -110,7 +111,7 @@ async def test_cannot_view_request_other_staff_on_approval_step():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=creator.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, creator.id, "submit", data={}, actor_user=creator)
     assert req.current_step == "approval"

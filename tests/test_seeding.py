@@ -85,7 +85,8 @@ async def test_seed_fake_workflows_submits_with_valid_actors(monkeypatch):
         ],
     )
 
-    async def fake_create_request(*, workflow_type, created_by, data):
+    async def fake_create_request(*, workflow_type, created_by, data, actor=None):
+        assert actor is not None, "seeding must pass an explicit actor"
         return SimpleNamespace(id=request_id, token=None)
 
     async def fake_submit_step(request_id, actor_id, action, **kwargs):

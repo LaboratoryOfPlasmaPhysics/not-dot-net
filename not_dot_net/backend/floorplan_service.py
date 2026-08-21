@@ -74,8 +74,7 @@ async def process_floorplan_image_async(content: bytes) -> tuple[bytes, int, int
 
 
 async def create_floor_plan(name: str, content: bytes, actor=None) -> FloorPlan:
-    if actor is not None:
-        await check_permission(actor, MANAGE_FLOORPLANS)
+    await check_permission(actor, MANAGE_FLOORPLANS)
     processed = await process_floorplan_image_async(content)
     if processed is None:
         raise ValueError("Invalid image")
@@ -108,7 +107,7 @@ async def create_floor_plan(name: str, content: bytes, actor=None) -> FloorPlan:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "floorplan", "create",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="floor_plan", target_id=fp.id,
         detail=f"name={name}",
     )
@@ -146,8 +145,7 @@ async def floor_plan_image_exists(floor_plan_id: uuid.UUID) -> bool:
 
 
 async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
-    if actor is not None:
-        await check_permission(actor, MANAGE_FLOORPLANS)
+    await check_permission(actor, MANAGE_FLOORPLANS)
     async with session_scope() as session:
         fp = await session.get(FloorPlan, floor_plan_id)
         if fp is None:
@@ -161,7 +159,7 @@ async def delete_floor_plan(floor_plan_id: uuid.UUID, actor=None) -> None:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "floorplan", "delete",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="floor_plan", target_id=floor_plan_id,
         detail=f"name={deleted_name}",
     )
@@ -172,8 +170,7 @@ async def add_map_point(
     resource_id: uuid.UUID | None = None, polygon: list[list[int]] | None = None,
     actor=None,
 ) -> MapPoint:
-    if actor is not None:
-        await check_permission(actor, MANAGE_FLOORPLANS)
+    await check_permission(actor, MANAGE_FLOORPLANS)
     if polygon is not None:
         x, y = _polygon_centroid(polygon)
     async with session_scope() as session:
@@ -188,7 +185,7 @@ async def add_map_point(
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "floorplan", "add_point",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="floor_plan", target_id=floor_plan_id,
         detail=f"label={label} kind={kind}",
     )
@@ -202,8 +199,7 @@ async def list_map_points(floor_plan_id: uuid.UUID) -> list[MapPoint]:
 
 
 async def delete_map_point(map_point_id: uuid.UUID, actor=None) -> None:
-    if actor is not None:
-        await check_permission(actor, MANAGE_FLOORPLANS)
+    await check_permission(actor, MANAGE_FLOORPLANS)
     async with session_scope() as session:
         point = await session.get(MapPoint, map_point_id)
         if point is None:
@@ -215,7 +211,7 @@ async def delete_map_point(map_point_id: uuid.UUID, actor=None) -> None:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "floorplan", "delete_point",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="floor_plan", target_id=floor_plan_id,
         detail=f"label={label}",
     )
@@ -224,8 +220,7 @@ async def delete_map_point(map_point_id: uuid.UUID, actor=None) -> None:
 async def update_map_point_geometry(
     point_id: uuid.UUID, polygon: list[list[int]], actor=None,
 ) -> MapPoint:
-    if actor is not None:
-        await check_permission(actor, MANAGE_FLOORPLANS)
+    await check_permission(actor, MANAGE_FLOORPLANS)
     x, y = _polygon_centroid(polygon)
     async with session_scope() as session:
         point = await session.get(MapPoint, point_id)
@@ -240,7 +235,7 @@ async def update_map_point_geometry(
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "floorplan", "edit_point_shape",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="floor_plan", target_id=point.floor_plan_id,
         detail=f"label={point.label}",
     )

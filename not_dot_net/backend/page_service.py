@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.page_models import Page
-from not_dot_net.backend.permissions import permission
+from not_dot_net.backend.permissions import check_permission, permission
 
 MANAGE_PAGES = permission("manage_pages", "Manage pages", "Create/edit/delete custom pages")
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -62,6 +62,7 @@ async def create_page(
     published: bool = False,
     actor=None,
 ) -> Page:
+    await check_permission(actor, MANAGE_PAGES)
     slug = _validate_slug(slug)
     existing = await get_page(slug)
     if existing is not None:
@@ -91,6 +92,7 @@ _PAGE_MUTABLE = frozenset({"title", "slug", "content", "sort_order", "published"
 
 
 async def update_page(page_id: uuid.UUID, actor=None, **kwargs) -> Page:
+    await check_permission(actor, MANAGE_PAGES)
     async with session_scope() as session:
         page = await session.get(Page, page_id)
         if page is None:
@@ -120,6 +122,7 @@ async def update_page(page_id: uuid.UUID, actor=None, **kwargs) -> Page:
 
 
 async def delete_page(page_id: uuid.UUID, actor=None) -> None:
+    await check_permission(actor, MANAGE_PAGES)
     async with session_scope() as session:
         page = await session.get(Page, page_id)
         if page is None:

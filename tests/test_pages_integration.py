@@ -1,5 +1,6 @@
 """Integration tests for custom pages feature."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from nicegui.testing import User
 
 from not_dot_net.backend.page_service import (
@@ -16,14 +17,14 @@ from not_dot_net.frontend.i18n import t
 async def _ensure_no_page(slug: str):
     existing = await get_page(slug)
     if existing is not None:
-        await delete_page(existing.id)
+        await delete_page(existing.id, actor=SYSTEM_ACTOR)
 
 
 async def test_full_page_lifecycle():
     await _ensure_no_page("faq")
     page = await create_page(
         title="FAQ", slug="faq", content="## FAQ\n\nNothing yet.",
-        author_id=None, published=False,
+        author_id=None, published=False, actor=SYSTEM_ACTOR
     )
 
     # Not visible in published list
@@ -35,7 +36,7 @@ async def test_full_page_lifecycle():
     assert any(p.slug == "faq" for p in all_p)
 
     # Publish it
-    await update_page(page.id, published=True)
+    await update_page(page.id, published=True, actor=SYSTEM_ACTOR)
 
     # Now visible
     published = await list_pages(published_only=True)
@@ -47,7 +48,7 @@ async def test_full_page_lifecycle():
     assert fetched.published is True
 
     # Delete
-    await delete_page(page.id)
+    await delete_page(page.id, actor=SYSTEM_ACTOR)
     assert await get_page("faq") is None
 
 
@@ -58,7 +59,7 @@ async def test_public_page_route_shows_published_content(user: User):
         slug="public-faq",
         content="## FAQ\n\nVisible to everyone.",
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     await user.open("/pages/public-faq")
@@ -82,7 +83,7 @@ async def test_public_page_route_hides_draft_content(user: User):
         slug="private-draft",
         content="This should stay hidden.",
         author_id=None,
-        published=False,
+        published=False, actor=SYSTEM_ACTOR
     )
 
     await user.open("/pages/private-draft")
@@ -98,7 +99,7 @@ async def test_public_page_route_does_not_normalize_slug(user: User):
         slug="case-sensitive-page",
         content="Only exact lowercase slug should resolve.",
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     await user.open("/pages/Case-Sensitive-Page")
@@ -114,18 +115,18 @@ async def test_public_page_route_reflects_publish_and_unpublish(user: User):
         slug="release-notes-public",
         content="Deployment window tonight.",
         author_id=None,
-        published=False,
+        published=False, actor=SYSTEM_ACTOR
     )
 
     await user.open("/pages/release-notes-public")
     await user.should_see(t("page_not_found"))
 
-    await update_page(page.id, published=True)
+    await update_page(page.id, published=True, actor=SYSTEM_ACTOR)
     await user.open("/pages/release-notes-public")
     await user.should_see("Release Notes")
     await user.should_see("Deployment window tonight.")
 
-    await update_page(page.id, published=False)
+    await update_page(page.id, published=False, actor=SYSTEM_ACTOR)
     await user.open("/pages/release-notes-public")
     await user.should_see(t("page_not_found"))
     await user.should_not_see("Deployment window tonight.")
@@ -139,13 +140,13 @@ async def test_public_page_route_reflects_slug_rename(user: User):
         slug="old-public-slug",
         content="Content after rename.",
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     await user.open("/pages/old-public-slug")
     await user.should_see("Renamed Public Page")
 
-    await update_page(page.id, slug="new-public-slug")
+    await update_page(page.id, slug="new-public-slug", actor=SYSTEM_ACTOR)
 
     await user.open("/pages/old-public-slug")
     await user.should_see(t("page_not_found"))

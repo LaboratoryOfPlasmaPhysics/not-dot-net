@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from contextlib import asynccontextmanager
@@ -39,7 +40,7 @@ async def _create_test_request():
     req = await create_request(
         workflow_type="onboarding",
         created_by=user.id,
-        data={"person_name": "Test Person", "person_email": "newcomer@test.com"},
+        data={"person_name": "Test Person", "person_email": "newcomer@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     return req

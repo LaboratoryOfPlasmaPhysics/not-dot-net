@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -61,7 +62,7 @@ async def test_compute_step_age_days():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "X", "target_email": "x@test.com"},
+        data={"target_name": "X", "target_email": "x@test.com"}, actor=SYSTEM_ACTOR
     )
     await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     events = await list_events(req.id)
@@ -77,7 +78,7 @@ async def test_get_actionable_count():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     count = await get_actionable_count(director)
@@ -94,7 +95,7 @@ async def test_get_actionable_count_zero():
     await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     count = await get_actionable_count(member_user)
     assert count == 0
@@ -108,7 +109,7 @@ async def test_get_actionable_count_excludes_completed_requests():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "A", "target_email": "a@test.com"},
+        data={"target_name": "A", "target_email": "a@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     await submit_step(req.id, director.id, "approve", data={}, actor_user=director, ad_creds=("admin", "pass"))

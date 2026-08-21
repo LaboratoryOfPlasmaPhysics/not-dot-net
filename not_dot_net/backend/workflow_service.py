@@ -24,6 +24,7 @@ from not_dot_net.backend.encrypted_storage import (
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.notifications import notify
 from not_dot_net.backend.permissions import (
+    SYSTEM_ACTOR,
     check_permission,
     has_permissions,
     permission,
@@ -151,8 +152,7 @@ async def create_request(
     data: dict,
     actor=None,
 ) -> WorkflowRequest:
-    if actor is not None:
-        await check_permission(actor, CREATE_WORKFLOWS)
+    await check_permission(actor, CREATE_WORKFLOWS)
     wf = await _get_workflow_config(workflow_type)
     first_step = wf.steps[0].key
 
@@ -234,11 +234,14 @@ async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None
         except (ValueError, TypeError):
             pass
 
+    # SYSTEM_ACTOR, not the approver: recording the tenure is a consequence of
+    # the workflow completing, and the approver need not hold manage_users.
     await add_tenure(
         user_id=user_id,
         status=status,
         employer=employer,
         start_date=start_date,
+        actor=SYSTEM_ACTOR,
     )
 
 

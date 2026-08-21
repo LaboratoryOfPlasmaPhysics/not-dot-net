@@ -1,5 +1,6 @@
 """Tests for import/export of pages and resources."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 from sqlalchemy import select
@@ -210,7 +211,7 @@ async def test_import_all_roundtrip():
         await session.execute(delete(Page))
         await session.execute(delete(Resource))
         await session.commit()
-    result = await import_all(exported)
+    result = await import_all(exported, actor=SYSTEM_ACTOR)
     assert result["pages"]["created"] == 1
     assert result["resources"]["created"] == 1
 
@@ -223,7 +224,7 @@ async def test_export_includes_tenures():
     user = await _create_user("tenure-export@test.com")
     await add_tenure(
         user_id=user.id, status="PhD", employer="CNRS",
-        start_date=date(2025, 9, 1),
+        start_date=date(2025, 9, 1), actor=SYSTEM_ACTOR
     )
     data = await export_all()
     assert "tenures" in data
@@ -248,7 +249,7 @@ async def test_import_tenures():
             }
         ],
     }
-    result = await import_all(data)
+    result = await import_all(data, actor=SYSTEM_ACTOR)
     assert result["tenures"]["created"] == 1
     assert result["tenures"]["updated"] == 0
     assert result["tenures"]["skipped"] == 0
@@ -278,7 +279,7 @@ async def test_import_tenures_skips_invalid_records():
             },
             "not-a-record",
         ],
-    })
+    }, actor=SYSTEM_ACTOR)
 
     assert result["tenures"] == {"created": 0, "updated": 0, "skipped": 4}
     assert await list_tenures(user.id) == []
@@ -304,7 +305,7 @@ async def test_import_tenures_skips_overlapping_periods():
                 "start_date": "2025-08-01",
             },
         ],
-    })
+    }, actor=SYSTEM_ACTOR)
 
     assert result["tenures"] == {"created": 1, "updated": 0, "skipped": 1}
     tenures = await list_tenures(user.id)
@@ -312,7 +313,7 @@ async def test_import_tenures_skips_overlapping_periods():
 
 
 async def test_import_all_empty_tenures_result_has_updated_key():
-    result = await import_all({"tenures": []})
+    result = await import_all({"tenures": []}, actor=SYSTEM_ACTOR)
 
     assert result["tenures"] == {"created": 0, "updated": 0, "skipped": 0}
 

@@ -743,7 +743,7 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
 
             async def do_delete(t_id=tenure.id):
                 from not_dot_net.backend.tenure_service import delete_tenure as _del
-                await _del(t_id)
+                await _del(t_id, actor=current_user)
                 await log_audit(
                     "user", "delete_tenure",
                     actor_id=current_user.id, actor_email=current_user.email,
@@ -796,6 +796,7 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
                 start_date=start,
                 end_date=end,
                 notes=notes_input.value or None,
+                actor=current_user,
             )
             await log_audit(
                 "user", "add_tenure",
@@ -850,6 +851,7 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
                 start_date=start,
                 end_date=end,
                 notes=notes_input.value or None,
+                actor=current_user,
             )
             await log_audit(
                 "user", "update_tenure",

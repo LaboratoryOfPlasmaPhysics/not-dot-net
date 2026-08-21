@@ -50,7 +50,7 @@ class OfficeAvailabilityError(Exception):
 
 async def _check_owner_or_manager(resource: Resource, actor) -> None:
     if actor is None:
-        return
+        raise PermissionError("No actor provided")
     is_owner = actor.id == resource.owner_user_id
     if not is_owner and not await has_permissions(actor, "manage_bookings"):
         raise PermissionError("Only the office owner or a booking manager can do this")
@@ -68,7 +68,7 @@ async def offer_availability(
         await _check_owner_or_manager(resource, actor)
         window = OfficeAvailability(
             resource_id=resource_id, start_date=start_date, end_date=end_date,
-            offered_by=actor.id if actor is not None else resource.owner_user_id,
+            offered_by=actor.id,
         )
         session.add(window)
         await session.commit()
@@ -77,7 +77,7 @@ async def offer_availability(
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "office_availability", "offer",
-        actor_id=(actor.id if actor is not None else None),
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail=f"{start_date} → {end_date}",
     )
@@ -122,7 +122,7 @@ async def revoke_availability(window_id: uuid.UUID, actor=None) -> None:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "office_availability", "revoke",
-        actor_id=(actor.id if actor is not None else None),
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail=f"window={window_id}",
     )

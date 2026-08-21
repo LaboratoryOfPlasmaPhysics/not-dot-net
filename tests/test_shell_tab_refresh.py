@@ -2,6 +2,7 @@
 so data created after the page loaded stays invisible until a browser refresh.
 Switching to a tab must re-render that tab's content with fresh data."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from contextlib import asynccontextmanager
 
 from nicegui import ElementFilter, ui
@@ -40,7 +41,7 @@ async def _login(
 async def _ensure_no_page(slug: str) -> None:
     existing = await get_page(slug)
     if existing is not None:
-        await delete_page(existing.id)
+        await delete_page(existing.id, actor=SYSTEM_ACTOR)
 
 
 async def test_pages_tab_shows_page_created_after_page_load(user: User) -> None:
@@ -56,7 +57,7 @@ async def test_pages_tab_shows_page_created_after_page_load(user: User) -> None:
     await create_page(
         title="Fresh Tab Page", slug="fresh-tab-page",
         content="created after the shell rendered",
-        author_id=None, published=True,
+        author_id=None, published=True, actor=SYSTEM_ACTOR
     )
 
     user.find(t("pages"), kind=ui.tab).click()
@@ -75,7 +76,7 @@ async def test_dashboard_shows_data_created_after_page_load_when_switching_back(
     await create_page(
         title="Fresh Dash Page", slug="fresh-dash-page",
         content="shows up as a dashboard page card",
-        author_id=None, published=True,
+        author_id=None, published=True, actor=SYSTEM_ACTOR
     )
 
     user.find(t("people"), kind=ui.tab).click()
@@ -116,7 +117,7 @@ async def test_dashboard_refreshes_when_actionable_count_changes(user: User) -> 
 
     req = await create_request(
         workflow_type="vpn_access", created_by=staff.id,
-        data={"target_name": "Badge Target Person", "target_email": "bt@test.com"},
+        data={"target_name": "Badge Target Person", "target_email": "bt@test.com"}, actor=SYSTEM_ACTOR
     )
     await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
 

@@ -7,6 +7,7 @@ saw working impersonation tokens for every save-draft action.
 Fix: stop writing it; drop the column (migration 0009).
 """
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 from sqlalchemy import select
@@ -24,7 +25,7 @@ async def _start_onboarding_to_newcomer():
     req = await create_request(
         workflow_type="onboarding",
         created_by=creator.id,
-        data={"contact_email": "bob@test.com", "status": "Intern", "employer": "CNRS"},
+        data={"contact_email": "bob@test.com", "status": "Intern", "employer": "CNRS"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, creator.id, "submit", data={}, actor_user=creator)
     assert req.current_step == "newcomer_info"

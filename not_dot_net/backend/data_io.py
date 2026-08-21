@@ -249,7 +249,10 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
     return {"created": created, "updated": updated, "skipped": skipped}
 
 
-async def import_all(data: dict, *, replace: bool = False) -> dict:
+async def import_all(data: dict, *, replace: bool = False, actor=None) -> dict:
+    """Bulk-import pages, resources and tenures. Requires `manage_settings`."""
+    from not_dot_net.backend.permissions import check_permission
+    await check_permission(actor, "manage_settings")
     result = {}
     if "pages" in data:
         result["pages"] = await import_pages(data["pages"], replace=replace)

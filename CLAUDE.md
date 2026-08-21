@@ -93,6 +93,14 @@ the usual mistake:
 - `backend/workflow_service.py` — create/submit/cancel/delete/save_draft, queries,
   notification fan-out.
 
+**Service-layer authorization is mandatory, never opt-in.** `check_permission`
+and `has_permissions` treat a `None` actor as *no permissions*, so a service
+guard is a plain `await check_permission(actor, PERM)` — there is no
+`if actor is not None:` wrapper to forget. An internal caller with genuinely no
+user (the workflow engine recording a tenure, dev seeding) passes
+`permissions.SYSTEM_ACTOR`, which is named and greppable. A test in
+`test_service_authorization.py` fails if the opt-in pattern is reintroduced.
+
 **The engine knows no workflow keys.** A workflow that should record a
 `UserTenure` on completion declares `tenure: TenureHookConfig` (in `config.py`),
 which also names the request-data keys to read — `submit_step` gates on

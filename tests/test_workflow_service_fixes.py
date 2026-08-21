@@ -2,6 +2,7 @@
 cancel_request row lock + basic guards, save_draft token stability,
 resend_notification row lock, and validate_upload unit coverage."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 import pytest
@@ -29,7 +30,7 @@ async def test_cancel_request_locks_row(monkeypatch):
     creator = await _create_user()
     req = await create_request(
         workflow_type="onboarding", created_by=creator.id,
-        data={"contact_email": "bob@test.com"},
+        data={"contact_email": "bob@test.com"}, actor=SYSTEM_ACTOR
     )
 
     calls: list[dict] = []
@@ -51,7 +52,7 @@ async def test_cancel_request_creator_only():
     stranger = await _create_user(email="stranger@test.com")
     req = await create_request(
         workflow_type="onboarding", created_by=creator.id,
-        data={"contact_email": "bob@test.com"},
+        data={"contact_email": "bob@test.com"}, actor=SYSTEM_ACTOR
     )
     with pytest.raises(PermissionError):
         await cancel_request(req.id, stranger.id)
@@ -62,7 +63,7 @@ async def test_cancel_request_rejects_terminal_request():
     creator = await _create_user()
     req = await create_request(
         workflow_type="onboarding", created_by=creator.id,
-        data={"contact_email": "bob@test.com"},
+        data={"contact_email": "bob@test.com"}, actor=SYSTEM_ACTOR
     )
     await cancel_request(req.id, creator.id)
     with pytest.raises(ValueError, match="in-progress"):

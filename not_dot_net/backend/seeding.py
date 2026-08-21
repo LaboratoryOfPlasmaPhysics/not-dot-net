@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone, timedelta
 from types import SimpleNamespace
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
+
 from not_dot_net.backend.db import session_scope, get_user_db
 from not_dot_net.backend.schemas import UserCreate
 from not_dot_net.backend.users import get_user_manager
@@ -120,6 +122,7 @@ async def _seed_fake_workflows(users: list) -> None:
                 workflow_type=seed["type"],
                 created_by=creator.id,
                 data=seed["data"],
+                actor=creator_actor,
             )
 
             if seed["step"] == "request" and seed["action"] is None:
@@ -236,6 +239,7 @@ async def _seed_resources_and_bookings(users: list) -> None:
             description=seed.get("description", ""),
             location=seed.get("location", ""),
             specs=seed.get("specs"),
+            actor=SYSTEM_ACTOR,
         )
         resources.append(res)
 
@@ -251,7 +255,8 @@ async def _seed_resources_and_bookings(users: list) -> None:
         start = today + timedelta(days=rng.randint(booking_cfg.minimum_lead_days, 30))
         end = start + timedelta(days=rng.randint(1, 14))
         try:
-            await create_booking(res.id, booker.id, start, end, note="Dev seed booking")
+            await create_booking(res.id, booker.id, start, end, note="Dev seed booking",
+                                 actor=_seed_actor(booker))
             count += 1
         except Exception:
             pass
@@ -410,6 +415,7 @@ async def _seed_pages() -> None:
             author_id=None,
             sort_order=seed["sort_order"],
             published=seed["published"],
+            actor=SYSTEM_ACTOR,
         )
         count += 1
 

@@ -1,5 +1,6 @@
 """Tests for custom page CRUD."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 
@@ -29,7 +30,7 @@ async def test_page_model_exists():
 
 async def test_create_and_get_page():
     page = await create_page(
-        title="Welcome", slug="welcome", content="# Welcome\nHello!", author_id=None,
+        title="Welcome", slug="welcome", content="# Welcome\nHello!", author_id=None, actor=SYSTEM_ACTOR
     )
     assert page.id is not None
     assert page.slug == "welcome"
@@ -54,7 +55,7 @@ async def test_create_page_stores_metadata():
         content="body",
         author_id=author_id,
         sort_order=42,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     assert page.author_id == author_id
@@ -68,13 +69,13 @@ async def test_get_page_not_found():
 
 
 async def test_list_pages_defaults_to_published_only():
-    await create_page(title="Default Draft", slug="default-draft", content="x", author_id=None)
+    await create_page(title="Default Draft", slug="default-draft", content="x", author_id=None, actor=SYSTEM_ACTOR)
     await create_page(
         title="Default Public",
         slug="default-public",
         content="y",
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     pages = await list_pages()
@@ -89,7 +90,7 @@ async def test_get_page_published_only_hides_draft():
         slug="draft-hidden",
         content="secret",
         author_id=None,
-        published=False,
+        published=False, actor=SYSTEM_ACTOR
     )
 
     assert await get_page("draft-hidden", published_only=True) is None
@@ -101,7 +102,7 @@ async def test_get_page_published_only_returns_published_page():
         slug="public-visible",
         content="visible",
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     fetched = await get_page("public-visible", published_only=True)
@@ -111,9 +112,9 @@ async def test_get_page_published_only_returns_published_page():
 
 
 async def test_list_pages_published_only():
-    await create_page(title="Draft", slug="draft", content="x", author_id=None)
+    await create_page(title="Draft", slug="draft", content="x", author_id=None, actor=SYSTEM_ACTOR)
     await create_page(
-        title="Public", slug="public", content="y", author_id=None, published=True,
+        title="Public", slug="public", content="y", author_id=None, published=True, actor=SYSTEM_ACTOR
     )
     published = await list_pages(published_only=True)
     assert all(p.published for p in published)
@@ -127,16 +128,16 @@ async def test_list_pages_published_only():
 
 
 async def test_list_pages_sort_order():
-    await create_page(title="B", slug="b-page", content="", author_id=None, sort_order=2, published=True)
-    await create_page(title="A", slug="a-page", content="", author_id=None, sort_order=1, published=True)
+    await create_page(title="B", slug="b-page", content="", author_id=None, sort_order=2, published=True, actor=SYSTEM_ACTOR)
+    await create_page(title="A", slug="a-page", content="", author_id=None, sort_order=1, published=True, actor=SYSTEM_ACTOR)
     pages = await list_pages(published_only=True)
     slugs = [p.slug for p in pages]
     assert slugs.index("a-page") < slugs.index("b-page")
 
 
 async def test_list_pages_uses_title_as_secondary_sort():
-    await create_page(title="Zulu", slug="zulu-page", content="", author_id=None, sort_order=1, published=True)
-    await create_page(title="Alpha", slug="alpha-page", content="", author_id=None, sort_order=1, published=True)
+    await create_page(title="Zulu", slug="zulu-page", content="", author_id=None, sort_order=1, published=True, actor=SYSTEM_ACTOR)
+    await create_page(title="Alpha", slug="alpha-page", content="", author_id=None, sort_order=1, published=True, actor=SYSTEM_ACTOR)
 
     pages = await list_pages(published_only=True)
     slugs = [p.slug for p in pages]
@@ -144,16 +145,16 @@ async def test_list_pages_uses_title_as_secondary_sort():
 
 
 async def test_update_page():
-    page = await create_page(title="Old", slug="upd", content="old", author_id=None)
-    updated = await update_page(page.id, title="New", content="new")
+    page = await create_page(title="Old", slug="upd", content="old", author_id=None, actor=SYSTEM_ACTOR)
+    updated = await update_page(page.id, title="New", content="new", actor=SYSTEM_ACTOR)
     assert updated.title == "New"
     assert updated.content == "new"
     assert updated.slug == "upd"
 
 
 async def test_update_page_changes_slug_and_old_slug_disappears():
-    page = await create_page(title="Rename", slug="old-slug", content="", author_id=None, published=True)
-    updated = await update_page(page.id, slug="new-slug")
+    page = await create_page(title="Rename", slug="old-slug", content="", author_id=None, published=True, actor=SYSTEM_ACTOR)
+    updated = await update_page(page.id, slug="new-slug", actor=SYSTEM_ACTOR)
 
     assert updated.slug == "new-slug"
     assert await get_page("old-slug") is None
@@ -162,7 +163,7 @@ async def test_update_page_changes_slug_and_old_slug_disappears():
 
 async def test_update_page_not_found_raises():
     with pytest.raises(ValueError, match="not found"):
-        await update_page(uuid.uuid4(), title="Missing")
+        await update_page(uuid.uuid4(), title="Missing", actor=SYSTEM_ACTOR)
 
 
 async def test_update_page_publication_changes_public_visibility():
@@ -171,15 +172,15 @@ async def test_update_page_publication_changes_public_visibility():
         slug="release-notes",
         content="v1",
         author_id=None,
-        published=False,
+        published=False, actor=SYSTEM_ACTOR
     )
 
     assert await get_page("release-notes", published_only=True) is None
 
-    await update_page(page.id, published=True)
+    await update_page(page.id, published=True, actor=SYSTEM_ACTOR)
     assert await get_page("release-notes", published_only=True) is not None
 
-    await update_page(page.id, published=False)
+    await update_page(page.id, published=False, actor=SYSTEM_ACTOR)
     assert await get_page("release-notes", published_only=True) is None
     assert await get_page("release-notes", published_only=False) is not None
 
@@ -191,36 +192,36 @@ async def test_page_content_round_trip_preserves_markdown_and_html_like_text():
         slug="content-check",
         content=content,
         author_id=None,
-        published=True,
+        published=True, actor=SYSTEM_ACTOR
     )
 
     fetched = await get_page("content-check")
     assert fetched is not None
     assert fetched.content == content
 
-    updated = await update_page(page.id, content=content + "\n\n<p>raw html</p>")
+    updated = await update_page(page.id, content=content + "\n\n<p>raw html</p>", actor=SYSTEM_ACTOR)
     assert updated.content.endswith("<p>raw html</p>")
 
 
 async def test_delete_page():
-    page = await create_page(title="Bye", slug="bye", content="", author_id=None)
-    await delete_page(page.id)
+    page = await create_page(title="Bye", slug="bye", content="", author_id=None, actor=SYSTEM_ACTOR)
+    await delete_page(page.id, actor=SYSTEM_ACTOR)
     assert await get_page("bye") is None
 
 
 async def test_delete_page_not_found_raises():
     with pytest.raises(ValueError, match="not found"):
-        await delete_page(uuid.uuid4())
+        await delete_page(uuid.uuid4(), actor=SYSTEM_ACTOR)
 
 
 async def test_create_duplicate_slug_raises():
-    await create_page(title="One", slug="dup", content="", author_id=None)
+    await create_page(title="One", slug="dup", content="", author_id=None, actor=SYSTEM_ACTOR)
     with pytest.raises(ValueError, match="slug"):
-        await create_page(title="Two", slug="dup", content="", author_id=None)
+        await create_page(title="Two", slug="dup", content="", author_id=None, actor=SYSTEM_ACTOR)
 
 
 async def test_create_page_strips_slug_whitespace():
-    page = await create_page(title="Trimmed", slug="  trimmed-slug  ", content="", author_id=None)
+    page = await create_page(title="Trimmed", slug="  trimmed-slug  ", content="", author_id=None, actor=SYSTEM_ACTOR)
     assert page.slug == "trimmed-slug"
 
 
@@ -242,38 +243,38 @@ async def test_create_page_strips_slug_whitespace():
 )
 async def test_create_page_rejects_invalid_slug(slug: str):
     with pytest.raises(ValueError, match="slug"):
-        await create_page(title="Invalid", slug=slug, content="", author_id=None)
+        await create_page(title="Invalid", slug=slug, content="", author_id=None, actor=SYSTEM_ACTOR)
 
 
 async def test_update_page_strips_slug_whitespace():
-    page = await create_page(title="Page", slug="strip-update", content="", author_id=None)
+    page = await create_page(title="Page", slug="strip-update", content="", author_id=None, actor=SYSTEM_ACTOR)
 
-    updated = await update_page(page.id, slug="  strip-update-renamed  ")
+    updated = await update_page(page.id, slug="  strip-update-renamed  ", actor=SYSTEM_ACTOR)
 
     assert updated.slug == "strip-update-renamed"
 
 
 async def test_update_page_rejects_invalid_slug():
-    page = await create_page(title="Page", slug="valid-slug", content="", author_id=None)
+    page = await create_page(title="Page", slug="valid-slug", content="", author_id=None, actor=SYSTEM_ACTOR)
 
     with pytest.raises(ValueError, match="slug"):
-        await update_page(page.id, slug="not valid")
+        await update_page(page.id, slug="not valid", actor=SYSTEM_ACTOR)
 
 
 async def test_update_page_duplicate_slug_raises():
-    first = await create_page(title="One", slug="one", content="", author_id=None)
-    await create_page(title="Two", slug="two", content="", author_id=None)
+    first = await create_page(title="One", slug="one", content="", author_id=None, actor=SYSTEM_ACTOR)
+    await create_page(title="Two", slug="two", content="", author_id=None, actor=SYSTEM_ACTOR)
 
     with pytest.raises(ValueError, match="slug"):
-        await update_page(first.id, slug="two")
+        await update_page(first.id, slug="two", actor=SYSTEM_ACTOR)
 
 
 @pytest.mark.parametrize("field", ["id", "author_id", "created_at", "updated_at"])
 async def test_update_page_rejects_immutable_fields(field: str):
-    page = await create_page(title="One", slug="immutable", content="", author_id=None)
+    page = await create_page(title="One", slug="immutable", content="", author_id=None, actor=SYSTEM_ACTOR)
 
     with pytest.raises(ValueError, match="Cannot update field"):
-        await update_page(page.id, **{field: None})
+        await update_page(page.id, actor=SYSTEM_ACTOR, **{field: None})
 
 
 async def test_manage_pages_permission_registered():

@@ -7,6 +7,8 @@ Workflow history loses its actor and nothing recorded who caused it.
 I14: page create/update/delete were entirely unaudited — a defaced or deleted
 published page left no trace.
 """
+
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 import pytest
@@ -71,8 +73,8 @@ async def test_page_crud_still_works_without_an_actor():
     from not_dot_net.backend.page_service import create_page, delete_page, update_page
 
     page = await create_page(
-        title="No Actor", slug="no-actor", content="x", author_id=None,
+        title="No Actor", slug="no-actor", content="x", author_id=None, actor=SYSTEM_ACTOR
     )
-    await update_page(page.id, title="No Actor v2")
-    await delete_page(page.id)
+    await update_page(page.id, title="No Actor v2", actor=SYSTEM_ACTOR)
+    await delete_page(page.id, actor=SYSTEM_ACTOR)
     assert await _events("pages", "delete")

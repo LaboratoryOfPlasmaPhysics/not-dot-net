@@ -113,7 +113,9 @@ async def validate_profile_photo_upload(content: bytes, filename: str) -> str | 
 
 async def _check_photo_actor(user_id: uuid.UUID, actor) -> None:
     """Only the user themselves or someone with manage_users may change a photo."""
-    if actor is None or actor.id == user_id:
+    if actor is None:
+        raise PermissionError("No actor provided")
+    if actor.id == user_id:
         return
     if not await has_permissions(actor, "manage_users"):
         raise PermissionError("Cannot modify another user's photo")

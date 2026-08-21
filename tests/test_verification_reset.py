@@ -6,6 +6,7 @@ let someone enter the *previous* code on the *new* token URL — bypassing the
 "you have access to this mailbox" check, since the previous code may have been
 seen by anyone who could read the previous email."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from not_dot_net.backend.verification import (
     generate_verification_code,
     has_valid_code,
@@ -28,7 +29,7 @@ async def _onboarding_at_admin_validation():
     req = await create_request(
         workflow_type="onboarding",
         created_by=creator.id,
-        data={"contact_email": "bob@test.com", "status": "Intern", "employer": "CNRS"},
+        data={"contact_email": "bob@test.com", "status": "Intern", "employer": "CNRS"}, actor=SYSTEM_ACTOR
     )
     # initiation -> newcomer_info (mints token #1)
     req = await submit_step(req.id, creator.id, "submit", data={}, actor_user=creator)

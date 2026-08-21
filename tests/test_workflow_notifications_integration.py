@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from unittest.mock import patch, AsyncMock
@@ -37,7 +38,7 @@ async def test_submit_step_fires_notifications():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
 
     with patch("not_dot_net.backend.workflow_service.notify", new_callable=AsyncMock) as mock_notify:
@@ -55,7 +56,7 @@ async def test_approve_fires_notifications():
     req = await create_request(
         workflow_type="vpn_access",
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
 
     # Submit first step (mock notifications)

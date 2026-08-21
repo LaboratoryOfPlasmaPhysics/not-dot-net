@@ -1,5 +1,6 @@
 """Tests for booking service — resource CRUD and reservation management."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from datetime import date, timedelta
@@ -53,7 +54,8 @@ async def _create_user(email="user@test.com", role="staff") -> User:
 
 
 async def _create_test_resource(**kwargs) -> Resource:
-    defaults = {"name": "Test PC", "resource_type": "desktop", "location": "Palaiseau"}
+    defaults = {"name": "Test PC", "resource_type": "desktop", "location": "Palaiseau",
+                "actor": SYSTEM_ACTOR}
     defaults.update(kwargs)
     return await create_resource(**defaults)
 
@@ -71,14 +73,14 @@ async def test_create_and_list_resources():
 
 async def test_list_resources_active_only():
     r = await _create_test_resource()
-    await update_resource(r.id, active=False)
+    await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)
     assert len(await list_resources(active_only=True)) == 0
     assert len(await list_resources(active_only=False)) == 1
 
 
 async def test_update_resource():
     r = await _create_test_resource()
-    updated = await update_resource(r.id, name="New Name", location="Jussieu")
+    updated = await update_resource(r.id, name="New Name", location="Jussieu", actor=SYSTEM_ACTOR)
     assert updated.name == "New Name"
     assert updated.location == "Jussieu"
 
@@ -87,7 +89,7 @@ async def test_create_resource_with_owner_user_id():
     owner = await _create_user(email="owner2@test.com")
     resource = await create_resource(
         name="Room 101", resource_type="office", location="Palaiseau",
-        owner_user_id=owner.id,
+        owner_user_id=owner.id, actor=SYSTEM_ACTOR
     )
     assert resource.owner_user_id == owner.id
 
@@ -95,33 +97,33 @@ async def test_create_resource_with_owner_user_id():
 async def test_update_resource_owner_user_id():
     owner = await _create_user(email="owner3@test.com")
     r = await _create_test_resource(name="Room 102", resource_type="office")
-    updated = await update_resource(r.id, owner_user_id=owner.id)
+    updated = await update_resource(r.id, owner_user_id=owner.id, actor=SYSTEM_ACTOR)
     assert updated.owner_user_id == owner.id
 
 
 async def test_update_nonexistent_resource():
     with pytest.raises(ValueError, match="not found"):
-        await update_resource(uuid.uuid4(), name="X")
+        await update_resource(uuid.uuid4(), name="X", actor=SYSTEM_ACTOR)
 
 
 async def test_update_resource_rejects_immutable_fields():
     r = await _create_test_resource()
     with pytest.raises(ValueError, match="Cannot update field"):
-        await update_resource(r.id, id=uuid.uuid4())
+        await update_resource(r.id, id=uuid.uuid4(), actor=SYSTEM_ACTOR)
     with pytest.raises(ValueError, match="Cannot update field"):
-        await update_resource(r.id, created_at=date.today())
+        await update_resource(r.id, created_at=date.today(), actor=SYSTEM_ACTOR)
 
 
 async def test_delete_resource():
     r = await _create_test_resource()
-    await update_resource(r.id, active=False)  # retire before deleting
-    await delete_resource(r.id)
+    await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)  # retire before deleting
+    await delete_resource(r.id, actor=SYSTEM_ACTOR)
     assert await get_resource_by_id(r.id) is None
 
 
 async def test_delete_nonexistent_resource():
     with pytest.raises(ValueError, match="not found"):
-        await delete_resource(uuid.uuid4())
+        await delete_resource(uuid.uuid4(), actor=SYSTEM_ACTOR)
 
 
 async def test_get_resource_by_id():
@@ -143,7 +145,7 @@ async def test_create_booking_success():
     r = await _create_test_resource()
     tomorrow = _valid_start()
     end = tomorrow + timedelta(days=3)
-    b = await create_booking(r.id, user.id, tomorrow, end, note="Test")
+    b = await create_booking(r.id, user.id, tomorrow, end, note="Test", actor=SYSTEM_ACTOR)
     assert b.resource_id == r.id
     assert b.start_date == tomorrow
     assert b.end_date == end
@@ -153,16 +155,16 @@ async def test_create_booking_rejects_missing_resource():
     user = await _create_user()
     tomorrow = _valid_start()
     with pytest.raises(ValueError, match="not found"):
-        await create_booking(uuid.uuid4(), user.id, tomorrow, tomorrow + timedelta(days=1))
+        await create_booking(uuid.uuid4(), user.id, tomorrow, tomorrow + timedelta(days=1), actor=SYSTEM_ACTOR)
 
 
 async def test_create_booking_rejects_inactive_resource():
     user = await _create_user()
     r = await _create_test_resource()
-    r = await update_resource(r.id, active=False)
+    r = await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)
     tomorrow = _valid_start()
     with pytest.raises(BookingValidationError, match="not active"):
-        await create_booking(r.id, user.id, tomorrow, tomorrow + timedelta(days=1))
+        await create_booking(r.id, user.id, tomorrow, tomorrow + timedelta(days=1), actor=SYSTEM_ACTOR)
 
 
 async def test_booking_end_before_start():
@@ -170,7 +172,7 @@ async def test_booking_end_before_start():
     r = await _create_test_resource()
     tomorrow = _valid_start()
     with pytest.raises(BookingValidationError, match="End date"):
-        await create_booking(r.id, user.id, tomorrow, tomorrow)
+        await create_booking(r.id, user.id, tomorrow, tomorrow, actor=SYSTEM_ACTOR)
 
 
 async def test_booking_in_the_past():
@@ -178,7 +180,7 @@ async def test_booking_in_the_past():
     r = await _create_test_resource()
     yesterday = date.today() - timedelta(days=1)
     with pytest.raises(BookingValidationError, match="past"):
-        await create_booking(r.id, user.id, yesterday, date.today() + timedelta(days=1))
+        await create_booking(r.id, user.id, yesterday, date.today() + timedelta(days=1), actor=SYSTEM_ACTOR)
 
 
 async def test_booking_requires_seven_days_notice():
@@ -186,7 +188,7 @@ async def test_booking_requires_seven_days_notice():
     r = await _create_test_resource()
     start = date.today() + timedelta(days=6)
     with pytest.raises(BookingValidationError, match="at least 7 days"):
-        await create_booking(r.id, user.id, start, start + timedelta(days=3))
+        await create_booking(r.id, user.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
 
 
 async def test_booking_minimum_lead_days_uses_bookings_config():
@@ -196,12 +198,12 @@ async def test_booking_minimum_lead_days_uses_bookings_config():
     try:
         start = date.today() + timedelta(days=2)
         with pytest.raises(BookingValidationError, match="at least 3 days"):
-            await create_booking(r.id, user.id, start, start + timedelta(days=3))
+            await create_booking(r.id, user.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
         booking = await create_booking(
             r.id,
             user.id,
             date.today() + timedelta(days=3),
-            date.today() + timedelta(days=6),
+            date.today() + timedelta(days=6), actor=SYSTEM_ACTOR
         )
     finally:
         await bookings_config.reset()
@@ -215,7 +217,7 @@ async def test_booking_exceeds_max_days():
     start = _valid_start()
     end = start + timedelta(days=200)
     with pytest.raises(BookingValidationError, match="exceed"):
-        await create_booking(r.id, user.id, start, end)
+        await create_booking(r.id, user.id, start, end, actor=SYSTEM_ACTOR)
 
 
 async def test_booking_max_days_uses_bookings_config():
@@ -225,8 +227,8 @@ async def test_booking_max_days_uses_bookings_config():
     try:
         start = _valid_start()
         with pytest.raises(BookingValidationError, match="exceed 4 days"):
-            await create_booking(r.id, user.id, start, start + timedelta(days=5))
-        booking = await create_booking(r.id, user.id, start, start + timedelta(days=4))
+            await create_booking(r.id, user.id, start, start + timedelta(days=5), actor=SYSTEM_ACTOR)
+        booking = await create_booking(r.id, user.id, start, start + timedelta(days=4), actor=SYSTEM_ACTOR)
     finally:
         await bookings_config.reset()
 
@@ -241,13 +243,13 @@ async def test_booking_conflict():
     r = await _create_test_resource()
     start = _valid_start()
     end = start + timedelta(days=5)
-    await create_booking(r.id, user.id, start, end)
+    await create_booking(r.id, user.id, start, end, actor=SYSTEM_ACTOR)
 
     user2 = await _create_user(email="user2@test.com")
     overlap_start = start + timedelta(days=2)
     overlap_end = end + timedelta(days=2)
     with pytest.raises(BookingConflictError):
-        await create_booking(r.id, user2.id, overlap_start, overlap_end)
+        await create_booking(r.id, user2.id, overlap_start, overlap_end, actor=SYSTEM_ACTOR)
 
 
 async def test_booking_rejects_adjacent_booking_without_setup_buffer():
@@ -256,9 +258,9 @@ async def test_booking_rejects_adjacent_booking_without_setup_buffer():
     start = _valid_start()
     mid = start + timedelta(days=5)
     end = mid + timedelta(days=5)
-    await create_booking(r.id, user.id, start, mid)
+    await create_booking(r.id, user.id, start, mid, actor=SYSTEM_ACTOR)
     with pytest.raises(BookingConflictError, match="setup buffer"):
-        await create_booking(r.id, user.id, mid, end)
+        await create_booking(r.id, user.id, mid, end, actor=SYSTEM_ACTOR)
 
 
 async def test_booking_allows_after_resource_setup_buffer():
@@ -267,8 +269,8 @@ async def test_booking_allows_after_resource_setup_buffer():
     start = _valid_start()
     first_end = start + timedelta(days=5)
     second_start = first_end + timedelta(days=7)
-    await create_booking(r.id, user.id, start, first_end)
-    b2 = await create_booking(r.id, user.id, second_start, second_start + timedelta(days=5))
+    await create_booking(r.id, user.id, start, first_end, actor=SYSTEM_ACTOR)
+    b2 = await create_booking(r.id, user.id, second_start, second_start + timedelta(days=5), actor=SYSTEM_ACTOR)
     assert b2.start_date == second_start
 
 
@@ -279,19 +281,19 @@ async def test_booking_setup_buffer_uses_bookings_config():
     first_end = start + timedelta(days=5)
     await bookings_config.set(BookingsConfig(resource_setup_buffer_days=2))
     try:
-        await create_booking(r.id, user.id, start, first_end)
+        await create_booking(r.id, user.id, start, first_end, actor=SYSTEM_ACTOR)
         with pytest.raises(BookingConflictError, match="2-day setup buffer"):
             await create_booking(
                 r.id,
                 user.id,
                 first_end + timedelta(days=1),
-                first_end + timedelta(days=3),
+                first_end + timedelta(days=3), actor=SYSTEM_ACTOR
             )
         b2 = await create_booking(
             r.id,
             user.id,
             first_end + timedelta(days=2),
-            first_end + timedelta(days=4),
+            first_end + timedelta(days=4), actor=SYSTEM_ACTOR
         )
     finally:
         await bookings_config.reset()
@@ -305,8 +307,8 @@ async def test_booking_setup_buffer_is_per_resource():
     r2 = await _create_test_resource(name="PC-02")
     start = _valid_start()
     end = start + timedelta(days=5)
-    await create_booking(r1.id, user.id, start, end)
-    b2 = await create_booking(r2.id, user.id, start + timedelta(days=1), end + timedelta(days=1))
+    await create_booking(r1.id, user.id, start, end, actor=SYSTEM_ACTOR)
+    b2 = await create_booking(r2.id, user.id, start + timedelta(days=1), end + timedelta(days=1), actor=SYSTEM_ACTOR)
     assert b2.resource_id == r2.id
 
 
@@ -318,7 +320,7 @@ async def test_list_bookings_for_resource():
     r = await _create_test_resource()
     start = _valid_start()
     end = start + timedelta(days=3)
-    await create_booking(r.id, user.id, start, end)
+    await create_booking(r.id, user.id, start, end, actor=SYSTEM_ACTOR)
     bookings = await list_bookings_for_resource(r.id)
     assert len(bookings) == 1
 
@@ -328,7 +330,7 @@ async def test_list_bookings_for_user():
     r = await _create_test_resource()
     start = _valid_start()
     end = start + timedelta(days=3)
-    await create_booking(r.id, user.id, start, end)
+    await create_booking(r.id, user.id, start, end, actor=SYSTEM_ACTOR)
     bookings = await list_bookings_for_user(user.id)
     assert len(bookings) == 1
 
@@ -341,7 +343,7 @@ async def test_cancel_own_booking():
     r = await _create_test_resource()
     start = _valid_start()
     end = start + timedelta(days=3)
-    b = await create_booking(r.id, user.id, start, end)
+    b = await create_booking(r.id, user.id, start, end, actor=SYSTEM_ACTOR)
     await cancel_booking(b.id, actor=user)
     assert len(await list_bookings_for_resource(r.id)) == 0
 
@@ -351,7 +353,7 @@ async def test_cancel_other_user_booking_rejected():
     user2 = await _create_user(email="u2@test.com")
     r = await _create_test_resource()
     start = _valid_start()
-    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
     with pytest.raises(PermissionError):
         await cancel_booking(b.id, actor=user2)
 
@@ -362,7 +364,7 @@ async def test_cancel_as_admin():
     admin = await _create_user(email="admin@test.com", role="admin")
     r = await _create_test_resource()
     start = _valid_start()
-    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
     await cancel_booking(b.id, actor=admin)
     assert len(await list_bookings_for_resource(r.id)) == 0
 
@@ -382,7 +384,7 @@ async def test_booking_with_os_and_software():
     start = _valid_start()
     b = await create_booking(
         r.id, user.id, start, start + timedelta(days=3),
-        os_choice="Ubuntu", software_tags=["Python", "GCC"],
+        os_choice="Ubuntu", software_tags=["Python", "GCC"], actor=SYSTEM_ACTOR
     )
     assert b.os_choice == "Ubuntu"
     assert b.software_tags == ["Python", "GCC"]
@@ -464,7 +466,7 @@ async def test_cancel_booking_with_actor_admin():
     user1 = await _create_user(email="u1@test.com", role="staff")
     r = await create_resource("PC", "desktop", actor=admin)
     start = _valid_start()
-    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
     await cancel_booking(b.id, actor=admin)
     assert len(await list_bookings_for_resource(r.id)) == 0
 
@@ -476,7 +478,7 @@ async def test_cancel_booking_non_owner_non_admin_rejected():
     user2 = await _create_user(email="u2@test.com", role="staff")
     r = await create_resource("PC", "desktop", actor=admin)
     start = _valid_start()
-    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3))
+    b = await create_booking(r.id, user1.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
     with pytest.raises(PermissionError):
         await cancel_booking(b.id, actor=user2)
 
@@ -655,5 +657,5 @@ async def test_create_booking_equipment_unaffected_by_office_check():
     r = await _create_test_resource(name="PC-99", resource_type="desktop")
     pc_user = await _create_user(email="pcuser@test.com")
     start = _valid_start()
-    booking = await create_booking(r.id, pc_user.id, start, start + timedelta(days=3))
+    booking = await create_booking(r.id, pc_user.id, start, start + timedelta(days=3), actor=SYSTEM_ACTOR)
     assert booking.resource_id == r.id

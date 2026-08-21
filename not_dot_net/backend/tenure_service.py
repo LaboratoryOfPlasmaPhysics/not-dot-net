@@ -1,4 +1,9 @@
-"""User tenure tracking — employment periods with status and employer."""
+"""User tenure tracking — employment periods with status and employer.
+
+Mutations require `manage_users`, matching the directory UI that offers
+them. The workflow engine records a tenure with no acting user and passes
+`permissions.SYSTEM_ACTOR` for it.
+"""
 
 import uuid
 from datetime import date, datetime
@@ -7,6 +12,12 @@ from sqlalchemy import Date, ForeignKey, String, func, or_, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
+from not_dot_net.backend.permissions import check_permission
+
+# Literal rather than an import: `manage_users` is registered in
+# frontend/directory.py, and a backend service must not import from the
+# frontend. Same shape as office_availability.py's "manage_bookings".
+MANAGE_USERS = "manage_users"
 
 
 class UserTenure(MappedAsDataclass, Base, kw_only=True):
@@ -57,7 +68,9 @@ async def add_tenure(
     start_date: date,
     end_date: date | None = None,
     notes: str | None = None,
+    actor=None,
 ) -> UserTenure:
+    await check_permission(actor, MANAGE_USERS)
     _validate_tenure_dates(start_date, end_date)
     async with session_scope() as session:
         # NOT locked: add_tenure runs inside submit_step's still-open session
@@ -82,7 +95,8 @@ async def add_tenure(
         return tenure
 
 
-async def close_tenure(tenure_id: uuid.UUID, end_date: date) -> UserTenure:
+async def close_tenure(tenure_id: uuid.UUID, end_date: date, actor=None) -> UserTenure:
+    await check_permission(actor, MANAGE_USERS)
     async with session_scope() as session:
         tenure = await session.get(UserTenure, tenure_id)
         if tenure is None:
@@ -163,7 +177,9 @@ async def update_tenure(
     start_date: date | None = None,
     end_date: date | None = ...,
     notes: str | None = ...,
+    actor=None,
 ) -> UserTenure:
+    await check_permission(actor, MANAGE_USERS)
     async with session_scope() as session:
         tenure = await session.get(UserTenure, tenure_id)
         if tenure is None:
@@ -189,7 +205,8 @@ async def update_tenure(
         return tenure
 
 
-async def delete_tenure(tenure_id: uuid.UUID) -> None:
+async def delete_tenure(tenure_id: uuid.UUID, actor=None) -> None:
+    await check_permission(actor, MANAGE_USERS)
     async with session_scope() as session:
         tenure = await session.get(UserTenure, tenure_id)
         if tenure is None:

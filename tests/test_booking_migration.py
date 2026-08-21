@@ -2,6 +2,7 @@
 upcoming bookings exist, and migrate_booking moves a booking to another
 resource (conflict-checked, audited, user notified)."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
@@ -30,9 +31,9 @@ def _valid_start(extra_days: int = 0) -> date:
 
 
 async def _resource(name: str, active: bool = True):
-    r = await create_resource(name=name, resource_type="desktop", location="Palaiseau")
+    r = await create_resource(name=name, resource_type="desktop", location="Palaiseau", actor=SYSTEM_ACTOR)
     if not active:
-        r = await update_resource(r.id, active=False)
+        r = await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)
     return r
 
 
@@ -54,11 +55,11 @@ async def test_delete_resource_blocked_by_upcoming_bookings():
     user = await _create_user(email="future@test.com")
     r = await _resource("PC-DEL", active=True)
     start = _valid_start()
-    booking = await create_booking(r.id, user.id, start, start + timedelta(days=2))
-    await update_resource(r.id, active=False)
+    booking = await create_booking(r.id, user.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
+    await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)
 
     with pytest.raises(BookingValidationError, match="[Mm]igrate"):
-        await delete_resource(r.id)
+        await delete_resource(r.id, actor=SYSTEM_ACTOR)
 
     async with session_scope() as session:
         assert await session.get(Booking, booking.id) is not None
@@ -68,9 +69,9 @@ async def test_delete_resource_allowed_when_all_bookings_past():
     user = await _create_user(email="past@test.com")
     r = await _resource("PC-DEL2", active=True)
     await _insert_past_booking(r.id, user.id)
-    await update_resource(r.id, active=False)
+    await update_resource(r.id, active=False, actor=SYSTEM_ACTOR)
 
-    await delete_resource(r.id)  # must not raise
+    await delete_resource(r.id, actor=SYSTEM_ACTOR)  # must not raise
 
 
 # --- migrate_booking ---
@@ -83,7 +84,7 @@ async def test_migrate_booking_moves_to_target_and_notifies():
     a = await _resource("PC-A")
     b = await _resource("PC-B")
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     with patch("not_dot_net.backend.booking_service.send_mail", new_callable=AsyncMock) as send:
         migrated = await migrate_booking(booking.id, b.id, actor=admin)
@@ -110,11 +111,11 @@ async def test_migrate_booking_rejects_conflict_on_target():
     a = await _resource("PC-CA")
     b = await _resource("PC-CB")
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
-    await create_booking(b.id, other.id, start, start + timedelta(days=2))
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
+    await create_booking(b.id, other.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     with pytest.raises(BookingConflictError):
-        await migrate_booking(booking.id, b.id)
+        await migrate_booking(booking.id, b.id, actor=SYSTEM_ACTOR)
 
     async with session_scope() as session:
         reloaded = await session.get(Booking, booking.id)
@@ -126,20 +127,20 @@ async def test_migrate_booking_rejects_inactive_target():
     a = await _resource("PC-IA")
     b = await _resource("PC-IB", active=False)
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     with pytest.raises(BookingValidationError, match="active"):
-        await migrate_booking(booking.id, b.id)
+        await migrate_booking(booking.id, b.id, actor=SYSTEM_ACTOR)
 
 
 async def test_migrate_booking_rejects_same_resource():
     owner = await _create_user(email="own-s@test.com")
     a = await _resource("PC-SA")
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     with pytest.raises(BookingValidationError):
-        await migrate_booking(booking.id, a.id)
+        await migrate_booking(booking.id, a.id, actor=SYSTEM_ACTOR)
 
 
 async def test_migrate_booking_requires_manage_bookings():
@@ -149,7 +150,7 @@ async def test_migrate_booking_requires_manage_bookings():
     a = await _resource("PC-PA")
     b = await _resource("PC-PB")
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
 
     with pytest.raises(PermissionError):
         await migrate_booking(booking.id, b.id, actor=staff)
@@ -175,8 +176,8 @@ async def test_migration_dialog_migrates_then_deletes(user):
     a = await _resource("PC-DLG-A")
     b = await _resource("PC-DLG-B")
     start = _valid_start()
-    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2))
-    await update_resource(a.id, active=False)
+    booking = await create_booking(a.id, owner.id, start, start + timedelta(days=2), actor=SYSTEM_ACTOR)
+    await update_resource(a.id, active=False, actor=SYSTEM_ACTOR)
 
     @ui.page("/_migdlg")
     async def _page():

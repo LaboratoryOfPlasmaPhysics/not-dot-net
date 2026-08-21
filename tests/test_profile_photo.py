@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from io import BytesIO
 
 from PIL import Image
@@ -79,7 +80,7 @@ async def test_save_and_remove_profile_photo():
         await session.commit()
         user_id = user.id
 
-    saved = await save_profile_photo(user_id, PNG_BYTES)
+    saved = await save_profile_photo(user_id, PNG_BYTES, actor=SYSTEM_ACTOR)
     assert saved is not None
     assert profile_photo_mime(saved) == "image/jpeg"
 
@@ -87,7 +88,7 @@ async def test_save_and_remove_profile_photo():
         user = await session.get(User, user_id)
         assert user.photo == saved
 
-    assert await remove_profile_photo(user_id) is True
+    assert await remove_profile_photo(user_id, actor=SYSTEM_ACTOR) is True
 
     async with session_scope() as session:
         user = await session.get(User, user_id)
@@ -102,7 +103,7 @@ async def test_save_profile_photo_stores_thumbnail():
         await session.commit()
         user_id = user.id
 
-    saved = await save_profile_photo(user_id, original)
+    saved = await save_profile_photo(user_id, original, actor=SYSTEM_ACTOR)
 
     assert saved is not None
     assert len(saved) < len(original)

@@ -63,8 +63,7 @@ async def create_resource(name: str, resource_type: str, description: str = "",
                           location: str = "", specs: dict | None = None,
                           owner_user_id: uuid.UUID | None = None,
                           actor=None) -> Resource:
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = Resource(
             name=name,
@@ -95,8 +94,7 @@ _RESOURCE_MUTABLE = frozenset({"name", "resource_type", "description", "location
 
 
 async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resource:
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
@@ -115,8 +113,7 @@ async def update_resource(resource_id: uuid.UUID, actor=None, **kwargs) -> Resou
 
 
 async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         # Same lock create_booking takes: without it a booking committing
         # between the guard below and the DELETE gets CASCADE-deleted silently.
@@ -143,7 +140,7 @@ async def delete_resource(resource_id: uuid.UUID, actor=None) -> None:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "resource", "delete",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail=f"name={deleted_name}",
     )
@@ -153,8 +150,7 @@ async def restore_resource(resource_id: uuid.UUID, actor=None) -> Resource:
     """Un-retire a resource. Forces status back to AVAILABLE, deliberately
     bypassing the FSM: the resource may have been retired from any state, and
     whatever physical state it held is stale after sitting out of the pool."""
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     async with session_scope() as session:
         resource = await session.get(Resource, resource_id)
         if resource is None:
@@ -167,7 +163,7 @@ async def restore_resource(resource_id: uuid.UUID, actor=None) -> Resource:
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "resource", "restore",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail="",
     )
@@ -272,8 +268,7 @@ async def _notify_status_change(resource: Resource, new_status: ResourceStatus,
 
 async def set_resource_status(resource_id: uuid.UUID, new_status, actor=None,
                               today: date | None = None) -> Resource:
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     target = ResourceStatus(new_status)
     today = today or date.today()
     async with session_scope() as session:
@@ -293,7 +288,7 @@ async def set_resource_status(resource_id: uuid.UUID, new_status, actor=None,
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "resource", "status",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="resource", target_id=resource_id,
         detail=f"{old}→{target.value}",
     )
@@ -365,10 +360,11 @@ async def create_booking(
     os_choice: str | None = None, software_tags: list[str] | None = None,
     actor=None,
 ) -> Booking:
-    if actor is not None:
-        is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
-        if user_id != actor.id and not is_manager:
-            raise PermissionError("Can only create bookings for yourself")
+    if actor is None:
+        raise PermissionError("No actor provided")
+    is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
+    if user_id != actor.id and not is_manager:
+        raise PermissionError("Can only create bookings for yourself")
     if start_date >= end_date:
         raise BookingValidationError("End date must be after start date")
     if start_date < date.today():
@@ -430,7 +426,9 @@ async def create_booking(
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "booking", "create",
-        actor_id=(actor.id if actor is not None else user_id),
+        # SYSTEM_ACTOR has no id: attribute a system-made booking to the person
+        # it was made for rather than leaving the trail blank.
+        actor_id=actor.id or user_id,
         target_type="resource", target_id=resource_id,
         detail=f"{start_date} → {end_date}",
     )
@@ -468,8 +466,7 @@ async def migrate_booking(booking_id: uuid.UUID, new_resource_id: uuid.UUID,
 
     Conflict-checked against the target with the same setup buffer as
     create_booking; the booking's user is notified by email."""
-    if actor is not None:
-        await check_permission(actor, MANAGE_BOOKINGS)
+    await check_permission(actor, MANAGE_BOOKINGS)
     cfg = await bookings_config.get()
     buffer_days = timedelta(days=cfg.resource_setup_buffer_days)
     async with session_scope() as session:
@@ -506,7 +503,7 @@ async def migrate_booking(booking_id: uuid.UUID, new_resource_id: uuid.UUID,
     from not_dot_net.backend.audit import log_audit
     await log_audit(
         "booking", "migrate",
-        actor_id=(actor.id if actor else None),
+        actor_id=actor.id,
         target_type="resource", target_id=new_resource_id,
         detail=f"booking={booking_id} {old_name} → {target.name}",
     )

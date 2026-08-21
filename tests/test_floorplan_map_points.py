@@ -1,5 +1,6 @@
 """Tests for map point placement, listing, deletion, and hit-testing."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 
 import pytest
@@ -88,7 +89,7 @@ async def test_add_map_point_with_resource_id_links_to_resource(monkeypatch, tmp
     await _setup_roles()
     admin = await _create_user(role="admin")
     fp = await _create_floor_plan(admin, monkeypatch, tmp_path)
-    resource = await create_resource("Room 101", "office", location="Palaiseau")
+    resource = await create_resource("Room 101", "office", location="Palaiseau", actor=SYSTEM_ACTOR)
 
     point = await add_map_point(fp.id, "Room 101", "room", 50, 60, resource_id=resource.id, actor=admin)
     assert point.resource_id == resource.id

@@ -1,5 +1,6 @@
 """Superuser hard-delete of workflow requests (test data cleanup)."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import uuid
 from contextlib import asynccontextmanager
 
@@ -33,7 +34,7 @@ async def _make_request(creator: User) -> WorkflowRequest:
     return await create_request(
         workflow_type="vpn_access",
         created_by=creator.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
 
 

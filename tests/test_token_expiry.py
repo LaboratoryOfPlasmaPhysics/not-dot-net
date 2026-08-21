@@ -1,5 +1,6 @@
 """Tests for workflow token expiry."""
 
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 import pytest
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -40,7 +41,7 @@ async def test_valid_token_found():
         workflow_type="onboarding",
         created_by=user.id,
         data={"person_name": "Test", "person_email": "test@ext.com",
-              "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"},
+              "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"}, actor=SYSTEM_ACTOR
     )
     # Submit the request step to advance to newcomer_info (which generates a token)
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
@@ -59,7 +60,7 @@ async def test_expired_token_not_found():
         workflow_type="onboarding",
         created_by=user.id,
         data={"person_name": "Test", "person_email": "test@ext.com",
-              "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"},
+              "role_status": "postdoc", "team": "Plasma Physics", "start_date": "2026-04-01"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, user.id, "submit", data={}, actor_user=user)
     assert req.token is not None

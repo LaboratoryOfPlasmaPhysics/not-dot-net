@@ -1,3 +1,4 @@
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from unittest.mock import MagicMock
 
 
@@ -210,7 +211,7 @@ async def test_submit_step_without_creds_leaves_request_untouched():
     req = await create_request(
         workflow_type="vpn_access",  # default approval step has an ad_add_to_groups effect
         created_by=staff.id,
-        data={"target_name": "Alice", "target_email": "alice@test.com"},
+        data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
     req = await submit_step(req.id, staff.id, "submit", data={}, actor_user=staff)
     assert req.current_step == "approval"
