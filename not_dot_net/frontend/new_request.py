@@ -182,7 +182,8 @@ async def render(user: User):
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
 
-                async def _open_form(fc=form_container, step=first_step, key=wf_key, prefill_data=None, submit_fn=handle_submit):
+                async def _open_form(fc=form_container, step=first_step, key=wf_key,
+                                     wf=wf_config, prefill_data=None, submit_fn=handle_submit):
                     fc.clear()
                     fc.set_visibility(True)
                     with fc:
@@ -192,11 +193,16 @@ async def render(user: User):
                         staged_uploads: dict[str, StagedUpload] = {}
                         uploaded_files: dict[str, str] = {}
 
-                        if key == "onboarding":
-                            def on_select(match: dict):
-                                selection["returning_user_id"] = match["id"]
+                        # Offered by whichever workflows declare a tenure hook —
+                        # keying this on the literal "onboarding" broke the link
+                        # silently the moment the workflow was renamed.
+                        tenure_hook = wf.tenure
+                        email_field_name = wf.target_email_field
+                        if tenure_hook is not None:
+                            def on_select(match: dict, fname=email_field_name):
+                                selection["user_id"] = match["id"]
                                 selection["email"] = match["email"]
-                                email_field = rendered_fields.get("contact_email")
+                                email_field = rendered_fields.get(fname) if fname else None
                                 if email_field is not None:
                                     email_field.set_value(match["email"])
 
@@ -215,12 +221,14 @@ async def render(user: User):
                             uploaded_files[field_name] = filename
                             ui.notify(t("uploaded").format(filename=filename), color="positive")
 
-                        async def submit_with_selection(data, _submit=submit_fn):
+                        async def submit_with_selection(
+                            data, _submit=submit_fn, hook=tenure_hook, fname=email_field_name,
+                        ):
                             merged = dict(data)
                             # Link the returning person only while the email still
                             # matches the selection — editing it cancels the link.
-                            if selection and data.get("contact_email") == selection.get("email"):
-                                merged["returning_user_id"] = selection["returning_user_id"]
+                            if selection and fname and data.get(fname) == selection.get("email"):
+                                merged[hook.returning_user_field] = selection["user_id"]
                             await _submit(merged, staged_uploads=staged_uploads)
 
                         rendered_fields.update(
@@ -245,7 +253,7 @@ async def render(user: User):
                 if clone and clone.get("type") == wf_key:
                     clone_data = {k: v for k, v in clone.get("data", {}).items() if k not in _CLONE_DATE_FIELDS}
                     ui.timer(0, lambda fc=form_container, step=first_step, key=wf_key, cd=clone_data:
-                             _open_form(fc, step, key, cd), once=True)
+                             _open_form(fc, step, key, prefill_data=cd), once=True)
 
 
 def _render_returning_search(on_select) -> None:

@@ -102,12 +102,27 @@ def step_display(step: WorkflowStepConfig) -> str:
     return step.label or step.key.replace("_", " ").capitalize()
 
 
+class TenureHookConfig(BaseModel):
+    """Record a UserTenure when a request of this workflow COMPLETES.
+
+    Declaring it here is what keeps the engine generic: without it the service
+    layer had to test `req.type == "onboarding"` and read fixed field names, so
+    renaming the workflow in the admin editor silently stopped recording
+    tenures. The field names below are the request-data keys to read.
+    """
+    status_field: str = "status"
+    employer_field: str = "employer"
+    start_date_field: str = "start_date"
+    returning_user_field: str = "returning_user_id"
+
+
 class WorkflowConfig(BaseModel):
     label: str
     target_email_field: str | None = None
     steps: list[WorkflowStepConfig]
     notifications: list[NotificationRuleConfig] = []
     document_instructions: dict[str, list[str]] = {}
+    tenure: TenureHookConfig | None = None
 
 
 # --- OrgConfig section ---

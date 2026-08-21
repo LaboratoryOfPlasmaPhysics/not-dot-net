@@ -93,6 +93,17 @@ the usual mistake:
 - `backend/workflow_service.py` — create/submit/cancel/delete/save_draft, queries,
   notification fan-out.
 
+**The engine knows no workflow keys.** A workflow that should record a
+`UserTenure` on completion declares `tenure: TenureHookConfig` (in `config.py`),
+which also names the request-data keys to read — `submit_step` gates on
+`wf.tenure` and `status == COMPLETED`, never on `req.type == "onboarding"`.
+Likewise the new-request returning-person picker keys off `wf.tenure` and
+`wf.target_email_field` rather than literals. `WorkflowsConfig` carries a
+`model_validator(mode="before")` that back-fills the hook for an onboarding
+config saved before the field existed; it is inert once the editor re-saves
+(`model_dump` always writes the key). `compute_warnings` flags a hook field that
+matches no declared field.
+
 **Test seams live where the name is used, not where it is defined.** The LDAP
 primitives are imported into `workflow_ad_account`'s namespace so tests
 monkeypatch them *there*; `UPLOAD_ROOT` is patched on `workflow_uploads` (and

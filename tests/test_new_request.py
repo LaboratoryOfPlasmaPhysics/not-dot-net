@@ -7,7 +7,7 @@ from nicegui import ui
 from nicegui.testing import User
 
 from not_dot_net.backend.workflow_config import workflows_config, WorkflowsConfig
-from not_dot_net.config import WorkflowConfig, WorkflowStepConfig
+from not_dot_net.config import TenureHookConfig, WorkflowConfig, WorkflowStepConfig
 
 
 @pytest.fixture
@@ -64,6 +64,7 @@ async def test_returning_person_selection_prefills_and_submits(user: User):
     await workflows_config.set(WorkflowsConfig(workflows={
         "onboarding": WorkflowConfig(
             label="Onboarding", target_email_field="contact_email",
+            tenure=TenureHookConfig(),
             steps=[
                 WorkflowStepConfig(
                     key="initiation", type="form", assignee="requester",

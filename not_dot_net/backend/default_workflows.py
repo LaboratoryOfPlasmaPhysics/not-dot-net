@@ -6,6 +6,7 @@ are fully editable afterwards via Settings → Workflows.
 
 from not_dot_net.config import (
     FieldConfig,
+    TenureHookConfig,
     NotificationRuleConfig,
     StepEffectConfig,
     WorkflowConfig,
@@ -55,6 +56,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
         "onboarding": WorkflowConfig(
             label="Onboarding",
             target_email_field="contact_email",
+            tenure=TenureHookConfig(),
             document_instructions={
                 "Intern": ["ID document", "Internship agreement", "Photo"],
                 "PhD": ["ID document", "Bank details (RIB)", "Photo", "PhD enrollment certificate"],

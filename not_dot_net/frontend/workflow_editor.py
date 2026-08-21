@@ -1107,6 +1107,20 @@ class WorkflowEditorDialog:
                 warnings.append(
                     f"[{wf_key}] target_email_field '{wf.target_email_field}' does not match any field name"
                 )
+            if wf.tenure is not None:
+                # The hook reads request data by these names; a dangling one
+                # means no tenure gets recorded, with nothing to show for it.
+                # returning_user_field is deliberately not checked: the
+                # new-request picker injects it, it is never a declared field.
+                for attr, declared in (
+                    ("status_field", wf.tenure.status_field),
+                    ("employer_field", wf.tenure.employer_field),
+                    ("start_date_field", wf.tenure.start_date_field),
+                ):
+                    if declared and declared not in field_names:
+                        warnings.append(
+                            f"[{wf_key}] tenure {attr} '{declared}' does not match any field name"
+                        )
             for step in wf.steps:
                 if "request_corrections" in (step.actions or []):
                     if step.corrections_target and step.corrections_target not in step_keys:

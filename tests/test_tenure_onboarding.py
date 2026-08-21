@@ -79,7 +79,8 @@ async def test_employers_vocabulary_has_cnrs():
 
 async def test_create_tenure_from_onboarding_direct():
     """Test _create_tenure_from_onboarding helper directly."""
-    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
     from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
 
     user = await _create_user("newcomer@test.com")
@@ -98,7 +99,7 @@ async def test_create_tenure_from_onboarding_direct():
         await session.commit()
         await session.refresh(req)
 
-    await _create_tenure_from_onboarding(req, user.id)
+    await _record_tenure(req, TenureHookConfig(), user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 1
     assert tenures[0].status == "PhD"
@@ -108,7 +109,8 @@ async def test_create_tenure_from_onboarding_direct():
 
 async def test_create_tenure_from_onboarding_with_start_date():
     """Test that start_date from request data is used if present."""
-    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
     from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
 
     user = await _create_user("newcomer2@test.com")
@@ -126,7 +128,7 @@ async def test_create_tenure_from_onboarding_with_start_date():
         await session.commit()
         await session.refresh(req)
 
-    await _create_tenure_from_onboarding(req, user.id)
+    await _record_tenure(req, TenureHookConfig(), user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 1
     assert tenures[0].start_date == date(2026, 6, 1)
@@ -134,7 +136,8 @@ async def test_create_tenure_from_onboarding_with_start_date():
 
 async def test_create_tenure_skipped_without_employer():
     """No tenure created if employer is missing from request data."""
-    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
     from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
 
     user = await _create_user("newcomer3@test.com")
@@ -152,14 +155,15 @@ async def test_create_tenure_skipped_without_employer():
         await session.commit()
         await session.refresh(req)
 
-    await _create_tenure_from_onboarding(req, user.id)
+    await _record_tenure(req, TenureHookConfig(), user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 0
 
 
 async def test_create_tenure_skipped_without_status():
     """No tenure created if status is missing from request data."""
-    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
     from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
 
     user = await _create_user("newcomer4@test.com")
@@ -177,14 +181,15 @@ async def test_create_tenure_skipped_without_status():
         await session.commit()
         await session.refresh(req)
 
-    await _create_tenure_from_onboarding(req, user.id)
+    await _record_tenure(req, TenureHookConfig(), user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 0
 
 
 async def test_create_tenure_from_onboarding_invalid_start_date_falls_back_to_today():
     """Invalid start_date is ignored instead of crashing tenure creation."""
-    from not_dot_net.backend.workflow_service import _create_tenure_from_onboarding
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
     from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
 
     user = await _create_user("newcomer5@test.com")
@@ -202,7 +207,7 @@ async def test_create_tenure_from_onboarding_invalid_start_date_falls_back_to_to
         await session.commit()
         await session.refresh(req)
 
-    await _create_tenure_from_onboarding(req, user.id)
+    await _record_tenure(req, TenureHookConfig(), user.id)
     tenures = await list_tenures(user.id)
     assert len(tenures) == 1
     assert tenures[0].start_date == date.today()
@@ -347,3 +352,94 @@ async def test_tenure_options_from_registry():
     status, employer = await _tenure_options("en")
     assert status == {"PostDoc": "PostDoc"}
     assert employer == {"CNRS": "CNRS"}
+
+
+# --- D5: the tenure hook must be declared, not keyed on the literal "onboarding" ---
+
+
+async def _clone_onboarding_as(new_key: str):
+    """Register a copy of the onboarding workflow under a different key."""
+    cfg = await workflows_config.get()
+    cfg.workflows[new_key] = cfg.workflows["onboarding"].model_copy(deep=True)
+    await workflows_config.set(cfg)
+    return cfg.workflows[new_key]
+
+
+def _bypass_ad(monkeypatch):
+    import not_dot_net.backend.workflow_ad_account as wa
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        wa, "ldap_create_user",
+        lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y",
+    )
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
+
+
+async def _configure_ad():
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    ad_cfg = await ad_account_config.get()
+    await ad_account_config.set(ad_cfg.model_copy(update={
+        "users_ous": ["OU=Users,DC=x,DC=y"], "eligible_groups": [],
+    }))
+
+
+async def test_rejected_onboarding_does_not_create_a_tenure():
+    """A rejected request must not record a tenure — the person never arrived."""
+    await _setup_roles()
+    initiator = await _create_user("reject-initiator@test.com", role="staff")
+    admin = await _create_user("reject-admin@test.com", role="admin")
+    target = await _create_user("reject-target@test.com", role="staff")
+
+    req = await create_request(
+        workflow_type="onboarding",
+        created_by=initiator.id,
+        data={"contact_email": target.email, "status": "PhD",
+              "employer": "CNRS", "start_date": "2026-09-01"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    req = await submit_step(req.id, actor_id=None, action="submit",
+                            data={"first_name": "No", "last_name": "Show"},
+                            actor_token=req.token)
+    req = await submit_step(req.id, admin.id, "reject", data={}, actor_user=admin)
+
+    assert req.status == "rejected"
+    assert await list_tenures(target.id) == [], "a rejected onboarding recorded a tenure"
+
+
+async def test_tenure_hook_follows_the_config_not_the_workflow_key(monkeypatch):
+    """Renaming the workflow key must not silently stop tenure creation."""
+    await _setup_roles()
+    await _clone_onboarding_as("arrival")
+    _bypass_ad(monkeypatch)
+    await _configure_ad()
+
+    initiator = await _create_user("arrival-initiator@test.com", role="staff")
+    admin = await _create_user("arrival-admin@test.com", role="admin")
+    target = await _create_user("arrival-target@test.com", role="staff")
+
+    req = await create_request(
+        workflow_type="arrival",
+        created_by=initiator.id,
+        data={"contact_email": target.email, "status": "PostDoc",
+              "employer": "CNRS", "start_date": "2026-10-01"},
+        actor=initiator,
+    )
+    req = await submit_step(req.id, initiator.id, "submit", data={}, actor_user=initiator)
+    req = await submit_step(req.id, actor_id=None, action="submit",
+                            data={"first_name": "Ada", "last_name": "Lovelace"},
+                            actor_token=req.token)
+    req = await submit_step(req.id, admin.id, "approve", data={}, actor_user=admin)
+    req = await submit_step(
+        req.id, admin.id, "complete",
+        data={"first_name": "Ada", "last_name": "Lovelace", "sam_account": "alovelace",
+              "ou_dn": "OU=Users,DC=x,DC=y", "mail": "ada@example.com",
+              "home_directory": "/home/alovelace", "groups": []},
+        actor_user=admin, ad_creds=("admin", "password"),
+    )
+
+    assert req.status == "completed"
+    tenures = await list_tenures(target.id)
+    assert len(tenures) == 1, "tenure creation was keyed on the literal 'onboarding'"
+    assert tenures[0].status == "PostDoc"
+    assert tenures[0].start_date == date(2026, 10, 1)

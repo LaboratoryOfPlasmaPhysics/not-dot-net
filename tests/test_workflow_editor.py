@@ -1507,3 +1507,26 @@ async def test_step_label_edit_propagates(user: User, admin_user):
     dlg = captured["dlg"]
     dlg.set_step_field("demo", "s1", "label", "First step")
     assert dlg.working_copy.workflows["demo"].steps[0].label == "First step"
+
+
+async def test_warns_when_a_tenure_hook_names_a_field_that_does_not_exist(user: User, admin_user):
+    """D5: the hook's field names are references — a dangling one must not be silent."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    from not_dot_net.config import TenureHookConfig
+
+    await workflows_config.set(WorkflowsConfig(workflows={"arrival": WorkflowConfig(
+        label="Arrival",
+        tenure=TenureHookConfig(status_field="grade", employer_field="employer"),
+        steps=[WorkflowStepConfig(key="initiation", type="form", actions=["submit"], fields=[
+            FieldConfig(name="employer", type="text", label="Employer")])])}))
+    captured = {}
+
+    @ui.page("/_tenure_warn")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_tenure_warn")
+    warnings = captured["dlg"].compute_warnings()
+
+    assert any("grade" in w for w in warnings), warnings
+    assert not any("employer" in w for w in warnings), "a declared field that exists was flagged"

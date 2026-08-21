@@ -198,18 +198,39 @@ async def create_request(
         return req
 
 
-async def _create_tenure_from_onboarding(req: WorkflowRequest, user_id: uuid.UUID) -> None:
-    """Create a tenure record from a completed onboarding request."""
+async def _resolve_tenure_subject(req: WorkflowRequest, hook) -> uuid.UUID | None:
+    """Whose tenure this is: the declared returning-person field, else target_email."""
+    returning = req.data.get(hook.returning_user_field)
+    if returning:
+        try:
+            return uuid.UUID(str(returning))
+        except (ValueError, TypeError):
+            logger.warning(
+                "Request %s has an unusable %s=%r", req.id, hook.returning_user_field, returning
+            )
+    if not req.target_email:
+        return None
+    async with session_scope() as session:
+        target = (await session.execute(
+            select(User).where(
+                sa_func.lower(User.email) == req.target_email.strip().lower()
+            )
+        )).scalar_one_or_none()
+    return target.id if target else None
 
-    status = req.data.get("status")
-    employer = req.data.get("employer")
+
+async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None:
+    """Create the tenure a completed request declares, reading the hook's fields."""
+    status = req.data.get(hook.status_field)
+    employer = req.data.get(hook.employer_field)
     if not status or not employer:
         return
 
     start_date = dt_date.today()
-    if req.data.get("start_date"):
+    raw_start = req.data.get(hook.start_date_field)
+    if raw_start:
         try:
-            start_date = dt_date.fromisoformat(req.data["start_date"])
+            start_date = dt_date.fromisoformat(raw_start)
         except (ValueError, TypeError):
             pass
 
@@ -355,26 +376,17 @@ async def submit_step(
         if new_status in _TERMINAL_STATUSES:
             await schedule_file_retention(req.id, new_status)
 
-            if req.type == "onboarding":
-                try:
-                    target_user_id = None
-                    if req.data.get("returning_user_id"):
-                        target_user_id = uuid.UUID(req.data["returning_user_id"])
-                    elif req.target_email:
-                        async with session_scope() as tenure_session:
-                            result = await tenure_session.execute(
-                                select(User).where(
-                                    sa_func.lower(User.email)
-                                    == req.target_email.strip().lower()
-                                )
-                            )
-                            target_user = result.scalar_one_or_none()
-                            if target_user:
-                                target_user_id = target_user.id
-                    if target_user_id:
-                        await _create_tenure_from_onboarding(req, target_user_id)
-                except Exception:
-                    logger.exception("Failed to create tenure for onboarding request %s", req.id)
+        # A tenure records an arrival, so only a COMPLETED request may create
+        # one — rejected and cancelled mean the person never turned up. Which
+        # workflows record a tenure, and under which field names, is declared
+        # on the workflow (`tenure`); the engine knows no workflow keys.
+        if wf.tenure is not None and new_status == RequestStatus.COMPLETED:
+            try:
+                subject_id = await _resolve_tenure_subject(req, wf.tenure)
+                if subject_id:
+                    await _record_tenure(req, wf.tenure, subject_id)
+            except Exception:
+                logger.exception("Failed to record tenure for request %s", req.id)
 
         # Audit. Token submissions have no logged-in actor (actor_id is None);
         # attribute them to the target person's email so the trail isn't blank.
