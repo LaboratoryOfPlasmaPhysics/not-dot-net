@@ -238,3 +238,59 @@ async def test_existing_ldap_user_gets_resynced_on_login():
     async with session_scope() as session:
         refreshed = await session.get(User, user_id)
         assert refreshed.employment_status == "Permanent"  # preserved
+
+
+# --- Review 2026-10-12 S5: AD login must not take over accounts by email ---
+
+
+async def _local_user(email: str, **fields) -> User:
+    async with session_scope() as session:
+        user = User(email=email, hashed_password="x", is_active=True, **fields)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def test_ad_login_never_takes_over_a_local_superuser():
+    root = await _local_user("it-admin@example.com", is_superuser=True, auth_method=AuthMethod.LOCAL)
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(_make_fake_connect({
+        "intruder": {"mail": "it-admin@example.com", "password": "pw"},
+    }))
+
+    assert await _try_ldap_auth("intruder", "pw") is None
+    async with session_scope() as session:
+        reloaded = await session.get(User, root.id)
+        assert reloaded.auth_method == AuthMethod.LOCAL
+        assert reloaded.hashed_password == "x"
+
+
+async def test_ad_login_refuses_another_account_with_the_same_mail():
+    """An account already linked to AD only accepts its own sAMAccountName;
+    anyone able to set `mail` on another AD object must not log in as it."""
+    await _local_user(
+        "alice@example.com", auth_method=AuthMethod.LDAP,
+        ldap_username="alice", ldap_dn="cn=alice,ou=users,dc=example,dc=com",
+    )
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(_make_fake_connect({
+        "mallory": {"mail": "alice@example.com", "password": "pw"},
+    }))
+
+    assert await _try_ldap_auth("mallory", "pw") is None
+
+
+async def test_ad_login_accepts_linked_account_after_ou_move():
+    """The DN changes when AD moves a user between OUs; sAMAccountName doesn't."""
+    alice = await _local_user(
+        "alice2@example.com", auth_method=AuthMethod.LDAP,
+        ldap_username="alice2", ldap_dn="cn=alice2,ou=old,dc=example,dc=com",
+    )
+    await ldap_config.set(LDAP_CFG)
+    set_ldap_connect(_make_fake_connect({
+        "alice2": {"mail": "alice2@example.com", "password": "pw"},
+    }))
+
+    user = await _try_ldap_auth("alice2", "pw")
+    assert user is not None and user.id == alice.id

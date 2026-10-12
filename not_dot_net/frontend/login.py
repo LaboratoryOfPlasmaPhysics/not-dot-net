@@ -129,6 +129,20 @@ async def _audit_failed_superuser_login(username: str, request: Request) -> None
     )
 
 
+def _ad_identity_may_use(user, user_info) -> bool:
+    """Whether the AD account that just authenticated may log in as `user`,
+    found by email. Email alone is not identity: anyone able to set `mail` on
+    an AD object would otherwise take the account over.
+
+    An account already linked to AD only accepts its own sAMAccountName (the
+    DN changes on an OU move, the sAM doesn't). An unlinked local account may
+    be linked by email, except a superuser's, which is never auto-linked.
+    """
+    if user.ldap_username:
+        return (user_info.sam_account_name or "").lower() == user.ldap_username.lower()
+    return not user.is_superuser
+
+
 async def _try_ldap_auth(username: str, password: str):
     """Attempt LDAP auth. Returns User or None. Syncs AD attrs on success."""
     from not_dot_net.backend.auth.ldap import (
@@ -158,6 +172,13 @@ async def _try_ldap_auth(username: str, password: str):
 
     if user is not None:
         if not user.is_active:
+            ldap_conn.unbind()
+            return None
+        if not _ad_identity_may_use(user, user_info):
+            logger.warning(
+                "AD account '%s' matched local account %s by email only; refused",
+                user_info.sam_account_name, user.id,
+            )
             ldap_conn.unbind()
             return None
         from not_dot_net.backend.db import AuthMethod
