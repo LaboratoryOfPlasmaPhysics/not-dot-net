@@ -193,6 +193,61 @@ def test_ldap_add_to_groups_collects_per_group_failures():
     assert "constraintViolation" in failures["CN=g1,DC=x"] or "nope" in failures["CN=g1,DC=x"]
 
 
+class _RefusingConn(_FakeConn):
+    """modify() fails with a fixed LDAP result."""
+
+    def __init__(self, code: int, description: str, message: str = ""):
+        super().__init__()
+        self._refusal = {"result": code, "description": description, "message": message}
+
+    def modify(self, dn, changes):
+        self.calls.append(("modify", (dn, changes)))
+        self.result = dict(self._refusal)
+        return False
+
+
+@pytest.mark.parametrize("code, description, message", [
+    (68, "entryAlreadyExists", "00000562: UpdErr: DSID-031A11C4, problem 6005 (ENTRY_EXISTS)"),
+    (20, "attributeOrValueExists", ""),
+])
+def test_ldap_add_to_groups_treats_existing_membership_as_success(code, description, message):
+    """Review 2026-10-12 W2: a retry re-adds every group, and AD refuses a
+    member who is already there, so a half-done group effect never resolved.
+    AD answers 68/00000562; standard servers answer attributeOrValueExists."""
+    from not_dot_net.backend.auth.ldap import ldap_add_to_groups, LdapConfig
+    conn = _RefusingConn(code, description, message)
+    failures = ldap_add_to_groups(
+        "CN=alice,DC=x", ["CN=g1,DC=x"], "admin", "pw", LdapConfig(base_dn="DC=x"),
+        _fake_connect_returning(conn),
+    )
+    assert failures == {}
+
+
+@pytest.mark.parametrize("code, description, message", [
+    (53, "unwillingToPerform", "00000561: SvcErr: DSID-031A1254, problem 5003 (WILL_NOT_PERFORM)"),
+    (16, "noSuchAttribute", ""),
+])
+def test_ldap_remove_from_groups_treats_missing_membership_as_success(code, description, message):
+    from not_dot_net.backend.auth.ldap import ldap_remove_from_groups, LdapConfig
+    conn = _RefusingConn(code, description, message)
+    failures = ldap_remove_from_groups(
+        "CN=alice,DC=x", ["CN=g1,DC=x"], "admin", "pw", LdapConfig(base_dn="DC=x"),
+        _fake_connect_returning(conn),
+    )
+    assert failures == {}
+
+
+def test_ldap_remove_from_groups_still_reports_other_unwilling_to_perform():
+    """53 is a generic AD refusal; only 00000561 means 'not a member'."""
+    from not_dot_net.backend.auth.ldap import ldap_remove_from_groups, LdapConfig
+    conn = _RefusingConn(53, "unwillingToPerform", "0000209A: SvcErr: problem 5003")
+    failures = ldap_remove_from_groups(
+        "CN=alice,DC=x", ["CN=g1,DC=x"], "admin", "pw", LdapConfig(base_dn="DC=x"),
+        _fake_connect_returning(conn),
+    )
+    assert "CN=g1,DC=x" in failures
+
+
 def test_ldap_remove_from_groups_uses_modify_delete():
     from not_dot_net.backend.auth.ldap import ldap_remove_from_groups, LdapConfig
     conn = _FakeConn()

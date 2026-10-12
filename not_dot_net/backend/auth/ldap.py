@@ -914,6 +914,25 @@ def ldap_reset_password(
         conn.unbind()
 
 
+# (result code, AD message prefix or "") meaning the membership is already in
+# the wanted state. Group effects are retried as a whole, so these must count
+# as success or a half-done effect never resolves. AD uses its own codes:
+# https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--1300-1699-
+# (0x562 ERROR_MEMBER_IN_GROUP, 0x561 ERROR_MEMBER_NOT_IN_GROUP).
+_ALREADY_DONE = {
+    MODIFY_ADD: {(20, ""), (68, "00000562")},     # attributeOrValueExists / AD
+    MODIFY_DELETE: {(16, ""), (53, "00000561")},  # noSuchAttribute / AD
+}
+
+
+def _membership_already_done(op_kind, result: dict) -> bool:
+    code, message = result.get("result"), result.get("message") or ""
+    return any(
+        code == want and message.startswith(prefix)
+        for want, prefix in _ALREADY_DONE[op_kind]
+    )
+
+
 def _modify_group_member(
     op_kind,  # MODIFY_ADD or MODIFY_DELETE
     user_dn: str,
@@ -934,7 +953,7 @@ def _modify_group_member(
     try:
         for gdn in group_dns:
             ok = conn.modify(gdn, {"member": [(op_kind, [user_dn])]})
-            if not ok:
+            if not ok and not _membership_already_done(op_kind, conn.result):
                 failures[gdn] = (
                     f"{conn.result.get('description')} ({conn.result.get('message')})"
                 )
