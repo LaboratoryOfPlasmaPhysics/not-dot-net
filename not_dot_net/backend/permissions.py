@@ -50,6 +50,21 @@ class _SystemActor:
 SYSTEM_ACTOR = _SystemActor()
 
 
+async def _current_state(user):
+    """The user's row as it is now, or None if it was deleted.
+
+    A NiceGUI tab keeps the User captured at page load for as long as its
+    websocket lives, so a demoted, revoked or deactivated user would keep
+    their old powers in an open tab. One primary-key read per check.
+    Non-ORM actors (SYSTEM_ACTOR) are taken as they are.
+    """
+    from not_dot_net.backend.db import User, session_scope
+    if not isinstance(user, User):
+        return user
+    async with session_scope() as session:
+        return await session.get(User, user.id)
+
+
 async def has_permissions(user, *permissions: str) -> bool:
     """Check if user's role grants all given permissions.
 
@@ -57,6 +72,9 @@ async def has_permissions(user, *permissions: str) -> bool:
     passes None gets refused rather than skipping the check.
     """
     if user is None:
+        return False
+    user = await _current_state(user)
+    if user is None or not getattr(user, "is_active", True):
         return False
     if getattr(user, "is_superuser", False):
         return True

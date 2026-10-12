@@ -11,7 +11,7 @@ from not_dot_net.backend.permissions import (
     check_permission,
     require,
 )
-from not_dot_net.backend.roles import RoleDefinition, roles_config
+from not_dot_net.backend.roles import RoleDefinition, RolesConfig, roles_config
 from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.backend.schemas import UserCreate, UserUpdate
@@ -237,3 +237,47 @@ async def test_role_update_preserves_is_superuser():
         refreshed = await session.get(User, user.id)
         assert refreshed.role == "member"
         assert refreshed.is_superuser is True
+
+
+# --- Review 2026-10-12 S4: an open tab keeps the User captured at page load ---
+
+
+async def _persisted(email: str, **fields) -> User:
+    async with session_scope() as session:
+        user = User(email=email, hashed_password="x", is_active=True, **fields)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def _set(user_id, **fields) -> None:
+    async with session_scope() as session:
+        db_user = await session.get(User, user_id)
+        for k, v in fields.items():
+            setattr(db_user, k, v)
+        await session.commit()
+
+
+async def test_demoted_user_loses_permissions_in_open_tab():
+    await roles_config.set(RolesConfig(roles={"admin": RoleDefinition(label="A", permissions=["manage_users"])}))
+    tab_user = await _persisted("demoted@test.com", role="admin")
+    await _set(tab_user.id, role="")
+    assert not await has_permissions(tab_user, "manage_users")
+
+
+async def test_revoked_superuser_loses_bypass_in_open_tab():
+    tab_user = await _persisted("ex-root@test.com", is_superuser=True)
+    await _set(tab_user.id, is_superuser=False)
+    assert not await has_permissions(tab_user, "manage_users")
+
+
+async def test_deactivated_user_loses_permissions_in_open_tab():
+    tab_user = await _persisted("gone@test.com", is_superuser=True)
+    await _set(tab_user.id, is_active=False)
+    assert not await has_permissions(tab_user, "manage_users")
+
+
+async def test_system_actor_still_bypasses():
+    from not_dot_net.backend.permissions import SYSTEM_ACTOR
+    assert await has_permissions(SYSTEM_ACTOR, "manage_users")

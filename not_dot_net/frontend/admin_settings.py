@@ -210,6 +210,8 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
     editor = ui.codemirror(yaml_str, language="yaml").classes("w-full").style("min-height: 300px")
 
     async def save():
+        if not await _may_manage_settings(user):
+            return
         try:
             data = safe_load(editor.value)
             new_config = cfg_section.schema.model_validate(data)
@@ -220,15 +222,32 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
             notify_error(e)
 
     async def reset():
+        if not await _may_manage_settings(user):
+            return
         await cfg_section.reset()
         default = cfg_section.schema()
         editor.value = safe_dump(default.model_dump(), default_flow_style=False, allow_unicode=True)
         await log_audit("settings", "reset", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
         ui.notify(t("settings_reset"), color="info")
 
+    reset_dlg = confirm_dialog(
+        t("confirm_reset_defaults"), reset,
+        confirm_label=t("reset_defaults"), confirm_icon="restart_alt",
+    )
     with ui.row():
-        ui.button(t("save"), on_click=save).props("color=primary")
-        ui.button(t("reset_defaults"), on_click=reset).props("flat color=grey")
+        ui.button(t("save"), on_click=save).props("color=primary").mark("yaml-save")
+        ui.button(t("reset_defaults"), on_click=reset_dlg.open).props("flat color=grey")
+
+
+async def _may_manage_settings(user) -> bool:
+    """Callback-time re-check: the tab may outlive the permission."""
+    from not_dot_net.backend.permissions import check_permission
+    try:
+        await check_permission(user, "manage_settings")
+    except PermissionError:
+        ui.notify(t("permission_denied"), color="negative")
+        return False
+    return True
 
 
 def _render_import_export(user):

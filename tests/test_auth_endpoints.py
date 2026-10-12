@@ -375,7 +375,10 @@ async def test_login_endpoint_falls_back_to_ldap_when_local_auth_fails(monkeypat
             return ldap_user
         return None
 
-    monkeypatch.setattr("not_dot_net.frontend.login._try_ldap_auth", fake_try_ldap_auth)
+    # Patch the namespace handle_login actually reads: once a NiceGUI `user`
+    # fixture test has re-run the app, sys.modules may hold a newer login
+    # module than the one this file imported handle_login from.
+    monkeypatch.setitem(handle_login.__globals__, "_try_ldap_auth", fake_try_ldap_auth)
 
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
