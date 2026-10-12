@@ -11,7 +11,8 @@ Prefixes: **S** security · **F** broken feature · **W** workflow · **U** UX f
 ## Status (updated 2026-10-12)
 
 **Fixed:** S1, S2, S4, S5, S7, S11, F1, F2, F3 (dialog only), F4, F5, F6, F8,
-F15, W1, W2, W3, W4, W5, U1, U2, U3, U4, U15, T1. Also a bug found while fixing F2: `t(name, key=...)`
+F15, W1, W2, W3, W4, W5, U1-U10, U15, V1-V4, T1. Also: overlapping
+dashboard refreshes drew the action cards twice (seen in the live check). Also a bug found while fixing F2: `t(name, key=...)`
 raised TypeError, so the roles panel and role/vocabulary deletes crashed.
 **By design:** S6.
 **F3 legacy data:** checked on production 2026-10-12: all 27 resources already
@@ -19,8 +20,15 @@ store site codes (`palaiseau`/`jussieu`), so no migration is needed. Only the
 dev demo data (`seed_data.py`) uses capitalized names. Production vocabulary
 terms have no labels, so raw codes are displayed (V6). Fill in labels in
 Settings → Vocabularies.
-**Open:** everything else. Next suggested: V1-V5, U5-U10. T2 (test-count
-gap) unexplained.
+**V5 needs a decision:** production Postgres runs with `timezone =
+Europe/Paris`. Columns filled by `server_default=now()` (request/event/audit
+`created_at`, ...) therefore hold Paris local time, while Python-written
+columns (`token_expires_at`, `retained_until`, outbox times, `last_ad_logon`)
+hold UTC. SQLite dev is all UTC, which is why dev showed times 2 h off.
+Clean fix: pin the DB session to UTC and migrate the `server_default`
+columns' existing rows from Paris to UTC; then convert to Europe/Paris
+for display everywhere.
+**Open:** everything else. T2 (test-count gap) unexplained.
 
 ## Test suite
 
