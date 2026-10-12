@@ -48,6 +48,20 @@ def confirm_dialog(
     )
 
 
+def options_with(options, value, *, label: str | None = None):
+    """`options` plus `value` if it is missing, so ui.select can show it.
+
+    ui.select raises ValueError on a value outside its options, and stored
+    data outlives what is offered: a deactivated term, an inactive owner, a
+    deleted role. Dict options get `label` (default: the value as text).
+    """
+    if value is None or value in options:
+        return options
+    if isinstance(options, dict):
+        return {**options, value: label if label is not None else str(value)}
+    return [*options, value]
+
+
 def chip_list_editor(
     value: list[str],
     *,

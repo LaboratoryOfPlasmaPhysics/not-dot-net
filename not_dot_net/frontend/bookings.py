@@ -28,7 +28,7 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import confirm_dialog, options_with
 
 RESOURCE_TYPES = ["desktop", "laptop", "office"]
 
@@ -368,6 +368,14 @@ def _get_resource_for_booking(resource_id, resources):
         if r.id == resource_id:
             return r
     return None
+
+
+async def _user_display(user_id) -> str | None:
+    if user_id is None:
+        return None
+    async with session_scope() as session:
+        user = await session.get(User, user_id)
+    return (user.full_name or user.email) if user else None
 
 
 async def _load_active_users() -> list[User]:
@@ -741,9 +749,13 @@ async def _show_resource_dialog(outer_container, user, resource=None, on_saved=N
         ).props("outlined dense").classes("w-full")
 
         sites = [term.code for term in await resolve_terms("sites")]
+        # Keep a stored location that is no longer an active site code (legacy
+        # free text, deactivated term): falling back to sites[0] silently
+        # moved the resource on its next save.
+        location = resource.location if editing else (sites[0] if sites else None)
         location_select = ui.select(
-            options=sites,
-            value=resource.location if editing and resource.location in sites else (sites[0] if sites else None),
+            options=options_with(sites, location),
+            value=location,
             label=t("resource_location"),
         ).props("outlined dense").classes("w-full")
 
@@ -766,10 +778,11 @@ async def _show_resource_dialog(outer_container, user, resource=None, on_saved=N
 
         active_users = await _load_active_users()
         owner_options = {None: t("no_owner"), **{u.id: (u.full_name or u.email) for u in active_users}}
+        owner_id = resource.owner_user_id if editing else None
         with owner_container:
             owner_select = ui.select(
-                owner_options,
-                value=resource.owner_user_id if editing else None,
+                options_with(owner_options, owner_id, label=await _user_display(owner_id)),
+                value=owner_id,
                 label=t("resource_owner"),
             ).props("outlined dense with-input").classes("w-full")
 

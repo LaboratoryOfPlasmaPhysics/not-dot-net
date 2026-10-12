@@ -6,9 +6,9 @@ from sqlalchemy import select, func
 
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import check_permission, get_permissions, MANAGE_ROLES
-from not_dot_net.backend.roles import RoleDefinition, roles_config
+from not_dot_net.backend.roles import RoleDefinition, RolesConfig, roles_config
 from not_dot_net.frontend.i18n import t
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import confirm_dialog, options_with
 
 
 async def render(user):
@@ -21,6 +21,17 @@ async def render(user):
         await _render_roles(container, user)
 
     ui.timer(0, refresh, once=True)
+
+
+def role_delete_blocker(role_key: str, cfg: RolesConfig, user_counts: dict[str, int]) -> str | None:
+    """Why `role_key` can't be deleted, or None. The default role is still
+    assigned to every newly provisioned user even when nobody holds it now."""
+    if role_key == cfg.default_role:
+        return t("role_delete_is_default", key=role_key)
+    count = user_counts.get(role_key, 0)
+    if count > 0:
+        return t("role_delete_in_use", key=role_key, count=count)
+    return None
 
 
 async def _user_count_by_role() -> dict[str, int]:
@@ -76,7 +87,7 @@ async def _render_roles(container, user):
 
         # Default role selector
         ui.label(t("default_role")).classes("text-subtitle2 mt-4")
-        role_options = [""] + sorted(cfg.roles.keys())
+        role_options = options_with([""] + sorted(cfg.roles.keys()), cfg.default_role)
         default_select = ui.select(
             options=role_options,
             value=cfg.default_role,
@@ -137,14 +148,11 @@ async def _render_role_editor(outer_container, user, role_key, role_def, all_per
             except PermissionError:
                 ui.notify(t("permission_denied"), color="negative")
                 return
-            current_count = (await _user_count_by_role()).get(role_key, 0)
-            if current_count > 0:
-                ui.notify(
-                    t("role_delete_in_use", key=role_key, count=current_count),
-                    color="negative",
-                )
-                return
             cfg = await roles_config.get()
+            blocker = role_delete_blocker(role_key, cfg, await _user_count_by_role())
+            if blocker:
+                ui.notify(blocker, color="negative")
+                return
             del cfg.roles[role_key]
             await roles_config.set(cfg)
             ui.notify(t("role_deleted", key=role_key), color="positive")

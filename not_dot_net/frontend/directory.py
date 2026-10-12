@@ -20,7 +20,7 @@ from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import confirm_dialog, options_with
 from not_dot_net.backend.permissions import (
     MANAGE_ROLES, check_permission, has_permissions, permission,
 )
@@ -580,6 +580,10 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
 
             async def handle_photo_upload(event):
                 upload = event.file
+                # Size before read: max_file_size is only enforced in the browser.
+                if upload.size() > profile_photo_max_bytes(files_cfg.profile_photo_max_size_mb):
+                    notify_photo_too_large()
+                    return
                 content = await upload.read()
                 filename = upload.name or ""
                 error = await validate_profile_photo_upload(content, filename)
@@ -866,8 +870,12 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
     dialog = ui.dialog()
     with dialog, ui.card().classes("w-96"):
         ui.label(t("edit_tenure")).classes("text-h6")
-        status_input = ui.select(status_opts, value=tenure.status, label=t("status")).props("outlined dense stack-label")
-        employer_input = ui.select(employer_opts, value=tenure.employer, label=t("employer")).props("outlined dense stack-label")
+        status_input = ui.select(
+            options_with(status_opts, tenure.status), value=tenure.status, label=t("status"),
+        ).props("outlined dense stack-label")
+        employer_input = ui.select(
+            options_with(employer_opts, tenure.employer), value=tenure.employer, label=t("employer"),
+        ).props("outlined dense stack-label")
         start_input = ui.input(t("start_date"), value=str(tenure.start_date)).props("outlined dense stack-label")
         end_input = ui.input(t("end_date"), value=str(tenure.end_date) if tenure.end_date else "").props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes"), value=tenure.notes or "").props("outlined dense stack-label")
