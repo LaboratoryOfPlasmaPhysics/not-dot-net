@@ -24,7 +24,21 @@ Settings → Vocabularies.
 so now()-filled columns held Paris time and Python-written ones UTC. App
 sessions are now pinned to UTC, migration 0021 converts the old rows on the
 next deploy, and pages show the viewer's browser timezone.
-**Open:** everything else. T2 (test-count gap) unexplained.
+**Group 3 fixed (45bcc6d, 6a34954, cbf45a3, 7eea9ef, c5cf432):** S3, S8, S9
+(LDAP section superuser-only; the tls_mode default is unchanged, production
+already uses LDAPS), S10, S12, S13 (cross-site login/logout refused; the JWT
+is still not revoked at logout), F7, F9, F10 (office buffer only), F11,
+F12 (resource status/owner, tenure replace), F13, F14, W6-W9, U11-U14,
+V6-V16. Migration 0022 (audit actor index) runs with 0021 on the next deploy.
+**False positive:** F10 "out_of_service resources bookable". The
+resource-lifecycle spec says out-of-service is temporary and does not block
+future bookings; a test pins it.
+**Not done:** F12 export of bookings, availability windows and floor plans
+(the export is a content transfer, pg_dump is the backup); JWT revocation
+at logout (S13). T2 not investigated: the suite now has 1412 tests.
+**Production config to update by hand:** the stored onboarding workflow
+has no `start_date` field (W6), and the stored VPN workflow label is still
+"VPN Access Request".
 
 ## Test suite
 
