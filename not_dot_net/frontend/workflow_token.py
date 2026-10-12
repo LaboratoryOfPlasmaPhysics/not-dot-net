@@ -17,7 +17,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config
 from not_dot_net.backend.mail import send_mail
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import apply_quasar_locale, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.workflow_step import render_step_form
@@ -60,6 +60,7 @@ def _make_save_draft_handler(request_id, token: str):
 def setup():
     @ui.page("/workflow/token/{token}")
     async def token_page(token: str):
+        apply_quasar_locale()
         req = await get_request_by_token(token)
 
         if req is None:

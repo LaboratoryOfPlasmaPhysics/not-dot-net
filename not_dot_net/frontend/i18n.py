@@ -84,7 +84,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "confirm_bulk": "{action} for {n} selected user(s)? Provide AD admin credentials.",
         "bulk_done": "{ok} updated, {failed} failed",
         "nothing_selected": "Select one or more rows first",
-        "hint_dblclick_to_edit": "Double-click a row to edit",
         "forbidden": "Forbidden",
         "not_found": "Not found",
         "close": "Close",
@@ -143,6 +142,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "created_at": "Created",
         "approve": "Approve",
         "reject": "Reject",
+        "did_create": "created",
+        "did_submit": "submitted",
+        "did_approve": "approved",
+        "did_reject": "rejected",
+        "did_request_corrections": "requested changes",
+        "did_complete": "completed",
+        "did_cancel": "cancelled",
+        "did_save_draft": "saved a draft",
+        "age_days": "{days}d",
         "workflow_save_strands_requests": "Not saved: {count} request(s) in progress sit on steps this change removes ({steps}). Finish or cancel them first, or keep those steps.",
         "confirm_reject": "Reject this request? The requester will be notified with your comment.",
         "reject_reason_required": "A reason is required to reject: please fill in the comment.",
@@ -423,6 +431,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Roles
         "role": "Role",
         "roles": "Roles",
+        "workflow_counts": "{workflows} workflows, {steps} steps",
         "role_key": "Key",
         "role_label": "Label",
         "add": "Add",
@@ -728,7 +737,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "confirm_bulk": "{action} pour {n} utilisateur(s) sélectionné(s) ? Fournissez les identifiants AD admin.",
         "bulk_done": "{ok} mis à jour, {failed} en échec",
         "nothing_selected": "Sélectionnez d'abord au moins une ligne",
-        "hint_dblclick_to_edit": "Double-cliquez sur une ligne pour modifier",
         "forbidden": "Interdit",
         "not_found": "Introuvable",
         "close": "Fermer",
@@ -787,6 +795,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "created_at": "Créé le",
         "approve": "Approuver",
         "reject": "Rejeter",
+        "did_create": "créée",
+        "did_submit": "soumise",
+        "did_approve": "approuvée",
+        "did_reject": "rejetée",
+        "did_request_corrections": "modifications demandées",
+        "did_complete": "terminée",
+        "did_cancel": "annulée",
+        "did_save_draft": "brouillon enregistré",
+        "age_days": "{days} j",
         "workflow_save_strands_requests": "Non enregistré : {count} demande(s) en cours sont sur des étapes que cette modification supprime ({steps}). Terminez-les ou annulez-les d'abord, ou conservez ces étapes.",
         "confirm_reject": "Rejeter cette demande ? Le demandeur sera notifié avec votre commentaire.",
         "reject_reason_required": "Un motif est requis pour rejeter : merci de remplir le commentaire.",
@@ -1067,6 +1084,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Roles
         "role": "Rôle",
         "roles": "Rôles",
+        "workflow_counts": "{workflows} workflows, {steps} étapes",
         "role_key": "Clé",
         "role_label": "Libellé",
         "add": "Ajouter",
@@ -1333,6 +1351,38 @@ def _parse_accept_language(header: str) -> str:
         if lang.startswith("en"):
             return "en"
     return DEFAULT_LOCALE
+
+
+# App locale → Quasar language pack shipped by NiceGUI. English is Quasar's default.
+_QUASAR_LANG = {"fr": "fr"}
+
+
+def quasar_lang_script(locale: str) -> str | None:
+    """JS that loads and activates Quasar's own strings (table paging, date
+    pickers) for `locale`, or None when Quasar's default already fits.
+
+    NiceGUI only sets a Quasar language per page or per app, while ours is per
+    user — so it is switched at runtime, as Quasar documents for UMD builds.
+    """
+    pack = _QUASAR_LANG.get(locale)
+    if pack is None:
+        return None
+    import nicegui
+    src = f"/_nicegui/{nicegui.__version__}/static/lang/{pack}.umd.prod.js"
+    return (
+        "(() => { const s = document.createElement('script');"
+        f" s.src = '{src}';"
+        f" s.onload = () => Quasar.Lang.set(Quasar.Lang.{pack});"
+        " document.head.appendChild(s); })()"
+    )
+
+
+def apply_quasar_locale() -> None:
+    """Call once per page build, after the user's locale is known."""
+    from nicegui import ui
+    script = quasar_lang_script(get_locale())
+    if script:
+        ui.run_javascript(script)
 
 
 def set_locale(locale: str) -> None:

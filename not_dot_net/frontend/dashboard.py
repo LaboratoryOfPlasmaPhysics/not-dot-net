@@ -1,5 +1,6 @@
 """Dashboard tab — Awaiting My Action + My Requests."""
 
+import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -21,6 +22,7 @@ from not_dot_net.backend.workflow_engine import get_current_step_config, get_ste
 from not_dot_net.config import dashboard_config, step_display
 from not_dot_net.frontend.i18n import format_short_date, t
 from not_dot_net.frontend.workflow_step import (
+    event_label,
     render_step_progress,
 )
 
@@ -48,11 +50,16 @@ def render(user: User):
     actionable_container = ui.column().classes("w-full")
     my_requests_container = ui.column().classes("w-full")
 
+    # Each section clears, awaits the DB, then draws: overlapping refreshes
+    # (initial timer + shell tab refresh) would both draw — duplicated cards.
+    lock = asyncio.Lock()
+
     async def refresh():
-        await _render_pages_section(pages_container)
-        if user.is_active:
-            await _render_actionable(actionable_container, user)
-            await _render_my_requests(my_requests_container, user)
+        async with lock:
+            await _render_pages_section(pages_container)
+            if user.is_active:
+                await _render_actionable(actionable_container, user)
+                await _render_my_requests(my_requests_container, user)
 
     ui.timer(0, refresh, once=True)
     return refresh
@@ -131,7 +138,7 @@ def _render_actionable_urgency_badge(age: int) -> None:
         "border-radius: 999px; background: rgba(255, 255, 255, 0.35);"
     ):
         ui.icon("schedule", size="14px").style("color: #111827;")
-        ui.label(f"{age}d").classes("leading-none").style("color: #111827;")
+        ui.label(t("age_days", days=age)).classes("leading-none").style("color: #111827;")
 
 
 
@@ -214,6 +221,7 @@ async def _render_requests_table(container, requests):
                 "progress_pct": current / total if total else 0,
                 "step": step_label,
                 "age": age,
+                "age_label": t("age_days", days=age),
                 "age_color": (
                     "positive" if age < dash_cfg.urgency_fresh_days
                     else "warning" if age < dash_cfg.urgency_aging_days
@@ -221,6 +229,7 @@ async def _render_requests_table(container, requests):
                 ),
                 "date": _format_date(req.created_at),
                 "status": req.status,
+                "status_label": t(req.status),
             })
 
         table = ui.table(
@@ -233,11 +242,11 @@ async def _render_requests_table(container, requests):
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <q-badge v-if="col.name === 'status'"
                         :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : col.value === 'cancelled' ? 'grey' : 'primary'"
-                        :label="col.value"
+                        :label="props.row.status_label"
                     />
                     <q-badge v-else-if="col.name === 'age'"
                         :color="props.row.age_color"
-                        :label="col.value + 'd'"
+                        :label="props.row.age_label"
                         outline
                     />
                     <div v-else-if="col.name === 'progress'" class="flex items-center gap-1" style="min-width: 80px">
@@ -258,7 +267,7 @@ async def _render_requests_table(container, requests):
 
         # Filter row
         type_options = sorted({r["type"] for r in rows})
-        status_options = sorted({r["status"] for r in rows})
+        status_options = {r["status"]: r["status_label"] for r in rows}
 
         table.add_slot("top-left", "")
         with table.add_slot("top-right"):
@@ -270,7 +279,7 @@ async def _render_requests_table(container, requests):
                 ).props("outlined dense clearable").classes("min-w-[160px]")
 
                 status_filter = ui.select(
-                    options=[""] + status_options,
+                    options={"": "", **dict(sorted(status_options.items(), key=lambda kv: kv[1]))},
                     value="",
                     label=t("status"),
                 ).props("outlined dense clearable").classes("min-w-[140px]")
@@ -384,7 +393,7 @@ async def _render_actionable(container, user: User):
                         )
                         if last_event:
                             actor = actor_names.get(last_event.actor_id, t("via_token"))
-                            ui.label(f"{actor} — {last_event.step_key}: {last_event.action}").classes(
+                            ui.label(f"{actor} — {event_label(wf, last_event.step_key, last_event.action)}").classes(
                                 "text-xs text-grey-8"
                             )
 

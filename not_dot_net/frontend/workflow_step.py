@@ -10,7 +10,7 @@ from nicegui import ui
 from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
 from not_dot_net.backend.vocabularies import resolve_terms, term_label
 from not_dot_net.config import WorkflowStepConfig, step_display
-from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
+from not_dot_net.frontend.i18n import DEFAULT_LOCALE, TRANSLATIONS, get_locale, t
 from not_dot_net.frontend.widgets import action_button, confirm_dialog
 
 _log = logging.getLogger(__name__)
@@ -112,6 +112,8 @@ async def _nominatim_reverse(lat: float, lon: float) -> str:
 
 async def _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, width_class):
     label = t(field_cfg.label) if field_cfg.label else field_cfg.name
+    if field_cfg.required:
+        label += " *"
     value = data.get(field_cfg.name, "")
 
     if field_cfg.type == "textarea":
@@ -146,9 +148,8 @@ async def _render_field(field_cfg, data, fields, files, on_file_upload, max_uplo
             upload_view = ui.column().classes("w-full gap-1")
             with upload_view:
                 if on_file_upload:
-                    req_mark = " *" if field_cfg.required else ""
                     ui.upload(
-                        label=f"{label}{req_mark}",
+                        label=label,
                         auto_upload=True,
                         max_file_size=max_upload_size_mb * 1024 * 1024,
                         on_upload=lambda e, name=field_cfg.name: on_file_upload(name, e),
@@ -447,6 +448,11 @@ async def render_step_form(
             if c is not None:
                 c.set_visibility(is_field_visible(f, state))
 
+    for f in resolved_fields:
+        widget = fields.get(f.name)
+        if f.required and hasattr(widget, "on_value_change"):
+            widget.on_value_change(lambda _, w=widget: _clear_error(w))
+
     # Initial visibility comes from the rendered widgets, exactly like submit
     # validation: `data` lacks never-saved checkboxes (None) while their widget
     # reads False, so a visible_when {cb: False} field disagreed between the two.
@@ -473,13 +479,15 @@ async def render_step_form(
 
         async def validated_submit():
             collected = _collect_data(fields)
-            missing = [
-                t(f.label) if f.label else f.name for f in resolved_fields
+            missing_fields = [
+                f for f in resolved_fields
                 if f.required
                 and is_field_visible(f, collected)
                 and not _field_is_filled(f, collected, files or {})
             ]
+            missing = [t(f.label) if f.label else f.name for f in missing_fields]
             if missing:
+                _mark_missing(fields, missing_fields)
                 ui.notify(f"{t('required_field')}: {', '.join(missing)}", color="negative")
                 return
             error = _validate_date_pair(collected)
@@ -491,6 +499,23 @@ async def render_step_form(
         action_button(t("submit"), validated_submit).props("color=primary")
 
     return fields
+
+
+def _mark_missing(fields: dict, missing_fields: list) -> None:
+    """Flag each missing input in place (Quasar error state) until it changes."""
+    for f in missing_fields:
+        widget = fields.get(f.name)
+        if widget is None or not hasattr(widget, "on_value_change"):
+            continue  # file fields have no input widget; the toast names them
+        widget.props["error"] = True
+        widget.props["error-message"] = t("required_field")
+        widget.update()
+
+
+def _clear_error(widget) -> None:
+    if widget.props.pop("error", None):
+        widget.props.pop("error-message", None)
+        widget.update()
 
 
 def _field_is_filled(field, data: dict, files: dict) -> bool:
@@ -551,6 +576,16 @@ def render_approval(
                 group=group, icon="edit_note",
             ).props("color=warning")
         ui.button(t("reject"), icon="close", on_click=ask_reject).props("color=negative").mark("reject")
+
+
+def event_label(workflow, step_key: str, action: str) -> str:
+    """"Step name: past-tense action" for timelines; raw values as fallback
+    (a step since deleted from the config, an unknown action)."""
+    from not_dot_net.config import step_display
+    step = next((s for s in workflow.steps if s.key == step_key), None)
+    action_key = f"did_{action}"
+    action_text = t(action_key) if action_key in TRANSLATIONS[DEFAULT_LOCALE] else action
+    return f"{step_display(step) if step else step_key}: {action_text}"
 
 
 def render_status_badge(status: str):

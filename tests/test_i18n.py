@@ -122,3 +122,27 @@ def test_no_duplicate_keys_in_any_locale():
     unexpected = {loc: [k for k in keys if k not in known] for loc, keys in duplicates.items()}
     unexpected = {loc: keys for loc, keys in unexpected.items() if keys}
     assert not unexpected, f"duplicate translation keys: {unexpected}"
+
+
+
+# --- Review 2026-10-12 V1: Quasar's own strings (table paging, date pickers)
+# stayed English in French: ui.run had no language and it is per user here.
+
+
+def test_quasar_lang_script_switches_french():
+    script = i18n_module.quasar_lang_script("fr")
+    assert "/static/lang/fr.umd.prod.js" in script
+    assert "Quasar.Lang.set(Quasar.Lang.fr)" in script
+
+
+def test_quasar_lang_script_leaves_english_alone():
+    assert i18n_module.quasar_lang_script("en") is None
+
+
+async def test_quasar_lang_pack_is_served(user):
+    import re
+    src = re.search(r"'(/_nicegui/[^']+)'", i18n_module.quasar_lang_script("fr")).group(1)
+    await user.open("/login")
+    response = await user.http_client.get(src)
+    assert response.status_code == 200
+    assert "Quasar.Lang.fr" in response.text

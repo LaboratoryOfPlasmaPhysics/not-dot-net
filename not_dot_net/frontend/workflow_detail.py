@@ -24,11 +24,12 @@ from not_dot_net.backend.workflow_service import (
     submit_step,
 )
 from not_dot_net.config import dashboard_config
-from not_dot_net.frontend.i18n import get_locale, t
+from not_dot_net.frontend.i18n import apply_quasar_locale, get_locale, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_step import (
+    event_label,
     render_approval,
     render_status_badge,
     render_step_form,
@@ -46,6 +47,7 @@ def setup():
         request_id: str,
         user: Optional[User] = Depends(current_active_user_optional),
     ):
+        apply_quasar_locale()
         if user is None:
             ui.navigate.to("/login")
             return
@@ -108,7 +110,7 @@ def setup():
             all_files = await load_files(req.id)
             if all_files:
                 _render_files_section(all_files, field_order, field_labels, user)
-            _render_timeline(events, actor_names, field_labels)
+            _render_timeline(events, actor_names, field_labels, wf)
 
             if step_config and req.status == "in_progress":
                 can_act = await can_user_act(user, req, wf)
@@ -289,7 +291,7 @@ def _confirm_delete(req, user):
     dlg.open()
 
 
-def _render_timeline(events, actor_names, field_labels):
+def _render_timeline(events, actor_names, field_labels, wf):
     with ui.element("div").classes("relative ml-2 pl-5").style(
         "border-left: 2px solid #e0e0e0"
     ):
@@ -307,7 +309,7 @@ def _render_timeline(events, actor_names, field_labels):
                 ts = ev.created_at.strftime("%Y-%m-%d %H:%M") if ev.created_at else ""
                 actor = actor_names.get(ev.actor_id, t("via_token") if ev.actor_id is None else "")
                 ui.label(ts).classes("text-[11px] text-grey")
-                ui.label(f"{actor} — {ev.step_key}: {ev.action}").classes("font-semibold text-sm")
+                ui.label(f"{actor} — {event_label(wf, ev.step_key, ev.action)}").classes("font-semibold text-sm")
 
                 if ev.comment:
                     with ui.element("div").classes("mt-1 pl-3").style(
