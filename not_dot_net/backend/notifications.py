@@ -14,6 +14,19 @@ def _resolve_step_label(workflow: WorkflowConfig, step_key: str) -> str:
     return step_display(step) if step else step_key
 
 
+def _is_target_person(request, email: str) -> bool:
+    return bool(request.target_email) and email.lower() == request.target_email.lower()
+
+
+def _template_for(request, event: str, email: str) -> str:
+    """The target person gets their token link whenever one is live — the token
+    exists only while their step is current, whatever event moved it there.
+    Nobody else ever gets the token."""
+    if not (request.token and _is_target_person(request, email)):
+        return event
+    return "corrections_with_link" if event == "request_corrections" else "token_link"
+
+
 def _matching_rules(
     workflow: WorkflowConfig, event: str, step_key: str
 ) -> list[NotificationRuleConfig]:
@@ -91,7 +104,6 @@ async def notify(
         recipients = await resolve_recipients(
             rule.notify, request, get_user_email, get_users_by_role, get_users_by_permission,
         )
-        template_key = event
         base_ctx = {
             "app_name": app_name,
             "app_url": f"{base_url}/",
@@ -100,12 +112,11 @@ async def notify(
             "step_label": step_label,
             "requester_name": requester_name,
         }
-        if request.token and event in ("submit", "request_corrections"):
-            template_key = "token_link" if event == "submit" else "corrections_with_link"
-            base_ctx["token_url"] = f"{base_url}/workflow/token/{request.token}"
-
         for email in recipients:
+            template_key = _template_for(request, event, email)
             ctx = {**base_ctx, "recipient_name": _display_from_email(email)}
+            if template_key != event:
+                ctx["token_url"] = f"{base_url}/workflow/token/{request.token}"
             subject, body = await render_email(template_key, ctx)
             await send_mail(email, subject, body)
             all_sent.append(email)

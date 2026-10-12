@@ -192,24 +192,61 @@ async def test_notify_submit_includes_request_deeplink():
     assert "http://x/workflow/request/req-1" in body
 
 
+TOKEN_ON_SUBMIT_WORKFLOW = WorkflowConfig(
+    label="Onboarding",
+    target_email_field="target_email",
+    steps=[
+        WorkflowStepConfig(key="request", type="form", assignee_role="staff", actions=["submit"]),
+        WorkflowStepConfig(key="fill", type="form", assignee="target_person", actions=["submit"]),
+    ],
+    notifications=[NotificationRuleConfig(event="submit", step="request", notify=["director", "target_person"])],
+)
+
+
+async def _send_and_collect(req, event, step_key, workflow, **kwargs) -> dict[str, str]:
+    """Run notify and return {recipient: body}."""
+    sent = {}
+
+    async def fake_send(to, subject, body):
+        sent[to] = body
+
+    with patch("not_dot_net.backend.mail.send_mail", new=fake_send):
+        await notify(req, event, step_key, workflow, **kwargs)
+    return sent
+
+
 @pytest.mark.asyncio
-async def test_notify_submit_with_token_uses_token_link_deeplink():
-    req = FakeRequest(token="tok-9", id="req-2")
-    sent = []
+async def test_notify_token_link_goes_only_to_target_person():
+    """Review 2026-10-12 W1: every recipient of a token-creating submit used
+    to get the target person's "complete your information" link."""
+    from not_dot_net.config import OrgConfig, org_config
 
-    async def fake_send(to, s, b):
-        sent.append(b)
+    await org_config.set(OrgConfig(base_url="https://intranet.example.test/"))
+    req = FakeRequest(token="tok-9", id="req-2", target_email="newcomer@test.com")
+    sent = await _send_and_collect(
+        req, "submit", "request", TOKEN_ON_SUBMIT_WORKFLOW,
+        get_user_email=AsyncMock(return_value=None),
+        get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
+    )
 
-    async def users_by_role(role):
-        class U: ...
-        u = U(); u.email = "n@lpp.fr"; return [u]
+    assert "https://intranet.example.test/workflow/token/tok-9" in sent["newcomer@test.com"]
+    assert "https://intranet.example.test//workflow" not in sent["newcomer@test.com"]
+    assert "tok-9" not in sent["dir@test.com"]
 
-    with patch("not_dot_net.backend.mail.send_mail", new=fake_send), \
-         patch("not_dot_net.config.org_config.get", new=AsyncMock(
-             return_value=type("O", (), {"base_url": "http://x", "app_name": "LPP"})())):
-        await notify(req, "submit", "request", VPN_WORKFLOW, AsyncMock(), users_by_role)
 
-    assert any("http://x/workflow/token/tok-9" in b for b in sent)
+@pytest.mark.asyncio
+async def test_notify_approve_into_target_step_sends_token_link():
+    """Review 2026-10-12 W1: a rule like `approve -> target_person` minted a
+    token but sent the plain approve email, linking to a login-only page."""
+    req = FakeRequest(token="tok-approve", target_email="newcomer@test.com")
+    sent = await _send_and_collect(
+        req, "approve", "approval", VPN_WORKFLOW,
+        get_user_email=AsyncMock(return_value="requester@test.com"),
+        get_users_by_role=AsyncMock(return_value=[]),
+    )
+
+    assert "/workflow/token/tok-approve" in sent["newcomer@test.com"]
+    assert "tok-approve" not in sent["requester@test.com"]
 
 
 @pytest.mark.asyncio
@@ -345,52 +382,6 @@ async def test_notify_uses_permission_recipients():
 
     assert result == ["admin@test.com"]
     assert sent_emails[0][0] == "admin@test.com"
-
-
-async def test_notify_submit_with_token_uses_org_base_url():
-    from not_dot_net.config import OrgConfig, org_config
-
-    await org_config.set(OrgConfig(base_url="https://intranet.example.test/"))
-    req = FakeRequest(token="token-123")
-    sent_emails = []
-
-    async def fake_send_mail(to, subject, body_html):
-        sent_emails.append((to, subject, body_html))
-
-    with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
-        result = await notify(
-            request=req,
-            event="submit",
-            step_key="request",
-            workflow=VPN_WORKFLOW,
-            get_user_email=AsyncMock(return_value=None),
-            get_users_by_role=AsyncMock(return_value=[FakeUser("dir@test.com")]),
-        )
-
-    assert result == ["dir@test.com"]
-    assert "https://intranet.example.test/workflow/token/token-123" in sent_emails[0][2]
-    assert "https://intranet.example.test//workflow" not in sent_emails[0][2]
-
-
-async def test_notify_non_token_event_does_not_include_token_link():
-    req = FakeRequest(token="token-should-not-be-sent")
-    sent_emails = []
-
-    async def fake_send_mail(to, subject, body_html):
-        sent_emails.append((to, subject, body_html))
-
-    with patch("not_dot_net.backend.mail.send_mail", side_effect=fake_send_mail):
-        await notify(
-            request=req,
-            event="approve",
-            step_key="approval",
-            workflow=VPN_WORKFLOW,
-            get_user_email=AsyncMock(return_value="requester@test.com"),
-            get_users_by_role=AsyncMock(return_value=[]),
-        )
-
-    assert sent_emails
-    assert "token-should-not-be-sent" not in sent_emails[0][2]
 
 
 ONBOARDING_WORKFLOW = WorkflowConfig(
