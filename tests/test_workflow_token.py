@@ -36,6 +36,7 @@ async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch)
     Fix: use await resolve_step_fields(step) which merges the definition's encrypted flag.
     """
     import not_dot_net.frontend.workflow_token as wt_mod
+    import not_dot_net.frontend.step_uploads as step_uploads_mod
 
     # Setup: field definition with encrypted=True, workflow using a FieldRef
     await field_definitions_config.set(FieldDefinitionsConfig(definitions={
@@ -73,7 +74,7 @@ async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch)
     monkeypatch.setattr(wt_mod, "has_valid_code", _true)
     monkeypatch.setattr(wt_mod, "verify_code", _true)
     monkeypatch.setattr(wt_mod, "send_mail", _true)
-    monkeypatch.setattr(wt_mod, "validate_upload", lambda *a, **kw: None)
+    monkeypatch.setattr(step_uploads_mod, "validate_upload", lambda *a, **kw: None)
 
     # Capture the on_file_upload handler that _render_form passes to render_step_form
     captured: dict = {}
@@ -128,6 +129,7 @@ async def test_stale_tab_cannot_upload_after_token_cleared(user: User, monkeypat
     request advances past target_person (token cleared) or completes must not be
     able to attach new files — they would displace the reviewed 'current' file."""
     import not_dot_net.frontend.workflow_token as wt_mod
+    import not_dot_net.frontend.step_uploads as step_uploads_mod
 
     await field_definitions_config.set(FieldDefinitionsConfig(definitions={
         "passport": FieldDefinition(key="passport", type="file", encrypted=False),
@@ -161,7 +163,7 @@ async def test_stale_tab_cannot_upload_after_token_cleared(user: User, monkeypat
     monkeypatch.setattr(wt_mod, "has_valid_code", _true)
     monkeypatch.setattr(wt_mod, "verify_code", _true)
     monkeypatch.setattr(wt_mod, "send_mail", _true)
-    monkeypatch.setattr(wt_mod, "validate_upload", lambda *a, **kw: None)
+    monkeypatch.setattr(step_uploads_mod, "validate_upload", lambda *a, **kw: None)
 
     captured: dict = {}
 

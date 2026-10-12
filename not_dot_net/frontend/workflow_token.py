@@ -1,7 +1,5 @@
 """Token page with email verification code gate."""
 
-from pathlib import Path
-
 from nicegui import ui
 
 from not_dot_net.backend.verification import (
@@ -17,14 +15,11 @@ from not_dot_net.backend.workflow_service import (
     save_draft,
     submit_step,
 )
-from not_dot_net.backend.workflow_uploads import (
-    persist_workflow_upload,
-    validate_upload,
-)
 from not_dot_net.backend.workflow_engine import get_current_step_config
 from not_dot_net.backend.mail import send_mail
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
+from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.workflow_step import render_step_form
 
 
@@ -143,54 +138,19 @@ def setup():
                         for doc in instructions:
                             ui.label(f"• {doc}").classes("text-sm")
 
-                from not_dot_net.backend.workflow_files import load_files, current_files_by_name
-                _existing = await load_files(request.id, step.key)
-                uploaded_files: dict[str, str] = {
-                    name: f.filename for name, f in current_files_by_name(_existing).items()
-                }
                 resolved = await resolve_step_fields(step)
-                encrypted_fields = {f.name for f in resolved if f.encrypted}
+
+                async def token_still_valid() -> bool:
+                    return await get_request_by_token(token) is not None
+
+                uploaded_files, handle_file_upload = await make_upload_handler(
+                    request.id, step,
+                    encrypted_fields={f.name for f in resolved if f.encrypted},
+                    uploaded_by=None,
+                    authorize=token_still_valid,
+                    denied_message="token_expired",
+                )
                 wf_cfg_form = await workflows_config.get()
-                max_upload_size_mb = wf_cfg_form.max_upload_size_mb
-
-                async def handle_file_upload(field_name, event):
-                    # Re-validate server-side: a stale tab must not upload into a
-                    # request that advanced or completed since the page was opened
-                    # (the new file would displace the reviewed "current" version).
-                    if await get_request_by_token(token) is None:
-                        ui.notify(t("token_expired"), color="negative")
-                        return
-                    upload = event.file
-                    content = await upload.read()
-                    # Basename only — never trust the client to provide a path.
-                    filename = Path(upload.name).name
-                    content_type = upload.content_type or "application/octet-stream"
-
-                    error = validate_upload(content, filename, content_type, max_upload_size_mb)
-                    if error:
-                        ui.notify(error, color="negative")
-                        return
-
-                    try:
-                        await persist_workflow_upload(
-                            request_id=request.id,
-                            step_key=step.key,
-                            field_name=field_name,
-                            content=content,
-                            filename=filename,
-                            content_type=content_type,
-                            encrypted=field_name in encrypted_fields,
-                            uploaded_by=None,
-                            # The token check above is a separate transaction;
-                            # this re-checks under a lock at the write itself.
-                            expected_step_key=step.key,
-                        )
-                    except PermissionError:
-                        ui.notify(t("token_expired"), color="negative")
-                        return
-
-                    uploaded_files[field_name] = filename
-                    ui.notify(t("uploaded").format(filename=filename), color="positive")
 
                 def _show_submitted():
                     cont.clear()

@@ -8,6 +8,7 @@ from fastapi import Depends
 from nicegui import app, ui
 
 from not_dot_net.backend.db import User
+from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
 from not_dot_net.backend.workflow_config import workflows_config
@@ -19,11 +20,13 @@ from not_dot_net.backend.workflow_service import (
     get_request_by_id,
     list_events,
     resolve_actor_names,
+    save_draft,
     submit_step,
 )
 from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import get_locale, t
 from not_dot_net.frontend.errors import notify_error
+from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog
 from not_dot_net.frontend.workflow_step import (
     render_approval,
@@ -522,12 +525,46 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                 ui.notify(t("step_submitted"), color="positive")
                 ui.navigate.to(f"/workflow/request/{request_id_str}")
 
-            await render_step_form(step_config, req.data, on_submit=handle_submit)
+            async def handle_save_draft(data):
+                try:
+                    await save_draft(req.id, data=data, actor_id=user.id, actor_user=user)
+                except Exception as e:
+                    notify_error(e)
+                    return
+                ui.notify(t("draft_saved"), color="positive")
+
+            async def user_can_still_act() -> bool:
+                fresh = await get_request_by_id(req.id)
+                return (
+                    fresh is not None
+                    and fresh.current_step == step_config.key
+                    and await can_user_act(user, fresh, wf)
+                )
+
+            resolved = await resolve_step_fields(step_config)
+            uploaded_files, handle_file_upload = await make_upload_handler(
+                req.id, step_config,
+                encrypted_fields={f.name for f in resolved if f.encrypted},
+                uploaded_by=user.id,
+                authorize=user_can_still_act,
+                denied_message="access_denied",
+            )
+            await render_step_form(
+                step_config, req.data,
+                on_submit=handle_submit,
+                on_save_draft=handle_save_draft if step_config.partial_save else None,
+                files=uploaded_files,
+                on_file_upload=handle_file_upload,
+                max_upload_size_mb=(await workflows_config.get()).max_upload_size_mb,
+            )
 
 
 def _show_temp_password_dialog(password: str, on_close=None):
-    """Show the generated initial password once. Not stored anywhere in the frontend."""
-    dlg = ui.dialog()
+    """Show the generated initial password once. Not stored anywhere in the frontend.
+
+    Persistent: Esc or a backdrop click would lose the password for good and
+    skip `on_close`, so the only way out is the Close button."""
+    dlg = ui.dialog().props("persistent")
     with dlg, ui.card():
         ui.label(t("initial_password_copy_now")).classes("text-bold")
         ui.label(password).classes("font-mono text-lg p-2 bg-grey-2")
@@ -545,5 +582,6 @@ def _show_temp_password_dialog(password: str, on_close=None):
             ui.button(t("copy"), on_click=_copy).props("color=primary")
             ui.button(t("close"), on_click=_close).props("flat")
     dlg.open()
+    return dlg
 
 
