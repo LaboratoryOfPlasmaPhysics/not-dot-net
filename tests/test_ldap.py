@@ -20,6 +20,10 @@ FAKE_USERS = {
     },
     "nomail": {"mail": None, "displayName": "No Mail", "givenName": "No", "sn": "Mail", "password": "secret"},
     "upnonly": {"mail": None, "userPrincipalName": "upnonly@example.com", "displayName": "UPN Only", "password": "secret"},
+    # S8: bob's explicit UPN is alice's implicit one; AD binds "alice@example.com" as bob.
+    "alice": {"mail": "alice@example.com", "displayName": "Alice", "password": "alice-pw"},
+    "bob": {"mail": "bob@example.com", "userPrincipalName": "alice@example.com",
+            "displayName": "Bob", "password": "bob-pw"},
 }
 
 
@@ -82,6 +86,18 @@ def test_user_without_mail_falls_back_to_upn():
     assert result is not None
     info, _ = result
     assert info.email == "upnonly@example.com"
+
+
+def test_bind_name_owned_by_another_account_is_refused():
+    """S8: the UPN bind authenticates bob; the sAM lookup would return alice."""
+    assert ldap_authenticate("alice", "bob-pw", LDAP_CFG, connect=_upn_bind_connect) is None
+
+
+def _upn_bind_connect(ldap_cfg, username, password):
+    """Bind like AD: an explicit userPrincipalName wins over the implicit sam@domain."""
+    bind_name = f"{username}@{ldap_cfg.domain}"
+    owner = next((uid for uid, a in FAKE_USERS.items() if a.get("userPrincipalName") == bind_name), username)
+    return fake_ldap_connect(ldap_cfg, owner, password)
 
 
 class TestEffectiveUrls:
@@ -249,6 +265,7 @@ def test_connection_remains_bound_after_success():
 
     class Entry:
         entry_dn = "cn=jdoe,ou=users,dc=example,dc=com"
+        sAMAccountName = Attr("jdoe")
         mail = Attr("jdoe@example.com")
         displayName = Attr("John Doe")
         givenName = Attr("John")
@@ -309,6 +326,7 @@ def test_connection_remains_bound_after_missing_mail_fallback():
 
     class Entry:
         entry_dn = "cn=nomail,ou=users,dc=example,dc=com"
+        sAMAccountName = Attr("nomail")
         mail = Attr(None)
         userPrincipalName = Attr(None)
         displayName = Attr("No Mail")

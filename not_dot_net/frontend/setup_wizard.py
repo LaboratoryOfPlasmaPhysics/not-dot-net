@@ -1,6 +1,9 @@
 """First-run setup wizard — shown when no super-user exists (production only)."""
 
+import asyncio
+import logging
 import re
+import secrets
 
 from nicegui import ui
 from sqlalchemy import select
@@ -12,7 +15,14 @@ from not_dot_net.config import org_config, OrgConfig
 from not_dot_net.frontend.i18n import apply_client_locale, t
 
 
+logger = logging.getLogger(__name__)
+
 MIN_SETUP_PASSWORD_LEN = 12
+
+# Only whoever reads the server log may create the first superuser: the page is
+# reachable by anyone on the network while no superuser exists.
+_SETUP_TOKEN = secrets.token_urlsafe(24)
+_setup_lock = asyncio.Lock()
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -33,6 +43,14 @@ def validate_setup_credentials(email: str, password: str) -> str | None:
     return None
 
 
+def setup_token() -> str:
+    return _SETUP_TOKEN
+
+
+def _token_ok(token: str) -> bool:
+    return secrets.compare_digest(token.encode(), _SETUP_TOKEN.encode())
+
+
 async def has_superuser() -> bool:
     async with session_scope() as session:
         result = await session.execute(
@@ -45,6 +63,7 @@ async def complete_setup(
     email: str,
     password: str,
     *,
+    token: str,
     smtp_host: str = "",
     smtp_port: int = 587,
     from_address: str = "",
@@ -56,9 +75,12 @@ async def complete_setup(
     Without one the safe default stands: mail is logged, not sent — better a
     blackhole than a misconfigured instance mailing real people.
     """
-    if await has_superuser():
+    if not _token_ok(token):
         return False
-    await ensure_default_admin(email, password)
+    async with _setup_lock:
+        if await has_superuser():
+            return False
+        await ensure_default_admin(email, password)
     if smtp_host.strip():
         cfg = await mail_config.get()
         await mail_config.set(cfg.model_copy(update={
@@ -72,10 +94,14 @@ async def complete_setup(
 
 def setup():
     @ui.page("/setup")
-    async def setup_page():
+    async def setup_page(token: str = ""):
         apply_client_locale()
         if await has_superuser():
             ui.navigate.to("/login")
+            return
+        if not _token_ok(token):
+            logger.warning("First-run setup link: /setup?token=%s", _SETUP_TOKEN)
+            ui.label(t("setup_token_required"))
             return
 
         email = ui.input(t("setup_admin_email")).props("outlined")
@@ -100,7 +126,7 @@ def setup():
                 ui.notify(t("setup_passwords_differ"), color="negative")
                 return
             if not await complete_setup(
-                email.value, password.value,
+                email.value, password.value, token=token,
                 smtp_host=smtp_host.value or "",
                 smtp_port=int(smtp_port.value or 587),
                 from_address=from_address.value or "",

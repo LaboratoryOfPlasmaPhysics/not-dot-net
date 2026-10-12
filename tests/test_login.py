@@ -1,4 +1,7 @@
 import importlib
+from types import SimpleNamespace
+
+from starlette.datastructures import Headers
 
 from nicegui.testing import User
 from not_dot_net.frontend.login import handle_logout
@@ -38,7 +41,8 @@ def test_auth_cookie_marked_secure_when_database_url_is_set(monkeypatch) -> None
 
 
 async def test_logout_redirects_to_login_and_clears_auth_cookie() -> None:
-    response = await handle_logout(request=None, user=None)
+    request = SimpleNamespace(headers=Headers({"sec-fetch-site": "same-origin"}))
+    response = await handle_logout(request=request, user=None)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"

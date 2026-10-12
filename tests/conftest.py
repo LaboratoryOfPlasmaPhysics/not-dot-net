@@ -84,7 +84,7 @@ async def setup_db(request, monkeypatch):
     # Each test gets a fresh in-memory DB, but the ConfigSection cache is module
     # state — without this a section read in one test is served to the next.
     from not_dot_net.backend.app_config import invalidate_config_cache
-    from not_dot_net.frontend import login_throttle
+    from not_dot_net.backend.auth import login_throttle
     invalidate_config_cache()
     login_throttle.reset()
 

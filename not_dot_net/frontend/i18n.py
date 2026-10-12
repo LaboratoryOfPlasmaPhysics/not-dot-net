@@ -178,6 +178,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "setup_app_name": "Application Name",
         "setup_email_password_required": "Email and password required",
         "setup_complete": "Complete Setup",
+        "setup_token_required": "Open the setup link printed in the server log.",
         "setup_mail_heading": "Email delivery (optional)",
         "setup_mail_hint": "Leave blank to configure later — until then, emails are only logged, not sent.",
         "smtp_host": "SMTP host",
@@ -429,6 +430,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings": "Settings",
         "reset_defaults": "Reset to Defaults",
         "settings_saved": "Settings saved",
+        "superuser_only_section": "Only a superuser can change this section.",
+        "secret_keep_hint": "Leave blank to keep the current value",
         "settings_reset": "Settings reset to defaults",
         # Roles
         "role": "Role",
@@ -831,6 +834,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "setup_app_name": "Nom de l'application",
         "setup_email_password_required": "E-mail et mot de passe requis",
         "setup_complete": "Terminer la configuration",
+        "setup_token_required": "Ouvrez le lien de configuration affiché dans le journal du serveur.",
         "setup_mail_heading": "Envoi des e-mails (optionnel)",
         "setup_mail_hint": "Laissez vide pour configurer plus tard — d'ici là, les e-mails sont seulement journalisés, pas envoyés.",
         "smtp_host": "Serveur SMTP",
@@ -1082,6 +1086,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings": "Paramètres",
         "reset_defaults": "Réinitialiser",
         "settings_saved": "Paramètres enregistrés",
+        "superuser_only_section": "Seul un super-utilisateur peut modifier cette section.",
+        "secret_keep_hint": "Laisser vide pour conserver la valeur actuelle",
         "settings_reset": "Paramètres réinitialisés",
         # Roles
         "role": "Rôle",

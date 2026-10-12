@@ -65,6 +65,12 @@ async def _current_state(user):
         return await session.get(User, user.id)
 
 
+async def is_superuser_now(user) -> bool:
+    """Superuser right now, not when the tab was opened."""
+    state = await _current_state(user) if user is not None else None
+    return bool(state and getattr(state, "is_active", True) and getattr(state, "is_superuser", False))
+
+
 async def has_permissions(user, *permissions: str) -> bool:
     """Check if user's role grants all given permissions.
 

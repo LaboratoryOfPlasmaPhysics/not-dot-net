@@ -12,7 +12,7 @@ from not_dot_net.backend.db import User, session_scope, get_user_db
 from not_dot_net.backend.audit import list_audit_events
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.backend.schemas import UserCreate
-from not_dot_net.frontend.login import handle_login
+from not_dot_net.frontend.login import handle_login, handle_logout
 
 async def _create_user_via_manager(email="test@test.com", password="Secret123!"):
     """Create a user through the UserManager."""
@@ -394,3 +394,43 @@ async def test_login_endpoint_falls_back_to_ldap_when_local_auth_fails(monkeypat
     assert response.headers["location"] == "/"
     set_cookie_headers = response.headers.getlist("set-cookie")
     assert any("fastapiusersauth=" in header for header in set_cookie_headers)
+
+
+# --- S13 (review 2026-10-12): another site must not log the browser in or out ---
+
+
+async def test_cross_site_login_post_is_refused():
+    """Login CSRF: a hostile page auto-posts its own credentials, and the
+    victim then types data into the attacker's account."""
+    await _create_user_via_manager("csrf@test.com", "CorrectPassword1!")
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "csrf@test.com", "password": "CorrectPassword1!"},
+                        headers={"sec-fetch-site": "cross-site"},
+                    ),
+                    user_manager=user_manager,
+                )
+    assert response.status_code == 403
+    assert not response.headers.getlist("set-cookie")
+
+
+async def test_cross_site_login_post_refused_by_origin_without_fetch_metadata():
+    async with session_scope() as session:
+        async with asynccontextmanager(get_user_db)(session) as user_db:
+            async with asynccontextmanager(get_user_manager)(user_db) as user_manager:
+                response = await handle_login(
+                    _FakeRequest(
+                        {"username": "x@test.com", "password": "y"},
+                        headers={"origin": "https://evil.example", "host": "intranet.lpp"},
+                    ),
+                    user_manager=user_manager,
+                )
+    assert response.status_code == 403
+
+
+async def test_cross_site_logout_is_ignored():
+    response = await handle_logout(_FakeRequest({}, headers={"sec-fetch-site": "cross-site"}), user=None)
+    assert not response.headers.getlist("set-cookie")

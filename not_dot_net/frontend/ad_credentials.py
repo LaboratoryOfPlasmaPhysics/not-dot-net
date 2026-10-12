@@ -18,6 +18,13 @@ from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.widgets import action_button
 
 
+def _bind_error_text(msg: str) -> str:
+    lowered = msg.lower()
+    if "throttled" in lowered:
+        return t("login_throttled")
+    return t("ad_bind_failed") if "bind" in lowered else t("ad_write_failed", error=msg)
+
+
 async def prompt_ad_credentials(
     current_user, on_bind: Callable[[str, str], Awaitable[None]]
 ) -> None:
@@ -43,10 +50,7 @@ async def prompt_ad_credentials(
                     _ldap_bind, bind_user, password_input.value, cfg, get_ldap_connect()
                 )
             except LdapModifyError as e:
-                msg = str(e)
-                error_label.set_text(
-                    t("ad_bind_failed") if "bind" in msg.lower() else t("ad_write_failed", error=msg)
-                )
+                error_label.set_text(_bind_error_text(str(e)))
                 return
             store_user_connection(str(current_user.id), conn)
             dialog.close()

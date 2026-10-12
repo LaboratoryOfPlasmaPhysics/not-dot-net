@@ -14,6 +14,7 @@ from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel, Field
 
+from not_dot_net.backend.auth import login_throttle
 from not_dot_net.backend.app_config import section
 
 logger = logging.getLogger("not_dot_net.ldap")
@@ -244,6 +245,18 @@ def _attr_filetime(entry, name: str) -> datetime | None:
     return None
 
 
+def _bind_name_owned_by_another_account(conn: Connection, ldap_cfg: LdapConfig, username: str) -> bool:
+    """AD resolves the bind name as an explicit UPN before sam@domain.
+
+    So if another account's UPN equals the bind name, the password checked was
+    that account's, not the one the sAMAccountName lookup would return.
+    """
+    bind_name = escape_filter_chars(f"{username}@{ldap_cfg.domain}")
+    conn.search(ldap_cfg.base_dn, f"(userPrincipalName={bind_name})", attributes=["sAMAccountName"])
+    owners = {str(_attr_value(e, "sAMAccountName") or "").lower() for e in conn.entries}
+    return bool(owners - {username.lower()})
+
+
 def ldap_authenticate(
     username: str,
     password: str,
@@ -265,6 +278,10 @@ def ldap_authenticate(
         return None
 
     try:
+        if _bind_name_owned_by_another_account(conn, ldap_cfg, username):
+            logger.warning("LDAP bind name '%s@%s' is another account's UPN; refusing", username, ldap_cfg.domain)
+            conn.unbind()
+            return None
         safe_username = escape_filter_chars(username)
         account_filter = f"(sAMAccountName={safe_username})"
         if ldap_cfg.user_filter:
@@ -379,19 +396,32 @@ class LdapModifyError(Exception):
     """Raised when an AD modify fails (bind, permissions, or server error)."""
 
 
+_AD_BIND_SCOPE = "ad-bind"
+
+
 def _ldap_bind(
     bind_username: str,
     bind_password: str,
     ldap_cfg: LdapConfig,
     connect: Callable[..., Connection] = default_ldap_connect,
 ) -> Connection:
-    """Bind to AD. Raises LdapModifyError on failure."""
+    """Bind to AD with typed admin credentials. Raises LdapModifyError on failure.
+
+    Throttled like the login form: every AD credential dialog lands here, and
+    each wrong guess also counts towards AD's own lockout of that account.
+    All dialogs share one pseudo-IP, so the IP budget caps them globally.
+    """
+    if login_throttle.retry_after_seconds(bind_username, _AD_BIND_SCOPE):
+        raise LdapModifyError("LDAP bind throttled: too many failed attempts, wait a few minutes")
     try:
-        return connect(ldap_cfg, bind_username, bind_password)
+        conn = connect(ldap_cfg, bind_username, bind_password)
     except LDAPBindError as e:
+        login_throttle.record_failure(bind_username, _AD_BIND_SCOPE)
         raise LdapModifyError(f"LDAP bind failed: {e}") from e
     except LDAPException as e:
         raise LdapModifyError(f"LDAP connection error: {e}") from e
+    login_throttle.record_success(bind_username, _AD_BIND_SCOPE)
+    return conn
 
 
 def _query_writable_attributes(conn: Connection, dn: str) -> set[str]:

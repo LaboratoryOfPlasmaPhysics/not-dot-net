@@ -20,18 +20,18 @@ async def _superuser_emails() -> list[str]:
 
 
 async def test_complete_setup_refuses_when_superuser_exists():
-    from not_dot_net.frontend.setup_wizard import complete_setup
+    from not_dot_net.frontend.setup_wizard import complete_setup, setup_token
 
-    assert await complete_setup("first@test.dev", "pw12345678") is True
-    assert await complete_setup("second@test.dev", "pw12345678") is False
+    assert await complete_setup("first@test.dev", "pw12345678", token=setup_token()) is True
+    assert await complete_setup("second@test.dev", "pw12345678", token=setup_token()) is False
     assert await _superuser_emails() == ["first@test.dev"]
 
 
 async def test_complete_setup_creates_first_superuser():
-    from not_dot_net.frontend.setup_wizard import complete_setup, has_superuser
+    from not_dot_net.frontend.setup_wizard import complete_setup, setup_token, has_superuser
 
     assert await has_superuser() is False
-    assert await complete_setup("admin@test.dev", "pw12345678") is True
+    assert await complete_setup("admin@test.dev", "pw12345678", token=setup_token()) is True
     assert await has_superuser() is True
 
 

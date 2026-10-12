@@ -13,6 +13,7 @@ from not_dot_net.backend.app_config import get_registry
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.backend.personnel_import import import_personnel, parse_clean_csv_text
+from not_dot_net.backend.permissions import is_superuser_now
 from not_dot_net.frontend.admin_email_templates import render as render_email_templates
 from not_dot_net.frontend.admin_roles import render as render_roles
 from not_dot_net.frontend.i18n import format_datetime, t
@@ -62,6 +63,8 @@ def _is_complex(schema: type[BaseModel]) -> bool:
 # Sections edited by a dedicated screen (above, or their own tab for
 # ad_account); the generic loop would show them a second time.
 _SECTIONS_WITH_OWN_EDITOR = {"vocabularies", "field_definitions", "mail_templates", "roles", "ad_account"}
+# Whoever sets the LDAP url receives every password the login form relays to AD.
+_SUPERUSER_ONLY_SECTIONS = {"ldap"}
 
 
 async def render(user):
@@ -107,6 +110,8 @@ async def render(user):
                     icon="edit",
                     on_click=lambda u=user: open_workflow_editor(u),
                 ).props("color=primary")
+            elif prefix in _SUPERUSER_ONLY_SECTIONS and not await is_superuser_now(user):
+                ui.label(t("superuser_only_section")).classes("text-sm text-grey")
             elif _is_complex(schema):
                 await _render_yaml_editor(prefix, cfg_section, current, user)
             else:
@@ -138,12 +143,10 @@ async def _render_form(prefix, cfg_section, current, user):
             widget = ui.select(options, label=field_name, value=value).classes("w-full")
         elif annotation is int:
             widget = ui.number(field_name, value=value)
+        elif annotation is str and _is_secret_field(field_info):
+            widget = ui.input(field_name, value="", placeholder=t("secret_keep_hint"), password=True).classes("w-full")
         elif annotation is str:
-            widget = ui.input(
-                field_name, value=value,
-                password=_is_secret_field(field_info),
-                password_toggle_button=_is_secret_field(field_info),
-            ).classes("w-full")
+            widget = ui.input(field_name, value=value).classes("w-full")
         elif _is_list_int(annotation):
             widget = chip_list_editor([str(item) for item in value or []], label=field_name)
         elif annotation == list[str]:
@@ -158,11 +161,7 @@ async def _render_form(prefix, cfg_section, current, user):
         inputs[field_name] = widget
 
     async def save():
-        from not_dot_net.backend.permissions import check_permission
-        try:
-            await check_permission(user, "manage_settings")
-        except PermissionError:
-            ui.notify(t("permission_denied"), color="negative")
+        if not await _may_manage_settings(user, prefix):
             return
         try:
             update = {}
@@ -179,6 +178,8 @@ async def _render_form(prefix, cfg_section, current, user):
                     update[field_name] = list(widget.value)
                 elif annotation == dict[str, list[str]]:
                     update[field_name] = widget.value
+                elif _is_secret_field(field_info) and not widget.value:
+                    update[field_name] = data[field_name]
                 else:
                     update[field_name] = widget.value
             new_config = schema.model_validate(update)
@@ -190,11 +191,7 @@ async def _render_form(prefix, cfg_section, current, user):
             notify_error(e)
 
     async def reset():
-        from not_dot_net.backend.permissions import check_permission
-        try:
-            await check_permission(user, "manage_settings")
-        except PermissionError:
-            ui.notify(t("permission_denied"), color="negative")
+        if not await _may_manage_settings(user, prefix):
             return
         await cfg_section.reset()
         await log_audit("settings", "reset", actor_id=user.id, actor_email=user.email, detail=f"section={prefix}")
@@ -205,7 +202,7 @@ async def _render_form(prefix, cfg_section, current, user):
         confirm_label=t("reset_defaults"), confirm_icon="restart_alt",
     )
     with ui.row():
-        ui.button(t("save"), on_click=save).props("color=primary")
+        ui.button(t("save"), on_click=save).props("color=primary").mark("form-save")
         ui.button(t("reset_defaults"), on_click=reset_dlg.open).props("flat color=grey")
 
 
@@ -215,7 +212,7 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
     editor = ui.codemirror(yaml_str, language="yaml").classes("w-full").style("min-height: 300px")
 
     async def save():
-        if not await _may_manage_settings(user):
+        if not await _may_manage_settings(user, prefix):
             return
         try:
             data = safe_load(editor.value)
@@ -227,7 +224,7 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
             notify_error(e)
 
     async def reset():
-        if not await _may_manage_settings(user):
+        if not await _may_manage_settings(user, prefix):
             return
         await cfg_section.reset()
         default = cfg_section.schema()
@@ -244,11 +241,13 @@ async def _render_yaml_editor(prefix, cfg_section, current, user):
         ui.button(t("reset_defaults"), on_click=reset_dlg.open).props("flat color=grey")
 
 
-async def _may_manage_settings(user) -> bool:
+async def _may_manage_settings(user, prefix: str) -> bool:
     """Callback-time re-check: the tab may outlive the permission."""
     from not_dot_net.backend.permissions import check_permission
     try:
         await check_permission(user, "manage_settings")
+        if prefix in _SUPERUSER_ONLY_SECTIONS and not await is_superuser_now(user):
+            raise PermissionError("superuser only")
     except PermissionError:
         ui.notify(t("permission_denied"), color="negative")
         return False

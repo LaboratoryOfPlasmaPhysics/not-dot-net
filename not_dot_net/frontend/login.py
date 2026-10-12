@@ -5,7 +5,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from nicegui import ui
 from pwdlib.exceptions import UnknownHashError
@@ -22,16 +22,31 @@ from not_dot_net.backend import security_alerts
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import get_user_manager, cookie_transport, get_jwt_strategy, current_active_user_optional
 from not_dot_net.frontend.i18n import apply_client_locale, t
-from not_dot_net.frontend import login_throttle
+from not_dot_net.backend.auth import login_throttle
 
 logger = logging.getLogger("not_dot_net.login")
 
 login_router = APIRouter(tags=["auth"])
 
 
+def _is_cross_site(request: Request) -> bool:
+    """Browsers tag every request with Sec-Fetch-Site; Origin covers older ones.
+
+    "none" is a typed URL or a bookmark. "same-site" is refused too: a sibling
+    lab host is still another site.
+    """
+    fetch_site = request.headers.get("sec-fetch-site")
+    if fetch_site is not None:
+        return fetch_site not in ("same-origin", "none")
+    origin = request.headers.get("origin")
+    return origin is not None and urlparse(origin).netloc != request.headers.get("host")
+
+
 @login_router.get("/logout")
 async def handle_logout(request: Request, user=Depends(current_active_user_optional)):
     from not_dot_net.backend.auth.ldap import drop_user_connection
+    if _is_cross_site(request):
+        return RedirectResponse("/", status_code=303)
     if user is not None:
         drop_user_connection(str(user.id))
     response = RedirectResponse("/login", status_code=303)
@@ -46,6 +61,9 @@ async def handle_login(
     request: Request,
     user_manager=Depends(get_user_manager),
 ):
+    if _is_cross_site(request):
+        logger.warning("Cross-site login POST refused from %s", request_ip(request) or "unknown")
+        return PlainTextResponse("Cross-site login refused", status_code=403)
     form = await request.form()
     redirect_to = _safe_redirect(str(form.get("redirect_to", "/")))
     username = str(form.get("username", ""))

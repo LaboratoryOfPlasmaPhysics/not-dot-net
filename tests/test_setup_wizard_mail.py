@@ -11,12 +11,12 @@ spam real users from a misconfigured instance), so the wizard asks instead.
 import pytest
 
 from not_dot_net.backend.mail import mail_config
-from not_dot_net.frontend.setup_wizard import complete_setup
+from not_dot_net.frontend.setup_wizard import complete_setup, setup_token
 
 
 async def test_configuring_mail_turns_dev_mode_off():
     ok = await complete_setup(
-        "boss@example.com", "pw",
+        "boss@example.com", "pw", token=setup_token(),
         smtp_host="smtp.example.com", smtp_port=25, from_address="noreply@example.com",
     )
     assert ok
@@ -29,7 +29,7 @@ async def test_configuring_mail_turns_dev_mode_off():
 
 
 async def test_skipping_mail_leaves_the_safe_default():
-    ok = await complete_setup("boss2@example.com", "pw")
+    ok = await complete_setup("boss2@example.com", "pw", token=setup_token())
     assert ok
 
     cfg = await mail_config.get()
@@ -37,12 +37,12 @@ async def test_skipping_mail_leaves_the_safe_default():
 
 
 async def test_blank_smtp_host_counts_as_skipping():
-    ok = await complete_setup("boss3@example.com", "pw", smtp_host="   ")
+    ok = await complete_setup("boss3@example.com", "pw", token=setup_token(), smtp_host="   ")
     assert ok
     assert (await mail_config.get()).dev_mode is True
 
 
 async def test_second_setup_still_refused():
     """The stale-tab guard must survive the new parameters."""
-    assert await complete_setup("first@example.com", "pw") is True
-    assert await complete_setup("second@example.com", "pw") is False
+    assert await complete_setup("first@example.com", "pw", token=setup_token()) is True
+    assert await complete_setup("second@example.com", "pw", token=setup_token()) is False
