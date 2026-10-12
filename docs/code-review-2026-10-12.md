@@ -56,10 +56,14 @@ is never re-checked. Also `admin_settings.py:212-227` YAML save/reset skip
 account's email logs in as it and converts it to LDAP. **Fix:** never auto-link
 `is_superuser`; require an explicit `ldap_dn`/`ldap_username` link.
 
-### S6 Medium — staff directory is public
+### S6 — staff directory is public — **by design, won't fix**
 `shell.py:178-179`, `directory.py:252-281`. Guests get the People tab with email,
 phone, contract dates, photo. The app is internet-facing (token links). GDPR /
-phishing source. **Fix:** hide from `GuestUser` unless deliberate.
+phishing source.
+**Resolution:** intentional — it is the lab phone directory, and everything
+except the onboarding token page stays on the LAN. Only `/workflow/token/*`
+(and its uploads, S7) faces the internet; rank other findings with a LAN
+attacker in mind (e.g. S13 is low priority).
 
 ### S7 Medium — upload size enforced only client-side; Pillow bomb limit default
 `directory.py:550-554`, `workflow_token.py:163-169`, `new_request.py:211-216`,
