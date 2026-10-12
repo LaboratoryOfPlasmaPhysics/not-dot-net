@@ -218,3 +218,14 @@ def test_clamp_range_to_window_keeps_single_day():
     assert _clamp_range_to_window("2026-10-20", window_start, window_end_exclusive) == {
         "from": "2026-10-20", "to": "2026-10-20",
     }
+
+
+def test_lifecycle_badge_hidden_for_plain_available():
+    """Review 2026-10-12 U9: "Booked by X" (orange) sat next to "Available"
+    (green, the lifecycle default) — contradictory. The lifecycle badge only
+    shows when it says something the booking badge doesn't."""
+    from not_dot_net.frontend.bookings import _lifecycle_badge_status
+
+    assert _lifecycle_badge_status("available") is None
+    assert _lifecycle_badge_status("out_of_service") == "out_of_service"
+    assert _lifecycle_badge_status("ready") == "ready"

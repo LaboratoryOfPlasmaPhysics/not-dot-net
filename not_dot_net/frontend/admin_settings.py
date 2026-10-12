@@ -59,12 +59,17 @@ def _is_complex(schema: type[BaseModel]) -> bool:
     return False
 
 
+# Sections edited by a dedicated screen (above, or their own tab for
+# ad_account); the generic loop would show them a second time.
+_SECTIONS_WITH_OWN_EDITOR = {"vocabularies", "field_definitions", "mail_templates", "roles", "ad_account"}
+
+
 async def render(user):
     """Render the admin settings tab content."""
     from not_dot_net.backend.permissions import check_permission
     await check_permission(user, "manage_settings")
 
-    with ui.expansion("Roles", icon="admin_panel_settings").classes("w-full"):
+    with ui.expansion(t("roles"), icon="admin_panel_settings").classes("w-full"):
         await render_roles(user)
 
     with ui.expansion(t("import_export"), icon="swap_vert").classes("w-full"):
@@ -86,7 +91,7 @@ async def render(user):
     registry = get_registry()
 
     for prefix, cfg_section in sorted(registry.items()):
-        if prefix in ("vocabularies", "field_definitions", "mail_templates"):
+        if prefix in _SECTIONS_WITH_OWN_EDITOR:
             continue
         current = await cfg_section.get()
         schema = cfg_section.schema
@@ -96,7 +101,7 @@ async def render(user):
                 from not_dot_net.frontend.workflow_editor import open_workflow_editor
                 wf_count = len(current.workflows)
                 step_count = sum(len(w.steps) for w in current.workflows.values())
-                ui.label(f"{wf_count} workflows, {step_count} steps").classes("text-sm text-grey mb-2")
+                ui.label(t("workflow_counts", workflows=wf_count, steps=step_count)).classes("text-sm text-grey mb-2")
                 ui.button(
                     t("edit_workflows"),
                     icon="edit",

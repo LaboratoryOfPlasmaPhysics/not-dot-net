@@ -178,65 +178,18 @@ async def render(current_user: User):
         return
 
     state = {"users": [], "spec": UserFilter()}
-    table_container = ui.column().classes("w-full")
-    summary = ui.label("").classes("text-sm text-gray-500")
-
-    async def reload():
-        state["users"] = await _load_all_users()
-        rerender()
-
-    def rerender():
-        spec = state["spec"]
-        filtered = filter_users(state["users"], spec)
-        rows = [_user_to_row(u) for u in filtered]
-        table_container.clear()
-        with table_container:
-            table = ui.table(
-                columns=_localized_columns(), rows=rows, row_key="_id",
-                selection="multiple",
-                pagination={"rowsPerPage": 50, "sortBy": "last_ad_logon", "descending": False},
-            ).classes("w-full")
-            table.props("flat bordered dense")
-            table.add_slot("body-cell-is_active", r'''
-                <q-td :props="props">
-                    <q-icon :name="props.value ? 'check_circle' : 'block'"
-                            :color="props.value ? 'positive' : 'negative'" />
-                </q-td>
-            ''')
-            table.add_slot("body-cell-is_superuser", r'''
-                <q-td :props="props">
-                    <q-icon v-if="props.value" name="star" color="amber" />
-                </q-td>
-            ''')
-            with ui.row().classes("items-center gap-2 mt-2"):
-                async def bulk(enabling: bool):
-                    selected_ids = {r["_id"] for r in (table.selected or [])}
-                    targets = [u for u in state["users"] if str(u.id) in selected_ids]
-                    if not targets:
-                        ui.notify(t("nothing_selected"), color="warning")
-                        return
-                    await _open_bulk_dialog(targets, enabling=enabling, actor=current_user, on_done=reload)
-
-                ui.button(t("bulk_enable"), icon="check_circle",
-                          on_click=lambda: bulk(True)).props("flat color=positive")
-                ui.button(t("bulk_disable"), icon="block",
-                          on_click=lambda: bulk(False)).props("flat color=negative")
-                ui.label(t("hint_dblclick_to_edit")).classes("text-xs text-gray-400 ml-auto")
-
-            table.on("rowDblclick", lambda e: _open_edit_dialog(e.args[1], current_user, reload))
-
-        summary.set_text(t("user_count", shown=len(rows), total=len(state["users"])))
 
     with ui.row().classes("items-center gap-2 w-full mb-2"):
-        search = ui.input(placeholder=t("search_placeholder")).props("outlined dense clearable").classes("flex-grow")
+        search = ui.input(placeholder=t("search_placeholder")).props(
+            "outlined dense clearable").classes("flex-grow").mark("user-search")
         auth_select = ui.select(
             {"all": t("all"), "local": t("auth_local"), "ldap": t("auth_ldap")},
             value="all", label=t("auth_method"),
-        ).props("outlined dense stack-label")
+        ).props("outlined dense stack-label").classes("min-w-[140px]")
         active_select = ui.select(
             {"all": t("all"), "active": t("active"), "inactive": t("inactive")},
             value="all", label=t("status"),
-        ).props("outlined dense stack-label")
+        ).props("outlined dense stack-label").classes("min-w-[140px]")
         logon_select = ui.select(
             {
                 "any": t("logon_any"),
@@ -247,7 +200,38 @@ async def render(current_user: User):
                 "1y": t("logon_over_1y"),
             },
             value="any", label=t("last_ad_logon"),
-        ).props("outlined dense stack-label")
+        ).props("outlined dense stack-label").classes("min-w-[180px]")
+
+    summary = ui.label("").classes("text-sm text-gray-500")
+    table = _build_user_table()
+
+    async def reload():
+        state["users"] = await _load_all_users()
+        refresh_rows()
+
+    def refresh_rows():
+        """Update rows in place: rebuilding the table would drop the selection."""
+        table.rows = [_user_to_row(u) for u in filter_users(state["users"], state["spec"])]
+        summary.set_text(t("user_count", shown=len(table.rows), total=len(state["users"])))
+
+    async def bulk(enabling: bool):
+        # Only rows still on screen: a filter must not leave hidden users selected.
+        visible = {r["_id"] for r in table.rows}
+        selected_ids = {r["_id"] for r in (table.selected or [])} & visible
+        targets = [u for u in state["users"] if str(u.id) in selected_ids]
+        if not targets:
+            ui.notify(t("nothing_selected"), color="warning")
+            return
+        await _open_bulk_dialog(targets, enabling=enabling, actor=current_user, on_done=reload)
+
+    with ui.row().classes("items-center gap-2 mt-2"):
+        ui.button(t("bulk_enable"), icon="check_circle",
+                  on_click=lambda: bulk(True)).props("flat color=positive")
+        ui.button(t("bulk_disable"), icon="block",
+                  on_click=lambda: bulk(False)).props("flat color=negative")
+
+    table.on("edit", lambda e: _open_edit_dialog(e.args, current_user, reload))
+    table.on("rowDblclick", lambda e: _open_edit_dialog(e.args[1], current_user, reload))
 
     def on_filter_change():
         state["spec"] = UserFilter(
@@ -256,15 +240,43 @@ async def render(current_user: User):
             active=active_select.value,
             last_logon=logon_select.value,
         )
-        rerender()
+        refresh_rows()
 
-    search.on_value_change(lambda _: on_filter_change())
-    auth_select.on_value_change(lambda _: on_filter_change())
-    active_select.on_value_change(lambda _: on_filter_change())
-    logon_select.on_value_change(lambda _: on_filter_change())
+    for widget in (search, auth_select, active_select, logon_select):
+        widget.on_value_change(lambda _: on_filter_change())
 
     await reload()
     return reload
+
+
+def _build_user_table() -> ui.table:
+    table = ui.table(
+        columns=_localized_columns() + [{"name": "actions", "label": "", "field": "_id", "align": "right"}],
+        rows=[], row_key="_id",
+        selection="multiple",
+        pagination={"rowsPerPage": 50, "sortBy": "last_ad_logon", "descending": False},
+    ).classes("w-full")
+    table.props("flat bordered dense")
+    table.add_slot("body-cell-is_active", r'''
+        <q-td :props="props">
+            <q-icon :name="props.value ? 'check_circle' : 'block'"
+                    :color="props.value ? 'positive' : 'negative'" />
+        </q-td>
+    ''')
+    table.add_slot("body-cell-is_superuser", r'''
+        <q-td :props="props">
+            <q-icon v-if="props.value" name="star" color="amber" />
+        </q-td>
+    ''')
+    table.add_slot("body-cell-actions", f'''
+        <q-td :props="props">
+            <q-btn flat dense round size="sm" icon="edit" aria-label="{t("edit")}"
+                   @click.stop="() => $parent.$emit('edit', props.row)">
+                <q-tooltip>{t("edit")}</q-tooltip>
+            </q-btn>
+        </q-td>
+    ''')
+    return table
 
 
 async def _open_bulk_dialog(targets: list[User], *, enabling: bool, actor: User, on_done):

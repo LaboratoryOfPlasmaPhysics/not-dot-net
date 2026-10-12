@@ -182,6 +182,7 @@ async def render(user: User):
                         return
                     ui.notify(t("request_created"), color="positive")
                     fc.set_visibility(False)
+                    fc.clear()  # next open starts a fresh form
 
                 async def _open_form(fc=form_container, step=first_step, key=wf_key,
                                      wf=wf_config, prefill_data=None, submit_fn=handle_submit):
@@ -247,8 +248,11 @@ async def render(user: User):
                         )
 
                 async def toggle_form(fc=form_container, step=first_step, key=wf_key, open_fn=_open_form):
+                    # Collapse only hides: re-rendering would wipe what was typed.
                     if fc.visible:
                         fc.set_visibility(False)
+                    elif fc.default_slot.children:
+                        fc.set_visibility(True)
                     else:
                         await open_fn(fc, step, key)
 

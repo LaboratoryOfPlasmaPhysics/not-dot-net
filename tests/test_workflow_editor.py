@@ -1530,3 +1530,17 @@ async def test_warns_when_a_tenure_hook_names_a_field_that_does_not_exist(user: 
 
     assert any("grade" in w for w in warnings), warnings
     assert not any("employer" in w for w in warnings), "a declared field that exists was flagged"
+
+
+async def test_editor_dialog_ignores_escape_and_backdrop(user: User, admin_user):
+    """Review 2026-10-12 U6: Esc closed the full-screen editor and dropped
+    unsaved edits, skipping the Cancel button's dirty check."""
+    from not_dot_net.frontend.workflow_editor import WorkflowEditorDialog
+    captured = {}
+
+    @ui.page("/_we_persistent")
+    async def _page():
+        captured["dlg"] = await WorkflowEditorDialog.create(admin_user)
+
+    await user.open("/_we_persistent")
+    assert "persistent" in captured["dlg"].dialog.props

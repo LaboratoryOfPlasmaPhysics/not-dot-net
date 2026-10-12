@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from nicegui import ui
 from sqlalchemy import func, select
 
+from not_dot_net.backend.booking_models import ResourceStatus
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
     BookingValidationError,
@@ -345,6 +346,12 @@ _STATUS_COLOR = {
 }
 
 
+def _lifecycle_badge_status(status: str) -> str | None:
+    """The lifecycle status worth a badge, or None: plain "available" would sit
+    next to the booking badge ("Booked by X") and contradict it."""
+    return None if status == ResourceStatus.AVAILABLE else status
+
+
 def _status_color(status: str) -> str:
     return _STATUS_COLOR.get(status, "grey")
 
@@ -416,7 +423,8 @@ async def _resource_card(outer_container, res, user, is_admin, state,
             )
 
         with ui.row().classes("items-center gap-1 mt-1"):
-            ui.badge(t(f"status_{res.status}"), color=_status_color(res.status))
+            if lifecycle := _lifecycle_badge_status(res.status):
+                ui.badge(t(f"status_{lifecycle}"), color=_status_color(lifecycle))
             if not res.active:
                 ui.badge(t("retired"), color="grey")
 

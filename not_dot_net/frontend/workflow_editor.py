@@ -93,7 +93,8 @@ class WorkflowEditorDialog:
         return instance
 
     def _build(self) -> None:
-        self.dialog = ui.dialog().props("maximized")
+        # Persistent: Esc would drop unsaved edits; Cancel runs the dirty check.
+        self.dialog = ui.dialog().props("maximized persistent")
         with self.dialog, ui.card().classes("w-full h-full"):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label(t("workflows_editor")).classes("text-h6")

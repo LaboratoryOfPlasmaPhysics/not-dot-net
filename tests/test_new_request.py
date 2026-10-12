@@ -122,3 +122,33 @@ async def test_workflow_config_has_no_dead_start_role_field():
         {"label": "X", "start_role": "staff", "steps": []}
     )
     assert not hasattr(wf, "start_role")
+
+
+async def test_collapsing_the_card_keeps_typed_data(user: User, admin_user):
+    """Review 2026-10-12 U5: reopening a collapsed card re-rendered the form
+    (fc.clear()), wiping everything typed so far."""
+    import asyncio
+    from not_dot_net.config import FieldConfig
+    from not_dot_net.frontend.new_request import render
+    await workflows_config.set(WorkflowsConfig(workflows={
+        "trip": WorkflowConfig(label="Trip", steps=[
+            WorkflowStepConfig(key="s", type="form", fields=[
+                FieldConfig(name="destination", type="text", label="Destination"),
+            ]),
+        ]),
+    }))
+
+    @ui.page("/_nr_collapse")
+    async def _page():
+        await render(admin_user)
+
+    await user.open("/_nr_collapse")
+    user.find(kind=ui.card).click()
+    await user.should_see("Destination")
+    user.find("Destination").type("Kyoto")
+
+    user.find(kind=ui.card).click()  # collapse
+    await asyncio.sleep(0.05)
+    user.find(kind=ui.card).click()  # reopen
+    await asyncio.sleep(0.05)
+    assert next(iter(user.find("Destination").elements)).value == "Kyoto"

@@ -208,3 +208,50 @@ async def test_bulk_collects_per_user_failures(monkeypatch):
     )
     assert [u.email for u in result.succeeded] == ["ok@x"]
     assert [(p.email, "modify" in r) for p, r in result.failed] == [("ko@x", True)]
+
+
+# --- Review 2026-10-12 U7/U8: filters below 50 rows, every filter change
+# rebuilt the table (losing the selection), edit only by double-click.
+
+
+async def _render_user_management(user, path: str):
+    from nicegui import ui
+    from not_dot_net.backend.db import User, session_scope
+    from not_dot_net.frontend.user_management import render
+
+    async with session_scope() as session:
+        root = User(email="root-um@test.com", hashed_password="x", is_active=True, is_superuser=True)
+        session.add_all([
+            root,
+            User(email="alice-um@test.com", full_name="Alice", hashed_password="x", is_active=True),
+            User(email="bob-um@test.com", full_name="Bob", hashed_password="x", is_active=True),
+        ])
+        await session.commit()
+        await session.refresh(root)
+
+    @ui.page(path)
+    async def _page():
+        await render(root)
+
+    await user.open(path)
+
+
+async def test_filtering_keeps_the_table_and_its_selection(user):
+    from nicegui import ui
+    await _render_user_management(user, "/_um_filter")
+    table = next(iter(user.find(kind=ui.table).elements))
+    alice = next(r for r in table.rows if r["email"] == "alice-um@test.com")
+    table.selected = [alice]
+
+    user.find(marker="user-search").type("alice")
+
+    assert next(iter(user.find(kind=ui.table).elements)) is table
+    assert [r["email"] for r in table.rows] == ["alice-um@test.com"]
+    assert table.selected == [alice]
+
+
+async def test_rows_have_an_edit_button(user):
+    from nicegui import ui
+    await _render_user_management(user, "/_um_edit")
+    table = next(iter(user.find(kind=ui.table).elements))
+    assert "body-cell-actions" in table.slots
