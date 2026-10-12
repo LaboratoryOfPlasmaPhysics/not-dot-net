@@ -78,24 +78,33 @@ async def pending_effect_count(request_id: uuid.UUID | None = None) -> int:
     return len(await pending_effects(request_id))
 
 
+async def _check_may_retry(actor) -> None:
+    """Same rule as the request page's retry banner."""
+    from not_dot_net.backend.permissions import has_permissions
+    if not (await has_permissions(actor, "approve_workflows") or await has_permissions(actor, "manage_users")):
+        raise PermissionError("Retrying AD effects needs approve_workflows or manage_users")
+
+
 async def retry_pending_effects(
     request_id: uuid.UUID, *, ad_creds: tuple[str, str], actor,
 ) -> tuple[int, int]:
     """Re-run every unresolved effect on a request. Returns (resolved, still_failing).
 
     Each row commits on its own so one stubborn effect can't roll back the
-    others' resolution.
+    others' resolution. The row lock makes a concurrent retry wait, then skip
+    what this one resolved.
     """
     from not_dot_net.backend.workflow_effects import EFFECT_REGISTRY
     from not_dot_net.backend.workflow_models import WorkflowRequest
 
+    await _check_may_retry(actor)
     rows = await pending_effects(request_id)
     resolved = 0
     still_failing = 0
 
     for row_id in [r.id for r in rows]:
         async with session_scope() as session:
-            row = await session.get(FailedEffect, row_id)
+            row = await session.get(FailedEffect, row_id, with_for_update=True)
             if row is None or row.resolved_at is not None:
                 continue
             request = await session.get(WorkflowRequest, row.request_id)

@@ -443,3 +443,64 @@ async def test_tenure_hook_follows_the_config_not_the_workflow_key(monkeypatch):
     assert len(tenures) == 1, "tenure creation was keyed on the literal 'onboarding'"
     assert tenures[0].status == "PostDoc"
     assert tenures[0].start_date == date(2026, 10, 1)
+
+
+# --- W7 (review 2026-10-12): a returning person's open tenure ---
+
+
+async def _completed_request(user, data):
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
+
+    async with session_scope() as session:
+        req = WorkflowRequest(
+            type="onboarding", current_step="it_account_creation",
+            status=RequestStatus.COMPLETED, data=data, created_by=user.id,
+            target_email=user.email,
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+        return req
+
+
+async def test_returning_person_open_tenure_is_closed_the_day_before():
+    from not_dot_net.backend.permissions import SYSTEM_ACTOR
+    from not_dot_net.backend.tenure_service import add_tenure
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
+
+    user = await _create_user("intern-then-phd@test.com")
+    await add_tenure(user.id, "Intern", "CNRS", date(2026, 1, 1), actor=SYSTEM_ACTOR)
+    req = await _completed_request(user, {"status": "PhD", "employer": "CNRS", "start_date": "2026-06-01"})
+
+    await _record_tenure(req, TenureHookConfig(), user.id)
+
+    intern, phd = await list_tenures(user.id)
+    assert intern.end_date == date(2026, 5, 31)
+    assert (phd.status, phd.start_date, phd.end_date) == ("PhD", date(2026, 6, 1), None)
+
+
+async def test_tenure_that_cannot_be_recorded_leaves_an_audit_trail():
+    from sqlalchemy import select
+
+    from not_dot_net.backend.audit import AuditEvent
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.permissions import SYSTEM_ACTOR
+    from not_dot_net.backend.tenure_service import add_tenure
+    from not_dot_net.backend.workflow_service import _record_tenure_or_report
+    from not_dot_net.config import TenureHookConfig
+
+    user = await _create_user("clash@test.com")
+    await add_tenure(user.id, "Intern", "CNRS", date(2026, 7, 1), actor=SYSTEM_ACTOR)
+    req = await _completed_request(user, {"status": "PhD", "employer": "CNRS", "start_date": "2026-06-01"})
+
+    await _record_tenure_or_report(req, TenureHookConfig())
+
+    assert len(await list_tenures(user.id)) == 1
+    async with session_scope() as session:
+        events = (await session.execute(
+            select(AuditEvent).where(AuditEvent.action == "tenure_not_recorded")
+        )).scalars().all()
+    assert [e.target_id for e in events] == [str(req.id)]
+    assert "overlap" in events[0].detail

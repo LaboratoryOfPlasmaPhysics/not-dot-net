@@ -186,3 +186,12 @@ def test_set_field_label_with_autoslug_does_not_crash_with_fieldref():
     field = working.workflows["wf"].steps[0].fields[1]
     assert field.label == "Some Label"
     assert field.name  # a slug was generated
+
+
+def test_stock_onboarding_feeds_every_tenure_field():
+    """W6 (review 2026-10-12): no start_date field, so the tenure began on
+    the day IT finished the account, not the day the person started."""
+    from not_dot_net.backend.default_workflows import default_workflows
+
+    ed = _editor_with(WorkflowsConfig(workflows=default_workflows()), {})
+    assert [w for w in ed.compute_warnings() if "tenure" in w] == []

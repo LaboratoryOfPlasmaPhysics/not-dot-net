@@ -72,6 +72,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                         FieldConfig(name="contact_email", type="email", required=True, label="contact_email"),
                         FieldConfig(name="status", type="select", required=True, label="status", options_key="employment_statuses"),
                         FieldConfig(name="employer", type="select", required=True, label="employer", options_key="employers"),
+                        FieldConfig(name="start_date", type="date", required=True, label="start_date"),
                     ],
                     actions=["submit"],
                 ),

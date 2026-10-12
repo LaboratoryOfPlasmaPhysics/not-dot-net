@@ -196,9 +196,10 @@ async def _r01_setup_users():
 
 
 @pytest.mark.asyncio
-async def test_submit_step_without_creds_leaves_request_untouched():
+async def test_submit_step_without_creds_leaves_request_untouched(mock_ad_effects):
     """The frontend prompts for AD credentials and RETRIES the same submit_step
     call. That only works if the no-creds attempt changed nothing."""
+    from not_dot_net.backend.workflow_config import workflows_config
     from not_dot_net.backend.workflow_effects import AdCredentialsRequired
     from not_dot_net.backend.workflow_service import (
         create_request,
@@ -207,9 +208,12 @@ async def test_submit_step_without_creds_leaves_request_untouched():
         submit_step,
     )
 
+    cfg = await workflows_config.get()
+    cfg.workflows["vpn_access"].steps[1].effects[0].params["groups"] = ["CN=vpn,DC=example,DC=com"]
+    await workflows_config.set(cfg)
     staff, director = await _r01_setup_users()
     req = await create_request(
-        workflow_type="vpn_access",  # default approval step has an ad_add_to_groups effect
+        workflow_type="vpn_access",  # approval step has an ad_add_to_groups effect
         created_by=staff.id,
         data={"target_name": "Alice", "target_email": "alice@test.com"}, actor=SYSTEM_ACTOR
     )
@@ -233,3 +237,31 @@ async def test_submit_step_without_creds_leaves_request_untouched():
     assert retried.status == "completed"
     actions = [ev.action for ev in await list_events(req.id)]
     assert actions == ["create", "submit", "approve"]
+
+
+# --- W8 (review 2026-10-12): a group effect with no groups is a no-op ---
+
+
+@pytest.mark.asyncio
+async def test_empty_group_effect_needs_no_credentials_and_queues_nothing():
+    """The stock vpn_access approval ships with groups: []. Approving it
+    prompted for AD credentials, then queued a retry that could never help."""
+    from sqlalchemy import select
+
+    from not_dot_net.backend.db import session_scope
+    from not_dot_net.backend.workflow_effects import ensure_effect_credentials, run_effects
+    from not_dot_net.backend.effect_retry import FailedEffect
+    from not_dot_net.config import StepEffectConfig
+
+    step = MagicMock(key="approval", effects=[
+        StepEffectConfig(on_action="approve", kind="ad_add_to_groups", params={"groups": []}),
+    ])
+    ensure_effect_credentials(step, "approve", None)
+
+    [result] = await run_effects(
+        request=MagicMock(id=None, target_email="nobody@example.com"),
+        step=step, action="approve", ad_creds=None, actor=MagicMock(),
+    )
+    assert result.succeeded
+    async with session_scope() as session:
+        assert (await session.execute(select(FailedEffect))).scalars().all() == []

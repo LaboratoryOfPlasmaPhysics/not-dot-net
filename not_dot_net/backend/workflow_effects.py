@@ -36,7 +36,7 @@ def ensure_effect_credentials(step, action: str, ad_creds: tuple[str, str] | Non
     """
     matching = [e for e in (getattr(step, "effects", None) or []) if e.on_action == action]
     needs_creds = any(
-        EFFECT_REGISTRY.get(e.kind) and EFFECT_REGISTRY[e.kind].requires_ad_credentials
+        EFFECT_REGISTRY.get(e.kind) and EFFECT_REGISTRY[e.kind].needs_credentials(e.params)
         for e in matching
     )
     if needs_creds and not ad_creds:
@@ -76,6 +76,9 @@ class BaseEffectHandler:
     def validate_params(self, params: dict) -> None:
         return None
 
+    def needs_credentials(self, params: dict) -> bool:
+        return self.requires_ad_credentials
+
     async def run(self, request, step, action, params, ad_creds, actor) -> EffectResult:
         raise NotImplementedError
 
@@ -95,9 +98,14 @@ class _GroupOpHandler(BaseEffectHandler):
     def _call_op(self, target_dn: str, groups: list[str], bind_user: str, bind_pw: str, cfg) -> dict[str, str]:
         raise NotImplementedError
 
+    def needs_credentials(self, params: dict) -> bool:
+        return bool(params.get("groups"))
+
     async def run(self, request, step, action, params, ad_creds, actor) -> EffectResult:
-        eligible = set(await self._eligible_groups())
         groups = params.get("groups") or []
+        if not groups:  # not configured yet: nothing to do, nothing to retry
+            return EffectResult(kind=self.kind, succeeded=True, detail={"groups": []})
+        eligible = set(await self._eligible_groups())
         bad = [g for g in groups if g not in eligible]
         if bad:
             raise ValueError(f"groups not in eligible_groups: {bad}")

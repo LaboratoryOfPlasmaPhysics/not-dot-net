@@ -30,7 +30,7 @@ from not_dot_net.backend.permissions import (
     permission,
     users_with_permission,
 )
-from not_dot_net.backend.tenure_service import add_tenure
+from not_dot_net.backend.tenure_service import add_tenure, close_tenure, current_tenure
 from not_dot_net.backend.workflow_ad_account import handle_ad_account_creation
 from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_effects import (
@@ -219,6 +219,30 @@ async def _resolve_tenure_subject(req: WorkflowRequest, hook) -> uuid.UUID | Non
     return target.id if target else None
 
 
+async def _close_previous_open_tenure(user_id: uuid.UUID, start_date: dt_date) -> None:
+    """A returning person's previous contract is usually still open (nobody
+    closed the internship before the PhD): it ends the day before the new one."""
+    previous = await current_tenure(user_id)
+    if previous is not None and previous.start_date < start_date:
+        await close_tenure(previous.id, start_date - timedelta(days=1), actor=SYSTEM_ACTOR)
+
+
+async def _record_tenure_or_report(req: WorkflowRequest, hook) -> None:
+    """The request is already completed, so a tenure that can't be recorded
+    must not fail it, but must not vanish into the server log either."""
+    try:
+        subject_id = await _resolve_tenure_subject(req, hook)
+        if subject_id:
+            await _record_tenure(req, hook, subject_id)
+    except Exception as exc:
+        logger.exception("Failed to record tenure for request %s", req.id)
+        await log_audit(
+            "workflow", "tenure_not_recorded",
+            target_type="request", target_id=req.id,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+
 async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None:
     """Create the tenure a completed request declares, reading the hook's fields."""
     status = req.data.get(hook.status_field)
@@ -236,6 +260,7 @@ async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None
 
     # SYSTEM_ACTOR, not the approver: recording the tenure is a consequence of
     # the workflow completing, and the approver need not hold manage_users.
+    await _close_previous_open_tenure(user_id, start_date)
     await add_tenure(
         user_id=user_id,
         status=status,
@@ -384,12 +409,7 @@ async def submit_step(
         # workflows record a tenure, and under which field names, is declared
         # on the workflow (`tenure`); the engine knows no workflow keys.
         if wf.tenure is not None and new_status == RequestStatus.COMPLETED:
-            try:
-                subject_id = await _resolve_tenure_subject(req, wf.tenure)
-                if subject_id:
-                    await _record_tenure(req, wf.tenure, subject_id)
-            except Exception:
-                logger.exception("Failed to record tenure for request %s", req.id)
+            await _record_tenure_or_report(req, wf.tenure)
 
         # Audit. Token submissions have no logged-in actor (actor_id is None);
         # attribute them to the target person's email so the trail isn't blank.

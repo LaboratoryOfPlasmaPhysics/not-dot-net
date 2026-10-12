@@ -75,7 +75,7 @@ def _audit_severity(ev) -> str:
     if cat == "personal_data" and action == "download":
         return "orange"
 
-    if cat == "workflow" and action == "resend_notification":
+    if cat == "workflow" and action in {"resend_notification", "tenure_not_recorded"}:
         return "orange"
 
     if cat == "user":

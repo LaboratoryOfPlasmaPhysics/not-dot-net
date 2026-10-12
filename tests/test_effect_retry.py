@@ -12,7 +12,8 @@ import uuid
 
 import pytest
 
-from not_dot_net.backend.db import session_scope
+from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from not_dot_net.backend.workflow_models import WorkflowRequest
 
 
@@ -128,7 +129,7 @@ async def test_retry_resolves_the_row_on_success(monkeypatch):
     assert len(await pending_effects(request_id)) == 1
 
     outcome["succeed"] = True
-    ok, failed = await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=None)
+    ok, failed = await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=SYSTEM_ACTOR)
     assert (ok, failed) == (1, 0)
     assert await pending_effects(request_id) == []
 
@@ -154,7 +155,7 @@ async def test_retry_failure_increments_attempts_and_keeps_row(monkeypatch):
         request=req, step=_FakeStep([_FakeEffect("ad_disable_account")]),
         action="approve", ad_creds=("admin", "pw"), actor=None,
     )
-    ok, failed = await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=None)
+    ok, failed = await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=SYSTEM_ACTOR)
     assert (ok, failed) == (0, 1)
 
     pending = await pending_effects(request_id)
@@ -188,3 +189,22 @@ async def test_handler_raising_is_also_queued(monkeypatch):
     pending = await pending_effects(request_id)
     assert len(pending) == 1
     assert "connection reset" in pending[0].last_error
+
+
+async def test_retry_requires_the_permission_the_page_checks():
+    """W9 (review 2026-10-12): the banner hid the button, but the service
+    itself ran AD writes for any caller."""
+    import pytest
+    from not_dot_net.backend.effect_retry import retry_pending_effects
+
+    request_id = await _make_request()
+    async with session_scope() as session:
+        nobody = User(email="no-rights@test.com", hashed_password="x", is_active=True, role="")
+        session.add(nobody)
+        await session.commit()
+        await session.refresh(nobody)
+
+    with pytest.raises(PermissionError):
+        await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=nobody)
+    with pytest.raises(PermissionError):
+        await retry_pending_effects(request_id, ad_creds=("admin", "pw"), actor=None)
