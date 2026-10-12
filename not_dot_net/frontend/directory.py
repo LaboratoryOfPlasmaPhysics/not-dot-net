@@ -1,23 +1,27 @@
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from urllib.parse import urlparse
 
+from fastapi import APIRouter, Depends, HTTPException, Response
 from nicegui import ui
 from sqlalchemy import func, select
+from sqlalchemy.orm import defer
 
 
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.db import User, AuthMethod, session_scope, get_user_db
 from not_dot_net.backend.profile_photo import (
     profile_photo_data_uri,
+    profile_photo_mime,
     profile_photo_max_bytes,
     remove_profile_photo,
     save_profile_photo,
     validate_profile_photo_upload,
 )
 from not_dot_net.backend.schemas import UserUpdate
-from not_dot_net.backend.users import get_user_manager
+from not_dot_net.backend.users import current_active_user_optional, get_user_manager
 from not_dot_net.frontend.i18n import format_datetime, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog, options_with
@@ -94,9 +98,57 @@ def compute_update_diff(current: dict, submitted: dict) -> dict:
     }
 
 
-async def _load_people(include_inactive: bool = False) -> list[User]:
+directory_router = APIRouter(tags=["directory"])
+
+# simplify: the URL is versioned by photo size, so a same-size replacement can
+# show the old photo until max-age expires. Upgrade: a photo_updated_at column.
+_PHOTO_MAX_AGE_S = 3600
+
+
+@directory_router.get("/directory/photo/{user_id}")
+async def serve_profile_photo(user_id: str, viewer=Depends(current_active_user_optional)):
+    """Unauthenticated for active people, like the directory itself (LAN only).
+
+    Inactive people are listed to user managers only, so their photos are too.
+    """
+    try:
+        person = await _load_person(uuid.UUID(user_id))
+    except ValueError:
+        raise HTTPException(status_code=404)
+    if person is None or not person.photo or profile_photo_mime(person.photo) is None:
+        raise HTTPException(status_code=404)
+    if not person.is_active and not await has_permissions(viewer, MANAGE_USERS):
+        raise HTTPException(status_code=404)
+    return Response(
+        content=person.photo,
+        media_type=profile_photo_mime(person.photo),
+        headers={"Cache-Control": f"private, max-age={_PHOTO_MAX_AGE_S}"},
+    )
+
+
+def photo_url(user_id, photo_size: int) -> str:
+    return f"/directory/photo/{user_id}?v={photo_size}"
+
+
+async def _photo_sizes() -> dict[uuid.UUID, int]:
     async with session_scope() as session:
-        query = select(User).order_by(func.lower(func.coalesce(User.full_name, User.email)))
+        rows = await session.execute(select(User.id, func.length(User.photo)).where(User.photo.is_not(None)))
+        return dict(rows.all())
+
+
+async def _load_person(user_id) -> User | None:
+    async with session_scope() as session:
+        return await session.get(User, user_id)
+
+
+async def _load_people(include_inactive: bool = False) -> list[User]:
+    """Without photo bytes: cards fetch them by URL."""
+    async with session_scope() as session:
+        query = (
+            select(User)
+            .options(defer(User.photo, raiseload=True))
+            .order_by(func.lower(func.coalesce(User.full_name, User.email)))
+        )
         if not include_inactive:
             query = query.where(User.is_active == True)  # noqa: E712
         result = await session.execute(query)
@@ -183,12 +235,13 @@ def render(current_user: User):
         is_admin = await has_permissions(current_user, "manage_users")
         show_inactive.set_visibility(is_admin)
         people = await _load_people(include_inactive=is_admin and show_inactive.value)
+        photo_sizes = await _photo_sizes()
         state["expanded_id"] = None
         state["details"] = {}
         card_container.clear()
         with card_container:
             for person in people:
-                _person_card(person, current_user, state)
+                _person_card(person, current_user, state, photo_sizes.get(person.id))
 
     def filter_cards():
         query = (search.value or "").strip().lower()
@@ -221,7 +274,7 @@ def _format_duration(person: User) -> str:
     return f"{t('since')} {person.start_date}"
 
 
-def _person_card(person: User, current_user: User, state: dict):
+def _person_card(person: User, current_user: User, state: dict, photo_size: int | None = None):
     display_name = person.full_name or person.email
     search_text = " ".join(
         s.lower() for s in [
@@ -237,9 +290,8 @@ def _person_card(person: User, current_user: User, state: dict):
 
         header = ui.row().classes("items-center gap-3 cursor-pointer w-full")
         with header:
-            photo_uri = profile_photo_data_uri(person.photo)
-            if photo_uri:
-                ui.image(photo_uri).classes(
+            if photo_size:
+                ui.image(photo_url(person.id, photo_size)).classes(
                     "w-12 h-12 rounded-full object-cover"
                 )
             else:
@@ -367,6 +419,10 @@ async def _render_detail(container, person: User, current_user: User, state: dic
 
 
 async def _render_edit(container, person: User, current_user: User, state: dict):
+    # The card's copy is stale and has no photo bytes.
+    person = await _load_person(person.id)
+    if person is None:
+        return
     is_ldap = person.auth_method == AuthMethod.LDAP and person.ldap_dn
     if not is_ldap:
         await _render_edit_form(container, person, current_user, state,
@@ -735,8 +791,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
 
 async def _finish_save(container, person, current_user, state):
     ui.notify(t("saved"), color="positive")
-    people = await _load_people()
-    updated = next((p for p in people if p.id == person.id), person)
+    updated = await _load_person(person.id) or person
     await _render_detail(container, updated, current_user, state)
 
 

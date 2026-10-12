@@ -67,3 +67,32 @@ async def test_bootstrap_is_idempotent(tmp_path):
     await bootstrap_schema(url)  # must not raise
 
     assert "user" in await _tables(url)
+
+
+# --- F13 (review 2026-10-12) ---
+
+
+async def test_migrations_since_0017_run_both_ways_on_sqlite(tmp_path):
+    """0018 altered a foreign key outside batch mode, which SQLite can't do."""
+    from alembic import command
+    from not_dot_net.backend.migrate import bootstrap_schema, _alembic_config
+
+    url = f"sqlite+aiosqlite:///{tmp_path / 'walk.db'}"
+    await bootstrap_schema(url)
+    cfg = _alembic_config(url)
+    command.downgrade(cfg, "0017")
+    assert "owner_user_id" not in await _columns(url, "resource")
+    command.upgrade(cfg, "head")
+    assert "owner_user_id" in await _columns(url, "resource")
+
+
+async def test_tables_without_alembic_version_is_refused_clearly(tmp_path):
+    """A create_all database (dev mode) has tables but no version: running
+    every migration from 0001 over it died at 0002 with 'table exists'."""
+    import pytest
+    from not_dot_net.backend.migrate import bootstrap_schema, _create_all
+
+    url = f"sqlite+aiosqlite:///{tmp_path / 'dev.db'}"
+    await _create_all(url)
+    with pytest.raises(RuntimeError, match="stamp"):
+        await bootstrap_schema(url)

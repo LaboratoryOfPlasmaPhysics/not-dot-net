@@ -631,6 +631,21 @@ async def test_create_booking_office_inside_window_succeeds():
     assert booking.resource_id == resource.id
 
 
+async def test_office_bookings_can_be_back_to_back():
+    """F10 (review 2026-10-12): the setup buffer is for preparing equipment;
+    an office needs none, yet it blocked a week after every office booking."""
+    await _setup_roles()
+    admin = await _create_user(email="office-admin-b2b@test.com", role="admin")
+    user = await _create_user(email="booker-b2b@test.com")
+    resource = await _create_test_resource(name="Room 203", resource_type="office")
+    start = _valid_start()
+    mid = start + timedelta(days=3)
+    await offer_availability(resource.id, start, start + timedelta(days=20), actor=admin)
+    await create_booking(resource.id, user.id, start, mid, actor=user)
+    second = await create_booking(resource.id, user.id, mid, mid + timedelta(days=3), actor=user)
+    assert second.start_date == mid
+
+
 async def test_create_booking_office_outside_window_raises():
     await _setup_roles()
     admin = await _create_user(email="office-admin2@test.com", role="admin")

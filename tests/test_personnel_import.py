@@ -195,3 +195,59 @@ async def test_import_synthesizes_email_when_blank():
     assert summary.people_created == 1
     [user] = await _users()
     assert user.email == "marie.dupont@archive.invalid"
+
+
+# ---- F11 (review 2026-10-12) ----------------------------------------------
+
+
+def test_parse_rejects_end_before_start():
+    with pytest.raises(ValueError, match="row 2: end_date"):
+        parse_clean_rows([_row(start_date="2015-08-31", end_date="2015-03-01")])
+
+
+async def test_homonyms_with_different_emails_stay_two_people():
+    rows = [
+        _row(email="marie.dupont@lpp.polytechnique.fr"),
+        _row(email="marie.dupont2@cnrs.fr", start_date="2019-01-01", end_date="2019-12-31"),
+    ]
+    summary = await import_personnel(parse_clean_rows(rows))
+    assert summary.people_created == 2
+    assert sorted(u.email for u in await _users()) == [
+        "marie.dupont2@cnrs.fr", "marie.dupont@lpp.polytechnique.fr",
+    ]
+
+
+async def test_rows_without_email_join_the_only_emailed_homonym():
+    rows = [
+        _row(),
+        _row(email="", start_date="2016-01-01", end_date="2016-06-30"),
+    ]
+    summary = await import_personnel(parse_clean_rows(rows))
+    assert summary.people_created == 1
+    [user] = await _users()
+    assert len(await _tenures(user.id)) == 2
+
+
+async def test_overlapping_contracts_are_skipped_and_counted():
+    rows = [
+        _row(),
+        _row(start_date="2015-06-01", end_date="2015-12-31", status="PhD"),
+    ]
+    summary = await import_personnel(parse_clean_rows(rows))
+    assert summary.tenures_created == 1
+    assert summary.tenures_skipped_overlap == 1
+    assert "overlap" in str(summary)
+
+
+async def test_names_with_the_same_slug_get_distinct_synthetic_emails():
+    rows = [
+        _row(first_name="Jean Marc", last_name="Petit", email=""),
+        _row(first_name="Jean-Marc", last_name="Petit", email=""),
+    ]
+    summary = await import_personnel(parse_clean_rows(rows))
+    assert summary.people_created == 2
+    assert len({u.email for u in await _users()}) == 2
+
+    again = await import_personnel(parse_clean_rows(rows))
+    assert again.people_created == 0
+    assert again.people_matched == 2

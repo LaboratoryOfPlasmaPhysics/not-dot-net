@@ -487,3 +487,61 @@ class TestResourceSpecsRoundTrip:
                     select(Resource).where(Resource.name == name)
                 )).scalar_one()
                 assert resource.specs is None
+
+
+# --- F12 (review 2026-10-12) ---
+
+
+async def test_resource_status_and_owner_survive_export_then_import():
+    owner = await _create_user("Office.Owner@test.com")
+    async with session_scope() as session:
+        session.add(Resource(name="Room 9", resource_type="office",
+                             status="out_of_service", owner_user_id=owner.id))
+        await session.commit()
+
+    [exported] = await export_resources()
+    assert exported["status"] == "out_of_service"
+    assert exported["owner_email"] == "Office.Owner@test.com"
+
+    async with session_scope() as session:
+        await session.delete((await session.execute(select(Resource))).scalar_one())
+        await session.commit()
+    await import_resources([{**exported, "owner_email": "office.owner@test.com"}])
+
+    async with session_scope() as session:
+        restored = (await session.execute(select(Resource))).scalar_one()
+    assert restored.status == "out_of_service"
+    assert restored.owner_user_id == owner.id
+
+
+async def test_import_resources_rejects_an_unknown_status():
+    await import_resources([{"name": "PC-X", "resource_type": "desktop", "status": "on_fire"}])
+    async with session_scope() as session:
+        assert (await session.execute(select(Resource))).scalar_one().status == "available"
+
+
+async def test_import_tenures_replace_updates_the_matching_tenure():
+    from not_dot_net.backend.data_io import import_tenures
+    from not_dot_net.backend.tenure_service import list_tenures
+
+    user = await _create_user("replace-tenure@test.com")
+    row = {"user_email": "replace-tenure@test.com", "status": "Intern",
+           "employer": "CNRS", "start_date": "2025-03-01", "end_date": "2025-08-31"}
+    await import_tenures([row])
+
+    result = await import_tenures([{**row, "end_date": "2025-09-30", "notes": "extended"}], replace=True)
+
+    assert result == {"created": 0, "updated": 1, "skipped": 0}
+    [tenure] = await list_tenures(user.id)
+    assert tenure.end_date.isoformat() == "2025-09-30"
+    assert tenure.notes == "extended"
+
+
+async def test_replace_from_an_old_export_keeps_the_owner():
+    owner = await _create_user("keeps-owner@test.com")
+    async with session_scope() as session:
+        session.add(Resource(name="Room 10", resource_type="office", owner_user_id=owner.id))
+        await session.commit()
+    await import_resources([{"name": "Room 10", "resource_type": "office"}], replace=True)
+    async with session_scope() as session:
+        assert (await session.execute(select(Resource))).scalar_one().owner_user_id == owner.id

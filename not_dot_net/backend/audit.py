@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import JSON, String, Text, func, select
+from sqlalchemy import JSON, Index, String, Text, func, select
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 
 from not_dot_net.backend.db import Base, session_scope
@@ -41,12 +41,16 @@ class AuditEvent(MappedAsDataclass, Base, kw_only=True):
     action: Mapped[str] = mapped_column(String(100))
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
-    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None, index=True)
+    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     target_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)  # user, request, resource, booking
     target_id: Mapped[str | None] = mapped_column(String(36), nullable=True, default=None)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None, index=True)
+
+
+# The actor search compares lower(actor_email); an index on the bare column can't serve it.
+Index("ix_audit_event_actor_email_lower", func.lower(AuditEvent.actor_email))
 
 
 def request_ip(request) -> str | None:

@@ -12,12 +12,14 @@ branch_labels = None
 depends_on = None
 
 
+# Batch mode: SQLite cannot ALTER a constraint; on Postgres it emits plain ALTERs.
 def upgrade() -> None:
-    op.add_column("resource", sa.Column("owner_user_id", sa.Uuid(), nullable=True))
-    op.create_foreign_key(
-        "fk_resource_owner_user_id", "resource", "user",
-        ["owner_user_id"], ["id"], ondelete="SET NULL",
-    )
+    with op.batch_alter_table("resource") as batch:
+        batch.add_column(sa.Column("owner_user_id", sa.Uuid(), nullable=True))
+        batch.create_foreign_key(
+            "fk_resource_owner_user_id", "user",
+            ["owner_user_id"], ["id"], ondelete="SET NULL",
+        )
     op.create_table(
         "office_availability",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -36,5 +38,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_office_availability_resource_id", table_name="office_availability")
     op.drop_table("office_availability")
-    op.drop_constraint("fk_resource_owner_user_id", "resource", type_="foreignkey")
-    op.drop_column("resource", "owner_user_id")
+    with op.batch_alter_table("resource") as batch:
+        batch.drop_constraint("fk_resource_owner_user_id", type_="foreignkey")
+        batch.drop_column("owner_user_id")

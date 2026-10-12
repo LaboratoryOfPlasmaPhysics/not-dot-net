@@ -1,11 +1,16 @@
-"""Import/export pages and booking resources as JSON."""
+"""Import/export pages, booking resources and tenures as JSON.
+
+A content transfer between instances, not a backup: bookings, availability
+windows and floor plans stay behind. Back up with pg_dump.
+"""
 
 import asyncio
+import uuid
 from datetime import datetime, UTC
 
 from sqlalchemy import func, select
 
-from not_dot_net.backend.booking_models import Resource
+from not_dot_net.backend.booking_models import Resource, ResourceStatus
 from not_dot_net.backend.db import session_scope, User
 from not_dot_net.backend.page_models import Page
 from not_dot_net.backend.tenure_service import UserTenure
@@ -72,7 +77,7 @@ def _serialize_page(p: Page) -> dict:
     }
 
 
-def _serialize_resource(r: Resource) -> dict:
+def _serialize_resource(r: Resource, owner_email: str | None) -> dict:
     return {
         "name": r.name,
         "resource_type": r.resource_type,
@@ -80,7 +85,30 @@ def _serialize_resource(r: Resource) -> dict:
         "location": r.location,
         "specs": r.specs,
         "active": r.active,
+        "status": r.status,
+        "owner_email": owner_email,
     }
+
+
+async def _emails_by_id(session, user_ids) -> dict:
+    if not user_ids:
+        return {}
+    rows = await session.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
+    return dict(rows.all())
+
+
+async def _user_id_by_email(session, email) -> uuid.UUID | None:
+    email = _clean_text(email)
+    if not email:
+        return None
+    # Case-insensitive: AD-provisioned users keep whatever case AD returned.
+    return (await session.execute(
+        select(User.id).where(func.lower(User.email) == email.lower())
+    )).scalar_one_or_none()
+
+
+def _as_status(value, default: str) -> str:
+    return value if value in {s.value for s in ResourceStatus} else default
 
 
 async def export_pages() -> list[dict]:
@@ -91,8 +119,9 @@ async def export_pages() -> list[dict]:
 
 async def export_resources() -> list[dict]:
     async with session_scope() as session:
-        result = await session.execute(select(Resource).order_by(Resource.name))
-        return [_serialize_resource(r) for r in result.scalars().all()]
+        resources = (await session.execute(select(Resource).order_by(Resource.name))).scalars().all()
+        emails = await _emails_by_id(session, {r.owner_user_id for r in resources if r.owner_user_id})
+        return [_serialize_resource(r, emails.get(r.owner_user_id)) for r in resources]
 
 
 def _serialize_tenure(t: UserTenure, email: str) -> dict:
@@ -112,14 +141,7 @@ async def export_tenures() -> list[dict]:
             select(UserTenure).order_by(UserTenure.user_id, UserTenure.start_date)
         )
         tenures = result.scalars().all()
-        user_ids = {t.user_id for t in tenures}
-        if user_ids:
-            users_result = await session.execute(
-                select(User.id, User.email).where(User.id.in_(user_ids))
-            )
-            email_map = {uid: email for uid, email in users_result.all()}
-        else:
-            email_map = {}
+        email_map = await _emails_by_id(session, {t.user_id for t in tenures})
         return [_serialize_tenure(t, email_map.get(t.user_id, "unknown")) for t in tenures]
 
 
@@ -190,6 +212,9 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     existing.location = _as_str(item.get("location"), existing.location)
                     existing.specs = _as_dict(item.get("specs"), existing.specs)
                     existing.active = _as_bool(item.get("active", existing.active), existing.active)
+                    existing.status = _as_status(item.get("status"), existing.status)
+                    if "owner_email" in item:  # files exported before it existed keep the owner
+                        existing.owner_user_id = await _user_id_by_email(session, item["owner_email"])
                     updated += 1
                 else:
                     skipped += 1
@@ -201,6 +226,8 @@ async def import_resources(data: list[dict], *, replace: bool = False) -> dict[s
                     location=_as_str(item.get("location"), None),
                     specs=_as_dict(item.get("specs"), None),
                     active=_as_bool(item.get("active", True), True),
+                    status=_as_status(item.get("status"), ResourceStatus.AVAILABLE.value),
+                    owner_user_id=await _user_id_by_email(session, item.get("owner_email")),
                 ))
                 created += 1
         await session.commit()
@@ -221,32 +248,37 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
             if not email or not status or not employer or not item.get("start_date"):
                 skipped += 1
                 continue
-            # Case-insensitive: AD-provisioned users keep whatever case AD returned.
-            user_result = await session.execute(
-                select(User).where(func.lower(User.email) == email.lower())
-            )
-            user = user_result.scalar_one_or_none()
-            if user is None:
+            user_id = await _user_id_by_email(session, email)
+            if user_id is None:
                 skipped += 1
                 continue
             try:
                 start_date = dt_date.fromisoformat(item["start_date"])
                 end_date = dt_date.fromisoformat(item["end_date"]) if item.get("end_date") else None
                 _validate_tenure_dates(start_date, end_date)
-                await _ensure_no_overlap(session, user.id, start_date, end_date)
-                session.add(UserTenure(
-                    user_id=user.id,
-                    status=status,
-                    employer=employer,
-                    start_date=start_date,
-                    end_date=end_date,
-                    notes=_as_str(item.get("notes"), None),
-                ))
-                created += 1
+                same_start = await _tenure_starting(session, user_id, start_date) if replace else None
+                await _ensure_no_overlap(session, user_id, start_date, end_date,
+                                         exclude_id=same_start.id if same_start else None)
+                fields = dict(status=status, employer=employer, end_date=end_date,
+                              notes=_as_str(item.get("notes"), None))
+                if same_start:
+                    for name, value in fields.items():
+                        setattr(same_start, name, value)
+                    updated += 1
+                else:
+                    session.add(UserTenure(user_id=user_id, start_date=start_date, **fields))
+                    created += 1
             except (TypeError, ValueError):
                 skipped += 1
         await session.commit()
     return {"created": created, "updated": updated, "skipped": skipped}
+
+
+async def _tenure_starting(session, user_id, start_date) -> UserTenure | None:
+    """The tenure an import row replaces: same person, same start."""
+    return (await session.execute(
+        select(UserTenure).where(UserTenure.user_id == user_id, UserTenure.start_date == start_date)
+    )).scalars().first()
 
 
 async def import_all(data: dict, *, replace: bool = False, actor=None) -> dict:

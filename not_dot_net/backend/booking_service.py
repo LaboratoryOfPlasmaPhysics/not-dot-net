@@ -354,6 +354,11 @@ async def list_bookings_for_user(user_id: uuid.UUID) -> list[Booking]:
         return list(result.scalars().all())
 
 
+def _setup_buffer_days(resource: Resource, cfg) -> int:
+    """Equipment is prepared between loans; an office needs no preparation."""
+    return 0 if resource.resource_type == "office" else cfg.resource_setup_buffer_days
+
+
 async def create_booking(
     resource_id: uuid.UUID, user_id: uuid.UUID,
     start_date: date, end_date: date, note: str = "",
@@ -379,7 +384,6 @@ async def create_booking(
     max_booking_days = cfg.max_booking_days
     if (end_date - start_date).days > max_booking_days:
         raise BookingValidationError(f"Booking cannot exceed {max_booking_days} days")
-    setup_buffer_days = cfg.resource_setup_buffer_days
 
     async with session_scope() as session:
         async with session.begin():
@@ -392,6 +396,7 @@ async def create_booking(
             if not resource.active:
                 raise BookingValidationError("Resource is not active")
 
+            setup_buffer_days = _setup_buffer_days(resource, cfg)
             if resource.resource_type == "office":
                 windows = await list_availability_windows(resource_id)
                 if not is_covered(windows, start_date, end_date):
@@ -468,7 +473,6 @@ async def migrate_booking(booking_id: uuid.UUID, new_resource_id: uuid.UUID,
     create_booking; the booking's user is notified by email."""
     await check_permission(actor, MANAGE_BOOKINGS)
     cfg = await bookings_config.get()
-    buffer_days = timedelta(days=cfg.resource_setup_buffer_days)
     async with session_scope() as session:
         async with session.begin():
             booking = await session.get(Booking, booking_id)
@@ -483,6 +487,7 @@ async def migrate_booking(booking_id: uuid.UUID, new_resource_id: uuid.UUID,
             if not target.active:
                 raise BookingValidationError("Target resource is not active")
             old_resource = await session.get(Resource, booking.resource_id)
+            buffer_days = timedelta(days=_setup_buffer_days(target, cfg))
             conflicts = await session.execute(
                 select(Booking).where(
                     Booking.resource_id == new_resource_id,

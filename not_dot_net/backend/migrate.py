@@ -28,16 +28,25 @@ def stamp_head(database_url: str) -> None:
 
 
 async def _schema_initialized(database_url: str) -> bool:
-    """True if the database already holds application tables."""
+    """True if migrations manage this database, False if it is empty.
+
+    Tables without alembic_version come from create_all (dev mode): which
+    revision they match is unknown, so refuse rather than replay 0001.
+    """
     engine = create_async_engine(database_url, poolclass=NullPool)
     try:
         async with engine.connect() as conn:
-            return await conn.run_sync(
-                lambda c: sa_inspect(c).has_table("alembic_version")
-                or sa_inspect(c).has_table("user")
+            versioned, has_tables = await conn.run_sync(
+                lambda c: (sa_inspect(c).has_table("alembic_version"), sa_inspect(c).has_table("user"))
             )
     finally:
         await engine.dispose()
+    if has_tables and not versioned:
+        raise RuntimeError(
+            "Database has tables but no alembic_version. If its schema matches the code, "
+            "mark it with `python -m not_dot_net.cli stamp head`; otherwise stamp the matching revision."
+        )
+    return versioned
 
 
 async def _create_all(database_url: str) -> None:

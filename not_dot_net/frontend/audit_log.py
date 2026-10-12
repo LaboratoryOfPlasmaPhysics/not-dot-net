@@ -87,6 +87,25 @@ def _audit_severity(ev) -> str:
     return "green"
 
 
+AUDIT_PAGE = 500
+
+
+async def events_of_severity(severity: str, **filters) -> tuple[list[tuple[AuditEventView, str]], bool]:
+    """The newest AUDIT_PAGE events of that severity ("" for any), and whether more exist.
+
+    Severity is classified in Python from the metadata JSON, so it can't be a
+    WHERE clause: page through until enough match.
+    """
+    matched: list[tuple[AuditEventView, str]] = []
+    offset = 0
+    while True:
+        batch = await list_audit_events(**filters, limit=AUDIT_PAGE, offset=offset)
+        matched += [(ev, sev) for ev in batch if (sev := _audit_severity(ev)) == severity or not severity]
+        if len(matched) > AUDIT_PAGE or len(batch) < AUDIT_PAGE:
+            return matched[:AUDIT_PAGE], len(matched) > AUDIT_PAGE
+        offset += AUDIT_PAGE
+
+
 def _relative_time_label(dt: datetime | None, *, now: datetime | None = None) -> str:
     """Compact today/yesterday/before-yesterday/N-days-ago label."""
     if dt is None:
@@ -233,10 +252,9 @@ async def _render_log(
 ):
     container.clear()
 
-    since = _since_from_period(period)
-    events = await list_audit_events(
-        category=category, actor_email=actor_email, since=since, limit=500,
-    )
+    filters = dict(category=category, actor_email=actor_email, since=_since_from_period(period))
+    events = await list_audit_events(**filters, limit=AUDIT_PAGE)
+    shown, truncated = await events_of_severity(severity_filter, **filters)
 
     period_options = {k: t(k) for k in TIME_PERIOD_DAYS}
     relative_state = {"enabled": relative_time}
@@ -345,15 +363,13 @@ async def _render_log(
             {"name": "detail", "label": t("detail"), "field": "detail", "align": "left"},
         ]
 
-        rows = [
-            _build_row(ev, sev, relative_time)
-            for ev, sev in zip(events, severities)
-            if not severity_filter or sev == severity_filter
-        ]
+        rows = [_build_row(ev, sev, relative_time) for ev, sev in shown]
 
         if not rows:
             ui.label(t("no_events")).classes("text-grey")
             return
+        if truncated:
+            ui.label(t("audit_truncated", count=AUDIT_PAGE)).classes("text-sm text-orange-9 mb-2")
 
         with ui.row().classes("w-full items-start gap-3"):
             with ui.element("div").classes("flex-1 min-w-0"):

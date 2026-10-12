@@ -42,6 +42,11 @@ def _validate_tenure_dates(start_date: date, end_date: date | None) -> None:
         raise ValueError("Tenure end date cannot be before start date")
 
 
+def periods_overlap(a_start: date, a_end: date | None, b_start: date, b_end: date | None) -> bool:
+    """Inclusive date ranges; a missing end is open."""
+    return a_start <= (b_end or date.max) and b_start <= (a_end or date.max)
+
+
 async def _ensure_no_overlap(
     session,
     user_id: uuid.UUID,
@@ -49,15 +54,13 @@ async def _ensure_no_overlap(
     end_date: date | None,
     exclude_id: uuid.UUID | None = None,
 ) -> None:
-    new_end = end_date or date.max
     result = await session.execute(
         select(UserTenure).where(UserTenure.user_id == user_id)
     )
     for existing in result.scalars().all():
         if exclude_id is not None and existing.id == exclude_id:
             continue
-        existing_end = existing.end_date or date.max
-        if existing.start_date <= new_end and start_date <= existing_end:
+        if periods_overlap(existing.start_date, existing.end_date, start_date, end_date):
             raise ValueError("Tenure periods cannot overlap")
 
 

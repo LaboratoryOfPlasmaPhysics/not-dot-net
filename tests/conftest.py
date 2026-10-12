@@ -88,9 +88,16 @@ async def setup_db(request, monkeypatch):
     invalidate_config_cache()
     login_throttle.reset()
 
+    # create_app's include_router nests each router's lifespan into the app's.
+    # NiceGUI's per-test reset drops the routes but keeps that nesting, so it
+    # grew with every `user` test until startup hit RecursionError.
+    from nicegui import app as nicegui_app
+    app_lifespan = nicegui_app.router.lifespan_context
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
+    nicegui_app.router.lifespan_context = app_lifespan
     invalidate_config_cache()
     login_throttle.reset()
     await engine.dispose()
