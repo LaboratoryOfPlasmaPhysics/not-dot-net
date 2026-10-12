@@ -125,6 +125,11 @@ async def test_resend_notification_locks_row(monkeypatch):
         (b"%PDF-1.4 data", "fake.png", "does not match"),
         (b"%PDF-1.4 data", "ok.pdf", None),
         (b"\x89PNG\r\n\x1a\nimg", "photo.png", None),
+        # Review 2026-10-12 S11: content matching no known signature used to
+        # pass, so HTML or an executable named .pdf/.doc reached staff.
+        (b"<html><script>alert(1)</script>", "cv.pdf", "does not match"),
+        (b"MZ\x90\x00 windows executable", "contract.doc", "does not match"),
+        (b"", "empty.docx", "does not match"),
     ],
 )
 def test_validate_upload(content, filename, expected_error):
@@ -133,3 +138,11 @@ def test_validate_upload(content, filename, expected_error):
         assert error is None
     else:
         assert error is not None and expected_error in error
+
+
+def test_every_allowed_extension_has_a_magic_signature():
+    """_check_magic refuses content matching no signature, so an extension
+    added without one would reject every upload of that type."""
+    from not_dot_net.backend.workflow_uploads import ALLOWED_EXTENSIONS, _MAGIC_SIGNATURES
+    covered = set().union(*(exts for _, exts in _MAGIC_SIGNATURES))
+    assert ALLOWED_EXTENSIONS <= covered

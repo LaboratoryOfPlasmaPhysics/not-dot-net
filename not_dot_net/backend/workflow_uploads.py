@@ -54,11 +54,15 @@ _MAGIC_SIGNATURES: list[tuple[bytes, set[str]]] = [
 
 
 def _check_magic(content: bytes, ext: str) -> bool:
-    """Check if file content matches its extension via magic bytes."""
-    for signature, valid_exts in _MAGIC_SIGNATURES:
-        if content[:len(signature)] == signature:
-            return ext in valid_exts
-    return True  # no signature match → skip check (don't block unknown formats)
+    """Whether the content starts with a signature valid for `ext`.
+
+    Every allowed extension has a signature, so content matching none is
+    refused: the token page is internet-facing and staff open what it stores.
+    """
+    return any(
+        content.startswith(signature) and ext in valid_exts
+        for signature, valid_exts in _MAGIC_SIGNATURES
+    )
 
 
 def upload_size_error(size: int, max_size_mb: int) -> str | None:
