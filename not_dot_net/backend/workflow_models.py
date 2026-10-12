@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from sqlalchemy import JSON, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 from not_dot_net.backend.db import Base
 
 
-class RequestStatus(str, PyEnum):
+class RequestStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     REJECTED = "rejected"

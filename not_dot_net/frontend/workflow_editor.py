@@ -102,7 +102,7 @@ class WorkflowEditorDialog:
                           ).props("flat dense").tooltip(t("yaml_advanced"))
             self._body_container = ui.column().classes("w-full grow")
             with ui.row().classes("w-full justify-between items-center"):
-                self._warnings_label = ui.label("").classes("text-warning text-sm")
+                self._warnings_label = ui.label("").classes("text-orange-10 text-sm")
                 self._warnings_label.on("click", lambda e: self._show_warnings(self._current_warnings))
                 with ui.row():
                     ui.button(t("cancel"), on_click=self._on_cancel_click).props("flat")
@@ -124,8 +124,10 @@ class WorkflowEditorDialog:
         self._active_tab = "Form"
         self._body_container.clear()
         with self._body_container:
-            with ui.row().classes("w-full grow no-wrap"):
-                self._tree_container = ui.column().classes("w-72 q-pr-md").style("border-right: 1px solid #e0e0e0")
+            # Side by side from md up; stacked on a phone, where w-72 left no room for the detail.
+            with ui.row().classes("w-full grow flex-col md:flex-row md:no-wrap"):
+                self._tree_container = ui.column().classes("w-full md:w-72 shrink-0 q-pr-md").style(
+                    "border-right: 1px solid #e0e0e0")
                 self._detail_container = ui.column().classes("grow")
         self._refresh_tree()
         self._refresh_detail()

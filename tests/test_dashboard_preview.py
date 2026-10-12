@@ -21,3 +21,12 @@ def test_skips_heading_and_blank_lines():
 def test_empty_and_heading_only():
     assert _preview_line("") == ""
     assert _preview_line("# only a heading") == ""
+
+
+def test_preview_skips_markdown_table_rows():
+    """V-list (review 2026-10-12): a page starting with a table previewed as
+    '| Name | Phone |'."""
+    from not_dot_net.frontend.dashboard import _preview_line
+
+    content = "# Contacts\n\n| Name | Phone |\n|---|---|\n| Ada | 42 |\n\nCall the **desk** first."
+    assert _preview_line(content) == "Call the desk first."

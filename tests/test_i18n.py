@@ -10,8 +10,6 @@ I18N_SOURCE = Path(i18n_module.__file__)
 
 SECURITY_MESSAGE_KEYS = {
     "invalid_credentials",
-    "auth_error",
-    "session_expired",
     "token_expired",
     "invalid_code",
     "too_many_attempts",
@@ -88,7 +86,7 @@ def test_t_with_placeholder():
 
 
 def test_fr_translations_are_not_english():
-    shared_allowed = {"LPP Intranet", "Type", "Permanent", "Description", "Note", "Action", "CPU", "RAM", "GPU", "Pages", "Import / Export", "Photo", "Justification", "RIB", "Notifications", "Permissions", "Local", "AD/LDAP", "Super", "Normal", "sAMAccountName", "Source", "UID", "Email", "Code", "OK"}
+    shared_allowed = {"LPP Intranet", "Type", "Permanent", "Description", "Note", "Action", "CPU", "RAM", "GPU", "Pages", "Import / Export", "Photo", "Justification", "RIB", "Notifications", "Permissions", "Local", "AD/LDAP", "Super", "Normal", "sAMAccountName", "Source", "UID", "Email", "Code", "OK", "Workflows", "LDAP / Active Directory"}
     for key in TRANSLATIONS["en"]:
         en = TRANSLATIONS["en"][key]
         fr = TRANSLATIONS["fr"][key]

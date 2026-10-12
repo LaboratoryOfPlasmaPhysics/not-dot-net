@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import Enum
+from enum import StrEnum
 
 from ldap3 import Server, ServerPool, Connection, ALL, Tls, MODIFY_REPLACE, MODIFY_ADD, MODIFY_DELETE, ROUND_ROBIN
 from ldap3.core.exceptions import LDAPBindError, LDAPException
@@ -42,7 +42,7 @@ _AD_READ_ONLY = [
 _AD_ATTRIBUTES = list(AD_ATTR_MAP.values()) + _AD_READ_ONLY
 
 
-class TlsMode(str, Enum):
+class TlsMode(StrEnum):
     NONE = "none"
     LDAPS = "ldaps"
     START_TLS = "start_tls"

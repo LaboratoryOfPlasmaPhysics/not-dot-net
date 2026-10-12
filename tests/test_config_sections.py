@@ -203,7 +203,7 @@ async def test_workflows_config_defaults():
     assert cfg.max_upload_size_mb == 10
     assert "vpn_access" in cfg.workflows
     assert "onboarding" in cfg.workflows
-    assert cfg.workflows["vpn_access"].label == "VPN Access Request"
+    assert cfg.workflows["vpn_access"].label == "VPN Access"
 
 
 async def test_workflows_config_onboarding_v2_defaults():

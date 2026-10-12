@@ -22,7 +22,7 @@ from not_dot_net.backend.profile_photo import (
 )
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import current_active_user_optional, get_user_manager
-from not_dot_net.frontend.i18n import format_datetime, t
+from not_dot_net.frontend.i18n import format_datetime, get_locale, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog, options_with
 from not_dot_net.backend.permissions import (
@@ -351,7 +351,9 @@ async def _render_detail(container, person: User, current_user: User, state: dic
         if person.company:
             ui.label(f"{t('company')}: {person.company}").classes("text-sm")
         if person.employment_status:
-            ui.label(f"{t('status')}: {person.employment_status}").classes("text-sm")
+            status_labels, _ = await _tenure_options(get_locale())
+            status = status_labels.get(person.employment_status, person.employment_status)
+            ui.label(f"{t('status')}: {status}").classes("text-sm")
         if person.title:
             ui.label(f"{t('title')}: {person.title}").classes("text-sm")
         if person.description:
@@ -806,6 +808,7 @@ async def _render_tenure_history(parent_container, person: User, current_user: U
     from not_dot_net.backend.tenure_service import list_tenures as _list_tenures
 
     tenures = await _list_tenures(person.id)
+    status_labels, _ = await _tenure_options(get_locale())
 
     with ui.expansion(t("tenure_history"), icon="history").classes("w-full"):
         tenure_container = ui.column().classes("w-full")
@@ -818,7 +821,7 @@ async def _render_tenure_history(parent_container, person: User, current_user: U
                 if not tenures:
                     ui.label(t("no_tenures")).classes("text-sm text-gray-400 italic")
                 for ten in tenures:
-                    _render_tenure_row(ten, is_admin, refresh_tenures, person, current_user)
+                    _render_tenure_row(ten, is_admin, refresh_tenures, person, current_user, status_labels)
 
         if is_admin:
             async def show_add():
@@ -828,10 +831,11 @@ async def _render_tenure_history(parent_container, person: User, current_user: U
         await refresh_tenures()
 
 
-def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current_user: User):
+def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current_user: User,
+                       status_labels: dict[str, str]):
     end_label = t("tenure_current") if tenure.end_date is None else str(tenure.end_date)
     with ui.row().classes("items-center gap-2 w-full"):
-        ui.chip(tenure.status, color="primary").props("dense outline")
+        ui.chip(status_labels.get(tenure.status, tenure.status), color="primary").props("dense outline")
         ui.label(f"{tenure.employer}").classes("text-sm font-medium")
         ui.label(f"{tenure.start_date} → {end_label}").classes("text-sm text-gray-500")
         if tenure.notes:

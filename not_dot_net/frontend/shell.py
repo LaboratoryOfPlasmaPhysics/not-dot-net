@@ -123,7 +123,8 @@ def setup():
             "background-color: #0F52AC"
         ):
             ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
-            with ui.tabs().classes("ml-4") as tabs:
+            # Ten tabs overflow at laptop width: scroll with arrows instead of wrapping.
+            with ui.tabs().props("outside-arrows mobile-arrows").classes("ml-4 min-w-0 flex-1") as tabs:
                 dashboard_tab = ui.tab(dashboard_label, icon="dashboard")
                 ui.tab(people_label, icon="people")
                 ui.tab(bookings_label, icon="event_available")
@@ -137,7 +138,7 @@ def setup():
                     ui.tab(settings_label, icon="settings")
                     ui.tab(ad_accounts_label, icon="manage_accounts")
                 if is_superuser:
-                    ui.tab(users_label, icon="manage_accounts")
+                    ui.tab(users_label, icon="group")
 
             async def on_tab_change(e):
                 app.storage.user["active_tab"] = tab_key_of.get(e.value)
@@ -162,7 +163,7 @@ def setup():
                 ).props("flat dense color=white text-color=white toggle-color=white")
 
                 if logged_in:
-                    with ui.button(icon="person").props("flat color=white"):
+                    with ui.button(icon="person").props(f'flat color=white aria-label="{t("my_account")}"').tooltip(t("my_account")):
                         with ui.menu():
                             ui.menu_item(t("my_profile"), on_click=lambda: tabs.set_value(people_label))
                             ui.menu_item(t("logout"), on_click=lambda: _logout())
@@ -217,7 +218,7 @@ def setup():
                     last_count = count
                     if changed and tabs.value == dashboard_label:
                         await refreshers[dashboard_label]()
-                    title = f"({count}) NotDotNet" if count > 0 else "NotDotNet"
+                    title = f"({count}) {t('app_name')}" if count > 0 else t("app_name")
                     await ui.run_javascript(f"document.title = {title!r}")
                 except (RuntimeError, TimeoutError):
                     # Client vanished mid-update (disconnect, reload) — expected.

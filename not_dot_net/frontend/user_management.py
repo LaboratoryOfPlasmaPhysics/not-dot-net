@@ -13,7 +13,8 @@ from not_dot_net.backend.auth.ldap import (
     LdapModifyError, ldap_config, ldap_set_account_enabled,
 )
 from not_dot_net.backend.db import AuthMethod, User, session_scope
-from not_dot_net.frontend.i18n import format_datetime, t
+from not_dot_net.backend.vocabularies import field_options
+from not_dot_net.frontend.i18n import format_datetime, get_locale, t
 
 
 _LAST_LOGON_BUCKETS: dict[str, timedelta | None] = {
@@ -137,7 +138,7 @@ def _format_logon(dt: datetime | None) -> str:
     return format_datetime(dt) if dt is not None else "—"
 
 
-def _user_to_row(u: User) -> dict:
+def _user_to_row(u: User, status_labels: dict[str, str]) -> dict:
     return {
         "_id": str(u.id),
         "name": u.full_name or "—",
@@ -146,7 +147,7 @@ def _user_to_row(u: User) -> dict:
         "role": u.role or "",
         "is_superuser": u.is_superuser,
         "is_active": u.is_active,
-        "employment_status": u.employment_status or "",
+        "employment_status": status_labels.get(u.employment_status, u.employment_status) or "",
         "last_ad_logon": _format_logon(u.last_ad_logon),
         "last_ad_logon_sort": _normalize_logon(u.last_ad_logon).timestamp() if u.last_ad_logon else 0,
     }
@@ -174,7 +175,7 @@ async def render(current_user: User):
         ui.label(t("forbidden")).classes("text-negative")
         return
 
-    state = {"users": [], "spec": UserFilter()}
+    state = {"users": [], "spec": UserFilter(), "status_labels": {}}
 
     with ui.row().classes("items-center gap-2 w-full mb-2"):
         search = ui.input(placeholder=t("search_placeholder")).props(
@@ -182,11 +183,11 @@ async def render(current_user: User):
         auth_select = ui.select(
             {"all": t("all"), "local": t("auth_local"), "ldap": t("auth_ldap")},
             value="all", label=t("auth_method"),
-        ).props("outlined dense stack-label").classes("min-w-[140px]")
+        ).props("outlined dense stack-label").classes("min-w-[170px]")
         active_select = ui.select(
             {"all": t("all"), "active": t("active"), "inactive": t("inactive")},
             value="all", label=t("status"),
-        ).props("outlined dense stack-label").classes("min-w-[140px]")
+        ).props("outlined dense stack-label").classes("min-w-[150px]")
         logon_select = ui.select(
             {
                 "any": t("logon_any"),
@@ -197,18 +198,19 @@ async def render(current_user: User):
                 "1y": t("logon_over_1y"),
             },
             value="any", label=t("last_ad_logon"),
-        ).props("outlined dense stack-label").classes("min-w-[180px]")
+        ).props("outlined dense stack-label").classes("min-w-[230px]")
 
     summary = ui.label("").classes("text-sm text-gray-500")
     table = _build_user_table()
 
     async def reload():
         state["users"] = await _load_all_users()
+        state["status_labels"] = (await field_options("employment_statuses", get_locale())).options
         refresh_rows()
 
     def refresh_rows():
         """Update rows in place: rebuilding the table would drop the selection."""
-        table.rows = [_user_to_row(u) for u in filter_users(state["users"], state["spec"])]
+        table.rows = [_user_to_row(u, state["status_labels"]) for u in filter_users(state["users"], state["spec"])]
         summary.set_text(t("user_count", shown=len(table.rows), total=len(state["users"])))
 
     async def bulk(enabling: bool):

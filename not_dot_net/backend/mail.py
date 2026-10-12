@@ -8,7 +8,7 @@ that table and performs the actual SMTP send using the current
 
 import logging
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -18,7 +18,7 @@ from not_dot_net.backend.db import session_scope
 logger = logging.getLogger("not_dot_net.mail")
 
 
-class SmtpTlsMode(str, Enum):
+class SmtpTlsMode(StrEnum):
     NONE = "none"
     STARTTLS = "starttls"      # connect plaintext, upgrade with STARTTLS (typical port 587)
     SMTPS = "smtps"            # TLS on connect (typical port 465)

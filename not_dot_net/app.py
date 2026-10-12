@@ -193,7 +193,7 @@ def main(
         ssl_kwargs = {"ssl_certfile": ssl_certfile, "ssl_keyfile": ssl_keyfile}
     ui.run(
         storage_secret=secrets.storage_secret,
-        host=host, port=port, reload=False, title="NotDotNet",
+        host=host, port=port, reload=False, title="LPP Intranet",
         **ssl_kwargs,
     )
 

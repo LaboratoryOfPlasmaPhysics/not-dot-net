@@ -17,7 +17,7 @@ from not_dot_net.config import (
 def default_workflows() -> dict[str, WorkflowConfig]:
     return {
         "vpn_access": WorkflowConfig(
-            label="VPN Access Request",
+            label="VPN Access",  # mail templates already append "request"
             target_email_field="target_email",
             steps=[
                 WorkflowStepConfig(

@@ -63,6 +63,10 @@ def _is_complex(schema: type[BaseModel]) -> bool:
 # Sections edited by a dedicated screen (above, or their own tab for
 # ad_account); the generic loop would show them a second time.
 _SECTIONS_WITH_OWN_EDITOR = {"vocabularies", "field_definitions", "mail_templates", "roles", "ad_account"}
+def section_title_key(prefix: str) -> str:
+    return f"settings_section_{prefix}"
+
+
 # Whoever sets the LDAP url receives every password the login form relays to AD.
 _SUPERUSER_ONLY_SECTIONS = {"ldap"}
 
@@ -99,7 +103,7 @@ async def render(user):
         current = await cfg_section.get()
         schema = cfg_section.schema
 
-        with ui.expansion(cfg_section.label, icon="settings").classes("w-full"):
+        with ui.expansion(t(section_title_key(prefix)), icon="settings").classes("w-full"):
             if prefix == "workflows":
                 from not_dot_net.frontend.workflow_editor import open_workflow_editor
                 wf_count = len(current.workflows)

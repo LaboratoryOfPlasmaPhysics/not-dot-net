@@ -216,9 +216,9 @@ async def _render_bookings(container, user: User, filter_range=None):
             ).props("outlined dense").classes("min-w-[150px]")
 
             equipment_types = [rt for rt in RESOURCE_TYPES if rt != "office"]
-            all_types = [t("all_types")] + equipment_types
+            all_types = {"": t("all_types"), **{rt: t(rt) for rt in equipment_types}}
             type_select = ui.select(
-                options=all_types, value=all_types[0],
+                options=all_types, value="",
                 label=t("resource_type"),
             ).props("outlined dense").classes("min-w-[150px]")
 
@@ -761,7 +761,7 @@ async def _show_resource_dialog(outer_container, user, resource=None, on_saved=N
         ).props("outlined dense").classes("w-full")
 
         type_select = ui.select(
-            options=RESOURCE_TYPES,
+            options=options_with({rt: t(rt) for rt in RESOURCE_TYPES}, resource.resource_type if editing else None),
             value=resource.resource_type if editing else RESOURCE_TYPES[0],
             label=t("resource_type"),
         ).props("outlined dense").classes("w-full")

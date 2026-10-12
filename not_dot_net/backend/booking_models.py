@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from sqlalchemy import Date, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 from not_dot_net.backend.db import Base
 
 
-class ResourceStatus(str, PyEnum):
+class ResourceStatus(StrEnum):
     AVAILABLE = "available"           # nothing physical in flight
     BOOKED = "booked"                 # reserved, IT hasn't prepped it
     READY = "ready"                   # prepped → ready for pickup

@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-class AuthMethod(str, PyEnum):
+class AuthMethod(StrEnum):
     LOCAL = "local"
     LDAP = "ldap"
 

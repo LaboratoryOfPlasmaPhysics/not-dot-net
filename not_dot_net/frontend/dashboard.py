@@ -32,10 +32,11 @@ _MD_EMPHASIS = re.compile(r"(\*\*|__|\*|_|`)(.+?)\1")
 
 
 def _preview_line(content: str) -> str:
-    """First meaningful line of page content, with inline Markdown stripped so
-    previews read as plain text instead of showing raw **bold**/[link]() syntax."""
+    """First prose line of page content (headings and table rows skipped), with
+    inline Markdown stripped so previews read as plain text instead of showing
+    raw **bold**/[link]() syntax."""
     line = next(
-        (ln for ln in content.splitlines() if ln.strip() and not ln.startswith("#")),
+        (ln for ln in content.splitlines() if ln.strip() and not ln.lstrip().startswith(("#", "|"))),
         "",
     )
     line = _MD_LINK.sub(r"\1", line)
@@ -238,7 +239,9 @@ async def _render_requests_table(container, requests):
         table.props("flat bordered dense")
 
         table.add_slot("body", r'''
-            <q-tr :props="props" @click="() => $parent.$emit('row-click', props.row)" class="cursor-pointer">
+            <q-tr :props="props" tabindex="0" class="cursor-pointer"
+                  @click="() => $parent.$emit('row-click', props.row)"
+                  @keydown.enter="() => $parent.$emit('row-click', props.row)">
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <q-badge v-if="col.name === 'status'"
                         :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : col.value === 'cancelled' ? 'grey' : 'primary'"
