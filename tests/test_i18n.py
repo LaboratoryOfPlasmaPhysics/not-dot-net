@@ -30,6 +30,12 @@ def _placeholders(text: str) -> set[str]:
     }
 
 
+def test_placeholder_named_key_is_interpolated():
+    """Review 2026-10-12: `t(name, key=...)` raised TypeError ("multiple values
+    for argument 'key'"), crashing the roles panel and vocabulary delete."""
+    assert "staff" in t("role_deleted", key="staff")
+
+
 def test_all_keys_present_in_both_locales():
     en_keys = set(TRANSLATIONS["en"].keys())
     fr_keys = set(TRANSLATIONS["fr"].keys())

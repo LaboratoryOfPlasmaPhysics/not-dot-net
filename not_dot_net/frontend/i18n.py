@@ -242,6 +242,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "confirm_delete_role": "Delete the role '{key}'?",
         "role_deleted": "Role '{key}' deleted",
         "role_delete_in_use": "Cannot delete role '{key}' — {count} user(s) assigned",
+        "role_delete_is_default": "Cannot delete role '{key}' — it is the default role",
         "confirm_reset_defaults": "Reset every setting in this section to its default? Your saved values are lost.",
         "confirm_reset_workflows": "Reset ALL workflows to defaults? Every workflow, step and field you configured is lost.",
         "confirm_delete_pin": "Delete the pin \"{label}\"?",
@@ -882,6 +883,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "confirm_delete_role": "Supprimer le rôle « {key} » ?",
         "role_deleted": "Rôle « {key} » supprimé",
         "role_delete_in_use": "Impossible de supprimer le rôle « {key} » — {count} utilisateur(s) assigné(s)",
+        "role_delete_is_default": "Impossible de supprimer le rôle « {key} » — c'est le rôle par défaut",
         "confirm_reset_defaults": "Réinitialiser tous les paramètres de cette section ? Vos valeurs enregistrées seront perdues.",
         "confirm_reset_workflows": "Réinitialiser TOUS les workflows ? Chaque workflow, étape et champ configuré sera perdu.",
         "confirm_delete_pin": "Supprimer le repère « {label} » ?",
@@ -1351,7 +1353,7 @@ def validate_translations() -> list[str]:
     return problems
 
 
-def t(key: str, **kwargs) -> str:
+def t(key: str, /, **kwargs) -> str:
     """Translate a key to the current locale. Supports {name} placeholders."""
     locale = get_locale()
     text = TRANSLATIONS.get(locale, TRANSLATIONS[DEFAULT_LOCALE]).get(key)
