@@ -21,7 +21,7 @@ from not_dot_net.backend.audit import (
 from not_dot_net.backend import security_alerts
 from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import get_user_manager, cookie_transport, get_jwt_strategy, current_active_user_optional
-from not_dot_net.frontend.i18n import apply_quasar_locale, t
+from not_dot_net.frontend.i18n import apply_client_locale, t
 from not_dot_net.frontend import login_throttle
 
 logger = logging.getLogger("not_dot_net.login")
@@ -228,7 +228,7 @@ def setup():
         error: str = "",
         user: Optional[User] = Depends(current_active_user_optional),
     ) -> Optional[RedirectResponse]:
-        apply_quasar_locale()
+        apply_client_locale()
         safe_dest = _safe_redirect(redirect_to)
 
         if user is not None:

@@ -15,7 +15,7 @@ from not_dot_net.backend.data_io import export_all, import_all
 from not_dot_net.backend.personnel_import import import_personnel, parse_clean_csv_text
 from not_dot_net.frontend.admin_email_templates import render as render_email_templates
 from not_dot_net.frontend.admin_roles import render as render_roles
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_datetime, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.field_definitions_editor import render as render_field_definitions
 from not_dot_net.frontend.vocabularies_editor import render as render_vocabularies
@@ -472,8 +472,8 @@ async def _render_mail_outbox(user):
                 "to": r.to_address,
                 "subject": r.subject[:100],
                 "attempts": r.attempts,
-                "next_attempt_at": r.next_attempt_at.strftime("%Y-%m-%d %H:%M"),
-                "failed_at": r.failed_at.strftime("%Y-%m-%d %H:%M") if r.failed_at else "",
+                "next_attempt_at": format_datetime(r.next_attempt_at),
+                "failed_at": format_datetime(r.failed_at),
                 "last_error": (r.last_error or "")[:200],
             }
             for r in rows

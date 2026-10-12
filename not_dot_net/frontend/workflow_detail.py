@@ -24,7 +24,7 @@ from not_dot_net.backend.workflow_service import (
     submit_step,
 )
 from not_dot_net.config import dashboard_config
-from not_dot_net.frontend.i18n import apply_quasar_locale, get_locale, t
+from not_dot_net.frontend.i18n import apply_client_locale, format_datetime, get_locale, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog
@@ -47,7 +47,7 @@ def setup():
         request_id: str,
         user: Optional[User] = Depends(current_active_user_optional),
     ):
-        apply_quasar_locale()
+        apply_client_locale()
         if user is None:
             ui.navigate.to("/login")
             return
@@ -225,7 +225,7 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
     with ui.row().classes("w-full items-start justify-between"):
         with ui.column().classes("gap-0"):
             ui.label(f"{wf.label} — {target}").classes("text-h5 text-weight-light")
-            date_str = req.created_at.strftime("%Y-%m-%d") if req.created_at else ""
+            date_str = format_datetime(req.created_at, "%Y-%m-%d")
             ui.label(f"{t('requested_by')}: {creator_name} · {date_str}").classes(
                 "text-sm text-grey"
             )
@@ -306,7 +306,7 @@ def _render_timeline(events, actor_names, field_labels, wf):
                     + (" box-shadow: 0 0 6px rgba(25,118,210,0.5);" if is_last else "")
                 )
 
-                ts = ev.created_at.strftime("%Y-%m-%d %H:%M") if ev.created_at else ""
+                ts = format_datetime(ev.created_at)
                 actor = actor_names.get(ev.actor_id, t("via_token") if ev.actor_id is None else "")
                 ui.label(ts).classes("text-[11px] text-grey")
                 ui.label(f"{actor} — {event_label(wf, ev.step_key, ev.action)}").classes("font-semibold text-sm")
@@ -362,7 +362,7 @@ def _render_file_download(f, field_label, user):
 
 
 def _format_ts(dt) -> str:
-    return dt.strftime("%Y-%m-%d %H:%M") if dt is not None else ""
+    return format_datetime(dt)
 
 
 def _render_field_group(group, field_labels, user):

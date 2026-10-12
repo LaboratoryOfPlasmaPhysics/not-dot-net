@@ -3,13 +3,13 @@
 from nicegui import ui
 
 from not_dot_net.backend.page_service import get_page
-from not_dot_net.frontend.i18n import apply_quasar_locale, t
+from not_dot_net.frontend.i18n import apply_client_locale, t
 
 
 def setup():
     @ui.page("/pages/{slug}")
     async def page_view(slug: str):
-        apply_quasar_locale()
+        apply_client_locale()
         page = await get_page(slug, published_only=True)
 
         ui.colors(primary="#0F52AC")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_datetime, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
 from not_dot_net.backend.permissions import check_permission, MANAGE_SETTINGS
@@ -49,7 +49,7 @@ async def render(current_user) -> None:
                         "uid": r.uid,
                         "sam_account": r.sam_account or "",
                         "source": r.source,
-                        "acquired_at": r.acquired_at.isoformat(),
+                        "acquired_at": format_datetime(r.acquired_at),
                     }
                     for r in rows
                 ],

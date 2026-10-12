@@ -143,6 +143,8 @@ def test_metadata_detail_html_escapes_values():
 
 # --- relative time labels ---------------------------------------------------
 
+# Naive UTC, like the database. Labels show the viewer's zone (Europe/Paris,
+# UTC+2 in May), so 09:15 UTC reads 11:15.
 NOW = datetime(2026, 5, 4, 14, 30, 0)
 
 
@@ -153,21 +155,27 @@ def test_relative_label_none_returns_empty():
 def test_relative_label_today_shows_time_only():
     dt = datetime(2026, 5, 4, 9, 15, 0)
     # current locale is English by default in tests
-    assert al._relative_time_label(dt, now=NOW) == "09:15"
+    assert al._relative_time_label(dt, now=NOW) == "11:15"
 
 
 def test_relative_label_yesterday_uses_i18n():
     """Regression: the label used to hardcode the French word 'hier' even
     when running in English. Now goes through the t() pipeline."""
     dt = datetime(2026, 5, 3, 9, 15, 0)
-    assert al._relative_time_label(dt, now=NOW) == "yesterday 09:15"
+    assert al._relative_time_label(dt, now=NOW) == "yesterday 11:15"
 
 
 def test_relative_label_two_days_ago_uses_i18n():
     dt = datetime(2026, 5, 2, 9, 15, 0)
-    assert al._relative_time_label(dt, now=NOW) == "before yesterday 09:15"
+    assert al._relative_time_label(dt, now=NOW) == "before yesterday 11:15"
 
 
 def test_relative_label_older_uses_days_count():
     dt = datetime(2026, 4, 24, 12, 0, 0)
     assert al._relative_time_label(dt, now=NOW) == "10d ago"
+
+
+def test_relative_label_counts_days_in_the_viewer_zone():
+    """22:30 UTC on May 3 is 00:30 on May 4 in Paris: today, not yesterday."""
+    dt = datetime(2026, 5, 3, 22, 30, 0)
+    assert al._relative_time_label(dt, now=NOW) == "00:30"

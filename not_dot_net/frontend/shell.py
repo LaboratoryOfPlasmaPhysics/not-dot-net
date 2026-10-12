@@ -19,7 +19,7 @@ from not_dot_net.frontend.directory import render as render_directory
 from not_dot_net.frontend.dashboard import render as render_dashboard
 from not_dot_net.frontend.user_management import render as render_user_management
 from not_dot_net.frontend.new_request import render as render_new_request
-from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, apply_quasar_locale, get_locale, set_locale, t
+from not_dot_net.frontend.i18n import SUPPORTED_LOCALES, apply_client_locale, get_locale, set_locale, t
 
 logger = logging.getLogger("not_dot_net.shell")
 
@@ -65,7 +65,7 @@ def setup():
         effective_user = user or GuestUser()
 
         locale = get_locale()
-        apply_quasar_locale()
+        apply_client_locale()
         people_label = t("people")
         dashboard_label = t("dashboard")
         new_request_label = t("new_request")

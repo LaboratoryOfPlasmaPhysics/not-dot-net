@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from nicegui import app
 
@@ -1377,12 +1379,66 @@ def quasar_lang_script(locale: str) -> str | None:
     )
 
 
-def apply_quasar_locale() -> None:
-    """Call once per page build, after the user's locale is known."""
+def apply_client_locale() -> None:
+    """Call once per page build: Quasar's language, and learn the browser's
+    timezone for the next renders."""
     from nicegui import ui
     script = quasar_lang_script(get_locale())
     if script:
         ui.run_javascript(script)
+    _remember_browser_timezone()
+
+
+# Lab default until the browser has told us its zone (first page view).
+DEFAULT_TIMEZONE = "Europe/Paris"
+
+
+def _zone(name) -> ZoneInfo | None:
+    try:
+        return ZoneInfo(name) if isinstance(name, str) and name else None
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+def viewer_timezone() -> ZoneInfo:
+    try:
+        stored = app.storage.user.get("timezone")
+    except RuntimeError:
+        stored = None
+    return _zone(stored) or ZoneInfo(DEFAULT_TIMEZONE)
+
+
+def _remember_browser_timezone() -> None:
+    """Ask the browser to report its zone; store it for the next renders.
+
+    Fire-and-forget on purpose: the browser emits an event back rather than
+    the server awaiting a JS result, so nothing blocks if it never answers.
+    """
+    from nicegui import ui
+    try:
+        storage = app.storage.user  # captured now: the event arrives outside the page build
+    except RuntimeError:
+        return
+
+    def store(e) -> None:
+        name = e.args[0] if isinstance(e.args, list) and e.args else e.args
+        if _zone(name) is not None:
+            storage["timezone"] = name
+
+    ui.on("browser-timezone", store)
+    ui.run_javascript(
+        "emitEvent('browser-timezone', Intl.DateTimeFormat().resolvedOptions().timeZone)"
+    )
+
+
+def local_time(dt: datetime, tz: ZoneInfo | None = None) -> datetime:
+    """`dt` in the viewer's zone. Naive values are UTC (the backend's rule)."""
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return aware.astimezone(tz or viewer_timezone())
+
+
+def format_datetime(dt: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    return local_time(dt).strftime(fmt) if dt is not None else ""
 
 
 def set_locale(locale: str) -> None:
@@ -1435,6 +1491,8 @@ def format_short_date(dt) -> str:
     """Day + abbreviated month in the current locale's usual order."""
     if dt is None:
         return ""
+    if isinstance(dt, datetime):
+        dt = local_time(dt)
     locale = get_locale()
     month = _MONTHS_SHORT.get(locale, _MONTHS_SHORT[DEFAULT_LOCALE])[dt.month - 1]
     return f"{dt.day} {month}" if locale == "fr" else f"{month} {dt.day}"

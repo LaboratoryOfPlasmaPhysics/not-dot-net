@@ -13,7 +13,7 @@ from not_dot_net.backend.auth.ldap import (
     LdapModifyError, ldap_config, ldap_set_account_enabled,
 )
 from not_dot_net.backend.db import AuthMethod, User, session_scope
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_datetime, t
 
 
 _LAST_LOGON_BUCKETS: dict[str, timedelta | None] = {
@@ -134,10 +134,7 @@ async def _load_all_users() -> list[User]:
 
 
 def _format_logon(dt: datetime | None) -> str:
-    if dt is None:
-        return "—"
-    norm = _normalize_logon(dt)
-    return norm.strftime("%Y-%m-%d %H:%M")
+    return format_datetime(dt) if dt is not None else "—"
 
 
 def _user_to_row(u: User) -> dict:

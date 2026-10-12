@@ -18,7 +18,7 @@ from not_dot_net.backend.profile_photo import (
 )
 from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_datetime, t
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.widgets import confirm_dialog, options_with
 from not_dot_net.backend.permissions import (
@@ -323,7 +323,7 @@ async def _render_detail(container, person: User, current_user: User, state: dic
                 ui.label(f"{t('member_of')}: {', '.join(cn_names)}").classes("text-sm text-gray-500")
 
         if current_user.is_superuser and person.last_ad_logon is not None:
-            stamp = person.last_ad_logon.strftime("%Y-%m-%d %H:%M UTC")
+            stamp = format_datetime(person.last_ad_logon)
             ui.label(f"{t('last_ad_logon')}: {stamp}").classes("text-sm text-gray-500")
 
         if is_own or is_admin:

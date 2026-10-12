@@ -146,3 +146,38 @@ async def test_quasar_lang_pack_is_served(user):
     response = await user.http_client.get(src)
     assert response.status_code == 200
     assert "Quasar.Lang.fr" in response.text
+
+
+
+# --- Review 2026-10-12 V5: the backend is all naive UTC; pages show the
+# viewer's own timezone (from the browser), Europe/Paris until it is known.
+
+
+def test_local_time_converts_naive_utc_to_the_viewer_zone():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    utc = datetime(2026, 8, 24, 15, 6)
+    assert i18n_module.local_time(utc, ZoneInfo("Europe/Paris")).strftime("%H:%M") == "17:06"
+    assert i18n_module.local_time(utc, ZoneInfo("America/New_York")).strftime("%H:%M") == "11:06"
+
+
+def test_local_time_keeps_aware_values_absolute():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    aware = datetime(2026, 1, 10, 12, 0, tzinfo=timezone.utc)
+    assert i18n_module.local_time(aware, ZoneInfo("Europe/Paris")).strftime("%H:%M") == "13:00"
+
+
+def test_viewer_timezone_defaults_outside_a_page():
+    assert str(i18n_module.viewer_timezone()) == "Europe/Paris"
+
+
+def test_format_datetime_handles_missing_values():
+    assert i18n_module.format_datetime(None) == ""
+
+
+def test_format_short_date_uses_local_day_for_datetimes():
+    """23:30 UTC on Aug 24 is already Aug 25 in Paris."""
+    from datetime import date, datetime
+    assert i18n_module.format_short_date(datetime(2026, 8, 24, 23, 30)) == "Aug 25"
+    assert i18n_module.format_short_date(date(2026, 8, 24)) == "Aug 24"

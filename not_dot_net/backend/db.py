@@ -56,9 +56,22 @@ _engine: AsyncEngine | None = None
 _async_session_maker: async_sessionmaker[AsyncSession] | None = None
 
 
+def engine_options(database_url: str) -> dict:
+    """Engine kwargs that make every session run in UTC.
+
+    Timestamps are naive UTC throughout. Postgres fills server_default=now()
+    columns in the *session* timezone, which defaults to the server's
+    (Europe/Paris in production) — so pin it. SQLite is UTC already.
+    Migration 0021 converted the rows written before this pin.
+    """
+    if database_url.startswith("postgresql+asyncpg"):
+        return {"connect_args": {"server_settings": {"timezone": "UTC"}}}
+    return {}
+
+
 def init_db(database_url: str) -> None:
     global _engine, _async_session_maker
-    _engine = create_async_engine(database_url)
+    _engine = create_async_engine(database_url, **engine_options(database_url))
     _async_session_maker = async_sessionmaker(_engine, expire_on_commit=False)
 
 

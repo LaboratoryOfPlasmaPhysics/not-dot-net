@@ -20,7 +20,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
 from not_dot_net.config import dashboard_config, step_display
-from not_dot_net.frontend.i18n import format_short_date, t
+from not_dot_net.frontend.i18n import format_datetime, format_short_date, t
 from not_dot_net.frontend.workflow_step import (
     event_label,
     render_step_progress,
@@ -93,7 +93,7 @@ async def _workflow_labels() -> dict[str, str]:
 
 
 def _format_date(dt) -> str:
-    return dt.strftime("%Y-%m-%d") if dt else ""
+    return format_datetime(dt, "%Y-%m-%d")
 
 
 def _target_display(req) -> str:

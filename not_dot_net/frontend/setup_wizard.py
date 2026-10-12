@@ -9,7 +9,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.mail import mail_config
 from not_dot_net.backend.users import ensure_default_admin
 from not_dot_net.config import org_config, OrgConfig
-from not_dot_net.frontend.i18n import apply_quasar_locale, t
+from not_dot_net.frontend.i18n import apply_client_locale, t
 
 
 MIN_SETUP_PASSWORD_LEN = 12
@@ -73,7 +73,7 @@ async def complete_setup(
 def setup():
     @ui.page("/setup")
     async def setup_page():
-        apply_quasar_locale()
+        apply_client_locale()
         if await has_superuser():
             ui.navigate.to("/login")
             return

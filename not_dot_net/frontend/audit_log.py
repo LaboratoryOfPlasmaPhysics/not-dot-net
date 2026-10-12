@@ -7,7 +7,7 @@ from html import escape
 from nicegui import ui
 
 from not_dot_net.backend.audit import AuditEventView, list_audit_events
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import format_datetime, local_time, t
 from not_dot_net.backend.permissions import permission
 
 VIEW_AUDIT_LOG = permission("view_audit_log", "View audit log", "Access the audit log")
@@ -91,7 +91,8 @@ def _relative_time_label(dt: datetime | None, *, now: datetime | None = None) ->
     """Compact today/yesterday/before-yesterday/N-days-ago label."""
     if dt is None:
         return ""
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    now = local_time(now or datetime.now(timezone.utc))
+    dt = local_time(dt)
     days = (now.date() - dt.date()).days
     hour = dt.strftime("%H:%M")
     if days <= 0:
@@ -131,7 +132,7 @@ def render():
 
 
 def _format_full(dt: datetime | None) -> str:
-    return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else ""
+    return format_datetime(dt, "%Y-%m-%d %H:%M:%S")
 
 
 def _format_metadata(metadata: dict | None) -> str:
