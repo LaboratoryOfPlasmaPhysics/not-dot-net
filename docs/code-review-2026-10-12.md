@@ -14,8 +14,12 @@ Prefixes: **S** security · **F** broken feature · **W** workflow · **U** UX f
 W3, W4, U1, U2, T1. Also a bug found while fixing F2: `t(name, key=...)`
 raised TypeError, so the roles panel and role/vocabulary deletes crashed.
 **By design:** S6.
-**Open:** everything else. Notable: F3 legacy resource locations still need
-a data migration to site codes (filter/grouping); F6 needs a browser check of
+**F3 legacy data:** checked on production 2026-10-12: all 27 resources already
+store site codes (`palaiseau`/`jussieu`), so no migration is needed. Only the
+dev demo data (`seed_data.py`) uses capitalized names. Production vocabulary
+terms have no labels, so raw codes are displayed (V6). Fill in labels in
+Settings → Vocabularies.
+**Open:** everything else. Notable: F6 needs a browser check of
 QDate single-day range values; T2 (test-count gap) unexplained.
 
 ## Test suite
