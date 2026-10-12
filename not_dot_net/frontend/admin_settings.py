@@ -391,7 +391,8 @@ def _render_ldap_sync(user):
                 summary = t("sync_ad_result",
                             synced=result.synced,
                             provisioned=result.provisioned,
-                            skipped=result.skipped)
+                            skipped=result.skipped,
+                            deactivated=result.deactivated)
                 if result.errors:
                     summary += f"\n{t('sync_ad_errors', count=len(result.errors))}"
                 result_label.set_text(summary)
@@ -400,7 +401,8 @@ def _render_ldap_sync(user):
                     "settings", "ldap_sync",
                     actor_id=user.id, actor_email=user.email,
                     detail=f"synced={result.synced} provisioned={result.provisioned} "
-                           f"skipped={result.skipped} errors={len(result.errors)}",
+                           f"skipped={result.skipped} deactivated={result.deactivated} "
+                           f"errors={len(result.errors)}",
                 )
 
             with ui.row():

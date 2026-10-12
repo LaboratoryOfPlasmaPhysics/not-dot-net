@@ -639,6 +639,7 @@ class SyncResult:
     synced: int = 0
     provisioned: int = 0
     skipped: int = 0
+    deactivated: int = 0
     errors: list[str] = None
 
     def __post_init__(self):
@@ -758,6 +759,9 @@ async def sync_all_from_ldap(
     # from discarding everything already applied.
     async with session_scope() as session:
         users_by_email = await _existing_users_by_email(session)
+        users_by_sam = {u.ldap_username.lower(): u for u in users_by_email.values() if u.ldap_username}
+        local_users = list({id(u): u for u in users_by_email.values()}.values())
+        seen: set[int] = set()
         pending = 0
 
         for entry in entries:
@@ -765,30 +769,82 @@ async def sync_all_from_ldap(
             if info is None:
                 result.skipped += 1
                 continue
-            try:
-                existing_user = users_by_email.get(info.email.lower())
-                if existing_user is not None:
-                    _apply_ldap_info(existing_user, info)
-                    result.synced += 1
-                else:
-                    new_user = _new_ldap_user(info, default_role)
-                    session.add(new_user)
-                    users_by_email[info.email.lower()] = new_user
-                    result.provisioned += 1
-                pending += 1
-            except Exception as e:
-                result.errors.append(f"{info.email}: {e}")
-                logger.warning("Failed to sync LDAP user '%s': %s", info.email, e)
+            match = _match_existing_user(info, users_by_sam, users_by_email)
+            if match is _CONFLICT:
+                result.errors.append(f"{info.email}: already linked to another AD account")
+                logger.warning("AD sync: '%s' matches a local account linked to another sAMAccountName", info.email)
                 continue
+            if match is not None:
+                _apply_ldap_info(match, info)
+                result.synced += 1
+            else:
+                match = _new_ldap_user(info, default_role)
+                session.add(match)
+                result.provisioned += 1
+            users_by_email[info.email.lower()] = match
+            if info.sam_account_name:
+                users_by_sam[info.sam_account_name.lower()] = match
+            seen.add(id(match))
 
+            pending += 1
             if pending >= _SYNC_BATCH_SIZE:
-                await session.commit()
+                if not await _commit_sync_batch(session, result):
+                    return result
                 pending = 0
 
-        if pending:
-            await session.commit()
+        if entries:
+            result.deactivated = _retire_missing_ad_users(local_users, seen)
+        await _commit_sync_batch(session, result)
 
     return result
+
+
+_CONFLICT = object()
+
+
+def _match_existing_user(info: LdapUserInfo, users_by_sam: dict, users_by_email: dict):
+    """The local user an AD entry belongs to, None for a new one, or _CONFLICT.
+
+    sAMAccountName first: it survives a mail change. Email only links an
+    account not yet tied to another sAMAccountName (same rule as login).
+    """
+    sam = (info.sam_account_name or "").lower()
+    if sam and sam in users_by_sam:
+        return users_by_sam[sam]
+    by_email = users_by_email.get(info.email.lower())
+    if by_email is None or not by_email.ldap_username or by_email.ldap_username.lower() == sam:
+        return by_email
+    return _CONFLICT
+
+
+def _retire_missing_ad_users(users: list, seen: set[int]) -> int:
+    """Deactivate AD-backed users the full sync didn't return; return how many.
+
+    Reversible: a user who reappears is re-activated by _apply_ldap_info.
+    Never a superuser (a bad search must not lock out the admins) and never a
+    local account.
+    """
+    from not_dot_net.backend.db import AuthMethod
+    retired = [
+        u for u in users
+        if id(u) not in seen and u.is_active and not u.is_superuser
+        and u.auth_method == AuthMethod.LDAP
+    ]
+    for u in retired:
+        u.is_active = False
+    return len(retired)
+
+
+async def _commit_sync_batch(session, result: SyncResult) -> bool:
+    """Commit, or record the failure (e.g. an email already taken) and stop."""
+    try:
+        await session.commit()
+        return True
+    except Exception as e:
+        await session.rollback()
+        result.errors.append(f"sync stopped, last batch not saved: {e}")
+        logger.warning("AD sync batch commit failed: %s", e)
+        return False
 
 
 @dataclass(frozen=True)
