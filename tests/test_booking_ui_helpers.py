@@ -229,3 +229,25 @@ def test_lifecycle_badge_hidden_for_plain_available():
     assert _lifecycle_badge_status("available") is None
     assert _lifecycle_badge_status("out_of_service") == "out_of_service"
     assert _lifecycle_badge_status("ready") == "ready"
+
+
+# --- U13 (review 2026-10-12): the view can show today ---
+
+
+def test_view_range_keeps_today():
+    """The filter was clamped to the booking lead time, so nobody could see
+    who holds a machine right now."""
+    from not_dot_net.frontend.bookings import _normalize_view_range
+
+    today = date(2026, 10, 12)
+    current = {"from": "2026-10-12", "to": "2026-10-14"}
+    assert _normalize_view_range(current, today) == current
+
+
+def test_view_range_still_refuses_the_past():
+    from not_dot_net.frontend.bookings import _normalize_view_range
+
+    today = date(2026, 10, 12)
+    assert _normalize_view_range({"from": "2026-10-01", "to": "2026-10-03"}, today) == {
+        "from": "2026-10-12", "to": "2026-10-14",
+    }

@@ -227,6 +227,8 @@ def render(current_user: User):
     card_container = ui.element("div").classes(
         "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full"
     )
+    no_match = ui.label(t("directory_no_match")).classes("text-grey")
+    no_match.set_visibility(False)
 
     state = {"expanded_id": None, "details": {}}
 
@@ -242,13 +244,17 @@ def render(current_user: User):
         with card_container:
             for person in people:
                 _person_card(person, current_user, state, photo_sizes.get(person.id))
+        filter_cards()
 
     def filter_cards():
         query = (search.value or "").strip().lower()
+        shown = 0
         for child in card_container.default_slot.children:
             if hasattr(child, "_person_search_text"):
                 visible = (not query) or (query in child._person_search_text)
                 child.set_visibility(visible)
+                shown += visible
+        no_match.set_visibility(bool(query) and shown == 0)
 
     search.on_value_change(lambda _: filter_cards())
     show_inactive.on_value_change(lambda _: refresh())

@@ -43,12 +43,8 @@ def _default_booking_range(today: date | None = None, minimum_lead_days: int = 7
     return {"from": str(start), "to": str(start + timedelta(days=7))}
 
 
-def _normalize_booking_range(
-    value,
-    today: date | None = None,
-    minimum_lead_days: int = 7,
-) -> dict[str, str]:
-    default_range = _default_booking_range(today, minimum_lead_days)
+def _clamp_range(value, min_start: date, default_range: dict[str, str]) -> dict[str, str]:
+    """A valid range starting no earlier than min_start, keeping its length."""
     value = as_date_range(value)
     if not isinstance(value, dict):
         return default_range
@@ -57,13 +53,26 @@ def _normalize_booking_range(
         end = date.fromisoformat(value["to"])
     except (KeyError, TypeError, ValueError):
         return default_range
-
-    min_start = _minimum_booking_start(today, minimum_lead_days)
     if start >= min_start:
         return {"from": str(start), "to": str(end)}
-
     duration = max((end - start).days, 1)
     return {"from": str(min_start), "to": str(min_start + timedelta(days=duration))}
+
+
+def _normalize_booking_range(
+    value,
+    today: date | None = None,
+    minimum_lead_days: int = 7,
+) -> dict[str, str]:
+    return _clamp_range(
+        value, _minimum_booking_start(today, minimum_lead_days),
+        _default_booking_range(today, minimum_lead_days),
+    )
+
+
+def _normalize_view_range(value, today: date | None = None, minimum_lead_days: int = 7) -> dict[str, str]:
+    """Viewing may start today (who holds a machine now?); booking may not."""
+    return _clamp_range(value, today or date.today(), _default_booking_range(today, minimum_lead_days))
 
 
 def _qdate_option_date(value: date) -> str:
@@ -196,10 +205,8 @@ async def _render_bookings(container, user: User, filter_range=None):
                 with range_display.add_slot("append"):
                     ui.icon("event").classes("cursor-pointer")
                 with ui.menu() as menu:
-                    min_start = _minimum_booking_start(today, booking_cfg.minimum_lead_days)
-                    min_start_option = _qdate_option_date(min_start)
                     date_picker = ui.date(default_range).props(
-                        f"range :options=\"date => date >= '{min_start_option}'\""
+                        f"range :options=\"date => date >= '{_qdate_option_date(today)}'\""
                     )
 
             all_sites = [t("all_locations")] + sites
@@ -221,7 +228,7 @@ async def _render_bookings(container, user: User, filter_range=None):
             val = as_date_range(date_picker.value)
             if val is None:
                 return
-            normalized = _normalize_booking_range(val, minimum_lead_days=booking_cfg.minimum_lead_days)
+            normalized = _normalize_view_range(val, today, booking_cfg.minimum_lead_days)
             if normalized != val:
                 date_picker.value = normalized
                 date_picker.update()
@@ -518,6 +525,8 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     all_software = bc.software_tags
 
     ui.label(range_label).classes("text-sm text-grey-8")
+    if book_range and default_range["from"] != book_range.get("from"):
+        ui.label(t("booking_range_shifted", days=bc.minimum_lead_days)).classes("text-xs text-orange-9")
     with ui.row().classes("items-center gap-2"):
         ui.label(t("os")).classes("text-sm")
         os_select = ui.toggle(os_choices, value=None).props("dense")

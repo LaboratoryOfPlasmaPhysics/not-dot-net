@@ -255,7 +255,7 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
             if is_creator:
                 def handle_clone():
                     app.storage.user["clone_prefill"] = {"type": req.type, "data": dict(req.data)}
-                    app.storage.user["active_tab"] = t("new_request")
+                    app.storage.user["active_tab"] = "new_request"
                     ui.navigate.to("/")
 
                 ui.button(t("clone_request"), icon="content_copy", on_click=handle_clone).props(

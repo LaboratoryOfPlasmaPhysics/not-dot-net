@@ -104,8 +104,10 @@ def setup():
             "ad_accounts": ad_accounts_label,
             "users": users_label,
         }
+        tab_key_of = {label: key for key, label in tab_keys.items()}
         requested_tab = tab_keys.get(tab or "")
-        saved_tab = app.storage.user.get("active_tab")
+        # Stored by key: a label stops matching once the language changes.
+        saved_tab = tab_keys.get(app.storage.user.get("active_tab") or "")
         if requested_tab in available_tabs:
             initial_tab = requested_tab
         elif saved_tab in available_tabs:
@@ -138,7 +140,7 @@ def setup():
                     ui.tab(users_label, icon="manage_accounts")
 
             async def on_tab_change(e):
-                app.storage.user["active_tab"] = e.value
+                app.storage.user["active_tab"] = tab_key_of.get(e.value)
                 refresh = refreshers.get(e.value)
                 if refresh is None or e.value in refreshing:
                     return

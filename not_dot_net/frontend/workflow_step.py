@@ -281,7 +281,7 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
 
     state = {
         "sam_account": (derive_sam_candidates(first, last) or [""])[0],
-        "ou_dn": "",
+        "ou_dn": cfg.users_ous[0] if len(cfg.users_ous) == 1 else "",
         "gid_number": cfg.default_gid_number,
         "login_shell": cfg.default_login_shell,
         "home_directory": "",
@@ -296,8 +296,8 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
         ui.label(f"{t('first_name')}: {first}").classes("text-sm")
         ui.label(f"{t('last_name')}: {last}").classes("text-sm")
 
-        sam_input = ui.input(t("samaccountname"), value=state["sam_account"]).props("outlined dense stack-label")
-        home_input = ui.input(t("home_directory"), value=state["home_directory"]).props("outlined dense stack-label")
+        sam_input = ui.input(t("samaccountname"), value=state["sam_account"]).props("outlined dense stack-label").classes("w-full")
+        home_input = ui.input(t("home_directory"), value=state["home_directory"]).props("outlined dense stack-label").classes("w-full")
 
         def _on_sam_change(e, _home=home_input):
             state["sam_account"] = (e.value or "").strip()
@@ -308,25 +308,27 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
 
         ui.label(f"{t('uid')}: {t('uid_allocated_at_submit')}").classes("text-sm text-grey")
 
-        gid_input = ui.number(t("primary_gid"), value=state["gid_number"]).props("outlined dense stack-label")
+        gid_input = ui.number(t("primary_gid"), value=state["gid_number"]).props("outlined dense stack-label").classes("w-full")
         gid_input.on_value_change(lambda e: state.update({"gid_number": int(e.value or cfg.default_gid_number)}))
 
-        shell_input = ui.input(t("login_shell"), value=state["login_shell"]).props("outlined dense stack-label")
+        shell_input = ui.input(t("login_shell"), value=state["login_shell"]).props("outlined dense stack-label").classes("w-full")
         shell_input.on_value_change(lambda e: state.update({"login_shell": e.value or cfg.default_login_shell}))
 
         home_input.on_value_change(lambda e: state.update({"home_directory": e.value or ""}))
 
+        if not cfg.users_ous:
+            ui.label(t("no_users_ous_configured")).classes("text-sm text-negative")
         ou_select = ui.select(
             options={dn: dn for dn in cfg.users_ous},
-            value=None,
+            value=state["ou_dn"] or None,
             label=t("ou"),
-        ).props("outlined dense stack-label")
+        ).props("outlined dense stack-label").classes("w-full")
         ou_select.on_value_change(lambda e: state.update({"ou_dn": e.value or ""}))
 
-        mail_input = ui.input(t("mail"), value=state["mail"]).props("outlined dense stack-label")
+        mail_input = ui.input(t("mail"), value=state["mail"]).props("outlined dense stack-label").classes("w-full")
         mail_input.on_value_change(lambda e: state.update({"mail": e.value or ""}))
 
-        desc_input = ui.textarea(t("description"), value=state["description"]).props("outlined dense stack-label")
+        desc_input = ui.textarea(t("description"), value=state["description"]).props("outlined dense stack-label").classes("w-full")
         desc_input.on_value_change(lambda e: state.update({"description": e.value or ""}))
 
         groups_select = ui.select(
@@ -334,10 +336,10 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
             value=state["groups"],
             multiple=True,
             label=t("groups"),
-        ).props("outlined dense stack-label use-chips")
+        ).props("outlined dense stack-label use-chips").classes("w-full")
         groups_select.on_value_change(lambda e: state.update({"groups": list(e.value or [])}))
 
-        notes_input = ui.textarea(t("notes"), value=state["notes"]).props("outlined dense stack-label")
+        notes_input = ui.textarea(t("notes"), value=state["notes"]).props("outlined dense stack-label").classes("w-full")
         notes_input.on_value_change(lambda e: state.update({"notes": e.value or ""}))
 
         async def submit():
