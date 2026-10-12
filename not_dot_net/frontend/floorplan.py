@@ -337,15 +337,15 @@ async def _show_add_plan_dialog(container, user):
         max_bytes = FLOORPLAN_MAX_UPLOAD_MB * 1024 * 1024
 
         async def handle_upload(e):
-            content = await e.file.read()
-            if len(content) > max_bytes:
+            # Size before read: max_file_size below is only enforced in the browser.
+            if e.file.size() > max_bytes:
                 state["content"] = None
                 ui.notify(
                     t("floorplan_too_large", max_size_mb=FLOORPLAN_MAX_UPLOAD_MB),
                     color="negative",
                 )
                 return
-            state["content"] = content
+            state["content"] = await e.file.read()
 
         ui.upload(
             label=t("floorplan_upload_image"), on_upload=handle_upload, auto_upload=True,

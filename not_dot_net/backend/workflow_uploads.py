@@ -61,11 +61,21 @@ def _check_magic(content: bytes, ext: str) -> bool:
     return True  # no signature match → skip check (don't block unknown formats)
 
 
+def upload_size_error(size: int, max_size_mb: int) -> str | None:
+    """Error message if `size` bytes exceeds the limit, else None.
+
+    Call it with the upload's reported size BEFORE reading the body: the
+    browser-side max_file_size is only a Quasar prop, so a client can POST any
+    size straight to the upload route."""
+    if size > max_size_mb * 1024 * 1024:
+        return f"File too large (max {max_size_mb} MB)"
+    return None
+
+
 def validate_upload(content: bytes, filename: str, content_type: str, max_size_mb: int) -> str | None:
     """Validate file upload. Returns error message or None if valid."""
-    max_bytes = max_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        return f"File too large (max {max_size_mb} MB)"
+    if error := upload_size_error(len(content), max_size_mb):
+        return error
     from pathlib import PurePosixPath
     ext = PurePosixPath(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:

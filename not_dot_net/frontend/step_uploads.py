@@ -9,7 +9,9 @@ from nicegui import ui
 
 from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_files import current_files_by_name, load_files
-from not_dot_net.backend.workflow_uploads import persist_workflow_upload, validate_upload
+from not_dot_net.backend.workflow_uploads import (
+    persist_workflow_upload, upload_size_error, validate_upload,
+)
 from not_dot_net.frontend.i18n import t
 
 
@@ -38,6 +40,9 @@ async def make_upload_handler(
             ui.notify(t(denied_message), color="negative")
             return
         upload = event.file
+        if error := upload_size_error(upload.size(), max_upload_size_mb):
+            ui.notify(error, color="negative")
+            return
         content = await upload.read()
         # Basename only — never trust the client to provide a path.
         filename = Path(upload.name).name

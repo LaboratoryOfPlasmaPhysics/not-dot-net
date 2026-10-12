@@ -55,6 +55,9 @@ class _FakeUpload:
     name = "id.pdf"
     content_type = "application/pdf"
 
+    def size(self) -> int:
+        return len(b"%PDF-1.4 fake")
+
     async def read(self):
         return b"%PDF-1.4 fake"
 
@@ -109,3 +112,33 @@ async def test_upload_handler_persists_when_authorized(user: UiUser, tmp_path, m
     files = await _files_for(req.id)
     assert [f.filename for f in files] == ["id.pdf"]
     assert uploaded == {"id_document": "id.pdf"}
+
+
+class _HugeUpload:
+    """Reports 2 GB and refuses to be read: the size check must come first."""
+    name = "big.pdf"
+    content_type = "application/pdf"
+
+    def size(self) -> int:
+        return 2 * 1024 ** 3
+
+    async def read(self):
+        raise AssertionError("an oversized upload must be rejected before it is read")
+
+
+async def test_upload_handler_rejects_oversized_file_before_reading(user: UiUser, notified):
+    """Review 2026-10-12 S7: max_file_size is only a Quasar prop; the server
+    read the whole body into memory before checking its length."""
+    admin = await _make_admin("admin-s7@test.com")
+    req = await _request_at_newcomer_info(admin)
+
+    async def allowed() -> bool:
+        return True
+
+    _, handle = await make_upload_handler(
+        req.id, SimpleNamespace(key="newcomer_info"), encrypted_fields=set(), uploaded_by=None,
+        authorize=allowed, denied_message="token_expired",
+    )
+    await handle("id_document", SimpleNamespace(file=_HugeUpload()))
+    assert await _files_for(req.id) == []
+    assert len(notified) == 1 and "too large" in notified[0].lower()

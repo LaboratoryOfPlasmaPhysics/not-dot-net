@@ -64,6 +64,16 @@ def test_validate_profile_photo_rejects_decompression_bomb():
         Image.MAX_IMAGE_PIXELS = previous_limit
 
 
+def test_validate_profile_photo_rejects_oversized_dimensions(monkeypatch):
+    """Review 2026-10-12 S7: Pillow only *warns* up to 2x MAX_IMAGE_PIXELS
+    (~179 MP), so a small PNG could still decode to ~500 MB, twice."""
+    from not_dot_net.backend import profile_photo
+
+    monkeypatch.setattr(profile_photo, "PROFILE_PHOTO_MAX_SOURCE_PIXELS", 300)
+    content = _image_bytes("PNG", size=(20, 20))
+    assert validate_profile_photo(content, "avatar.png") == "profile_photo_invalid_content"
+
+
 def test_validate_profile_photo_rejects_large_file():
     content = JPEG_BYTES + b"x" * profile_photo_max_bytes(1)
     assert validate_profile_photo(content, "avatar.jpg", max_size_mb=1) == "profile_photo_too_large"

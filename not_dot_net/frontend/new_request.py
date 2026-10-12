@@ -18,6 +18,7 @@ from not_dot_net.backend.workflow_service import create_request, submit_step
 from not_dot_net.backend.workflow_uploads import (
     UPLOAD_ROOT,
     persist_workflow_upload,
+    upload_size_error,
     validate_upload,
 )
 from not_dot_net.config import WorkflowStepConfig
@@ -210,6 +211,9 @@ async def render(user: User):
 
                         async def handle_file_upload(field_name, event):
                             upload = event.file
+                            if error := upload_size_error(upload.size(), max_upload_size_mb):
+                                ui.notify(error, color="negative")
+                                return
                             content = await upload.read()
                             filename = Path(upload.name).name
                             content_type = upload.content_type or "application/octet-stream"

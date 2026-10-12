@@ -13,6 +13,9 @@ from not_dot_net.config import DEFAULT_PROFILE_PHOTO_MAX_SIZE_MB, files_config
 ALLOWED_PROFILE_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 PROFILE_PHOTO_MAX_DIMENSION_PX = 256
 PROFILE_PHOTO_JPEG_QUALITY = 85
+# Header dimensions are read before any pixel is decoded. 64 MP covers any
+# phone camera; Pillow's own bomb guard only errors past ~179 MP.
+PROFILE_PHOTO_MAX_SOURCE_PIXELS = 64_000_000
 
 
 def profile_photo_max_bytes(max_size_mb: int) -> int:
@@ -51,6 +54,8 @@ def _rgb_profile_photo(image: Image.Image) -> Image.Image:
 def process_profile_photo(content: bytes) -> bytes | None:
     try:
         with Image.open(BytesIO(content)) as image:
+            if image.width * image.height > PROFILE_PHOTO_MAX_SOURCE_PIXELS:
+                return None
             image = ImageOps.exif_transpose(image)
             image.thumbnail(
                 (PROFILE_PHOTO_MAX_DIMENSION_PX, PROFILE_PHOTO_MAX_DIMENSION_PX),

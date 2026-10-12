@@ -103,6 +103,9 @@ async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch)
         name = "passport.pdf"
         content_type = "application/pdf"
 
+        def size(self):
+            return len(b"fake content")
+
         async def read(self):
             return b"fake content"
 
@@ -189,6 +192,9 @@ async def test_stale_tab_cannot_upload_after_token_cleared(user: User, monkeypat
     class _MockFile:
         name = "passport.pdf"
         content_type = "application/pdf"
+
+        def size(self):
+            return len(b"%PDF fake")
 
         async def read(self):
             return b"%PDF fake"
