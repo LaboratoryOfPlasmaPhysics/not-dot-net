@@ -401,7 +401,7 @@ async def render_step_form(
 
     fields: dict = {}
     containers: dict = {}
-    state: dict = dict(data)  # mutable working copy for visibility predicates
+    state: dict = {}  # widget values, refreshed for visibility predicates
 
     # Group consecutive half_width fields into pairs for row layout
     groups: list[list] = []
@@ -418,7 +418,6 @@ async def render_step_form(
         with ui.element("div").classes(width_class) as container:
             await _render_field(field_cfg, data, fields, files, on_file_upload, max_upload_size_mb, "w-full")
         containers[field_cfg.name] = container
-        container.set_visibility(is_field_visible(field_cfg, state))
 
     for group in groups:
         is_pair = len(group) == 2 and group[0].half_width
@@ -447,6 +446,11 @@ async def render_step_form(
             if c is not None:
                 c.set_visibility(is_field_visible(f, state))
 
+    # Initial visibility comes from the rendered widgets, exactly like submit
+    # validation: `data` lacks never-saved checkboxes (None) while their widget
+    # reads False, so a visible_when {cb: False} field disagreed between the two.
+    _refresh_visibility()
+
     for ref_name in referenced:
         widget = fields.get(ref_name)
         if widget is not None and hasattr(widget, "on_value_change"):
@@ -458,7 +462,7 @@ async def render_step_form(
 
     # Completion status for partial-save steps
     if step.partial_save:
-        _render_completion_indicator(resolved_fields, data, files or {})
+        _render_completion_indicator(resolved_fields, state, files or {})
 
     with ui.row().classes("mt-4 gap-2"):
         if on_save_draft and step.partial_save:

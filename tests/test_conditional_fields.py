@@ -99,3 +99,31 @@ async def test_form_shows_field_when_checkbox_true(user: User):
 
     await user.open("/_visibility_on")
     await user.should_see("Topic")
+
+
+async def test_field_shown_when_checkbox_unchecked_is_visible_on_fresh_form(user: User):
+    """Review 2026-10-12 W4: with no saved value, the render checked None == False
+    (hidden) while submit checked the unchecked box's False (visible, required):
+    "required field: Reason" for a field the user never saw."""
+    from not_dot_net.frontend.workflow_step import render_step_form
+    from not_dot_net.config import WorkflowStepConfig, FieldConfig
+
+    step = WorkflowStepConfig(
+        key="s1", type="form",
+        fields=[
+            FieldConfig(name="has_badge", type="checkbox", label="Has badge"),
+            FieldConfig(name="no_badge_reason", type="text", label="Reason",
+                        required=True, visible_when={"has_badge": False}),
+        ],
+        actions=["submit"],
+    )
+
+    async def on_submit(data):
+        pass
+
+    @ui.page("/_visibility_unchecked_default")
+    async def _page():
+        await render_step_form(step, data={}, on_submit=on_submit)
+
+    await user.open("/_visibility_unchecked_default")
+    await user.should_see("Reason")
