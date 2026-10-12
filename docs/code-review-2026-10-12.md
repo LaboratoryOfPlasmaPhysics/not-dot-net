@@ -11,7 +11,7 @@ Prefixes: **S** security · **F** broken feature · **W** workflow · **U** UX f
 ## Status (updated 2026-10-12)
 
 **Fixed:** S1, S2, S4, S5, S7, S11, F1, F2, F3 (dialog only), F4, F5, F6, F8,
-F15, W1, W2, W3, W4, W5, U1-U10, U15, V1-V4, T1. Also: overlapping
+F15, W1, W2, W3, W4, W5, U1-U10, U15, V1-V5, T1. Also: overlapping
 dashboard refreshes drew the action cards twice (seen in the live check). Also a bug found while fixing F2: `t(name, key=...)`
 raised TypeError, so the roles panel and role/vocabulary deletes crashed.
 **By design:** S6.
@@ -20,14 +20,10 @@ store site codes (`palaiseau`/`jussieu`), so no migration is needed. Only the
 dev demo data (`seed_data.py`) uses capitalized names. Production vocabulary
 terms have no labels, so raw codes are displayed (V6). Fill in labels in
 Settings → Vocabularies.
-**V5 needs a decision:** production Postgres runs with `timezone =
-Europe/Paris`. Columns filled by `server_default=now()` (request/event/audit
-`created_at`, ...) therefore hold Paris local time, while Python-written
-columns (`token_expires_at`, `retained_until`, outbox times, `last_ad_logon`)
-hold UTC. SQLite dev is all UTC, which is why dev showed times 2 h off.
-Clean fix: pin the DB session to UTC and migrate the `server_default`
-columns' existing rows from Paris to UTC; then convert to Europe/Paris
-for display everywhere.
+**V5 fixed (8556686):** production Postgres ran with TimeZone=Europe/Paris,
+so now()-filled columns held Paris time and Python-written ones UTC. App
+sessions are now pinned to UTC, migration 0021 converts the old rows on the
+next deploy, and pages show the viewer's browser timezone.
 **Open:** everything else. T2 (test-count gap) unexplained.
 
 ## Test suite
