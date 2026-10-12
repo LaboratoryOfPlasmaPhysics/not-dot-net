@@ -614,6 +614,27 @@ async def get_request_by_id(request_id: uuid.UUID) -> WorkflowRequest | None:
         return await session.get(WorkflowRequest, request_id)
 
 
+async def stranded_requests(cfg) -> list[WorkflowRequest]:
+    """In-progress requests whose workflow or current step `cfg` lacks.
+
+    Saving such a config strands them: submit_step fails with "Unknown step"
+    and they drop out of every actionable list.
+    """
+    async with session_scope() as session:
+        result = await session.execute(
+            select(WorkflowRequest)
+            .where(WorkflowRequest.status == RequestStatus.IN_PROGRESS)
+            .order_by(WorkflowRequest.created_at)
+        )
+        open_requests = result.scalars().all()
+    return [
+        req for req in open_requests
+        if req.current_step not in {
+            s.key for s in getattr(cfg.workflows.get(req.type), "steps", [])
+        }
+    ]
+
+
 async def get_request_by_token(token: str) -> WorkflowRequest | None:
     if not token:
         return None

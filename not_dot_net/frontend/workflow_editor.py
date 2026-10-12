@@ -271,6 +271,7 @@ class WorkflowEditorDialog:
                 raise ValueError(f"Step '{value}' already exists in workflow '{wf_key}'")
             _validate_slug(value)
             step.key = value
+            _rename_step_references(wf, step_key, value)
             if self.selected_step == step_key:
                 self.selected_step = value
             self._refresh_tree()
@@ -1272,6 +1273,8 @@ class WorkflowEditorDialog:
         except ValidationError as e:
             notify_error(e)
             return
+        if not await _refuse_if_strands_requests(validated):
+            return
         await workflows_config.set(validated)
         await log_audit(
             "settings", "update",
@@ -1282,6 +1285,8 @@ class WorkflowEditorDialog:
         self.close()
 
     async def reset(self) -> None:
+        if not await _refuse_if_strands_requests(WorkflowsConfig()):
+            return
         await workflows_config.reset()
         self.original = await workflows_config.get()
         self.working_copy = self.original.model_copy(deep=True)
@@ -1295,6 +1300,30 @@ class WorkflowEditorDialog:
             detail="section=workflows",
         )
         ui.notify(t("settings_reset"), color="info")
+
+
+def _rename_step_references(wf, old_key: str, new_key: str) -> None:
+    """Point every in-workflow reference to a renamed step at its new key."""
+    for step in wf.steps:
+        if step.corrections_target == old_key:
+            step.corrections_target = new_key
+    for rule in wf.notifications:
+        if rule.step == old_key:
+            rule.step = new_key
+
+
+async def _refuse_if_strands_requests(cfg: WorkflowsConfig) -> bool:
+    """False (with a message) when `cfg` drops a step open requests sit on."""
+    from not_dot_net.backend.workflow_service import stranded_requests
+    stranded = await stranded_requests(cfg)
+    if not stranded:
+        return True
+    steps = ", ".join(sorted({f"{r.type} → {r.current_step}" for r in stranded}))
+    ui.notify(
+        t("workflow_save_strands_requests", count=len(stranded), steps=steps),
+        color="negative", multi_line=True,
+    )
+    return False
 
 
 async def open_workflow_editor(user) -> None:
