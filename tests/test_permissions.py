@@ -166,48 +166,47 @@ async def _update_user(user_id, updates: dict):
                 await manager.update(update_schema, user)
 
 
-def _mounted_routes():
+def _mounted_routes() -> dict[str, set[str]]:
+    """Every mounted HTTP route as {path: {METHOD, ...}}.
+
+    Read from the OpenAPI schema rather than `app.routes`: since FastAPI 0.143
+    included routers stay wrapped in `_IncludedRouter`, so `app.routes` no
+    longer lists their paths and assertions on it pass vacuously.
+    """
     from nicegui import app
     from not_dot_net.app import create_app
 
-    paths = {getattr(route, "path", None) for route in app.routes}
-    if "/login" not in paths and "/auth/login" not in paths:
+    app.openapi_schema = None
+    if "/auth/login" not in app.openapi()["paths"]:
         create_app()
-        paths = {getattr(route, "path", None) for route in app.routes}
-    return app.routes, paths
+        app.openapi_schema = None
+    return {
+        path: {method.upper() for method in methods}
+        for path, methods in app.openapi()["paths"].items()
+    }
 
 
 def test_no_public_user_update_routes_are_mounted():
-    _, paths = _mounted_routes()
+    paths = _mounted_routes()
 
     assert "/users/me" not in paths
-    assert not any(path and path.startswith("/users/") for path in paths)
+    assert not any(path.startswith("/users/") for path in paths)
 
 
 def test_no_public_patch_route_exposes_user_modification():
-    app_routes, _ = _mounted_routes()
-    patch_paths = {
-        getattr(route, "path", None)
-        for route in app_routes
-        if "PATCH" in getattr(route, "methods", set())
-    }
+    patch_paths = {path for path, methods in _mounted_routes().items() if "PATCH" in methods}
 
     assert "/users/me" not in patch_paths
-    assert not any(path and path.startswith("/users/") for path in patch_paths)
+    assert not any(path.startswith("/users/") for path in patch_paths)
 
 
 def test_only_expected_auth_http_routes_are_exposed():
-    app_routes, _ = _mounted_routes()
     auth_routes = {
-        (getattr(route, "path", None), tuple(sorted(getattr(route, "methods", set()))))
-        for route in app_routes
-        if getattr(route, "path", "").startswith("/auth") or getattr(route, "path", "") == "/logout"
+        path: methods for path, methods in _mounted_routes().items()
+        if path.startswith("/auth") or path == "/logout"
     }
 
-    assert ("/auth/login", ("POST",)) in auth_routes
-    assert ("/logout", ("GET",)) in auth_routes
-    assert not any(path == "/users/me" for path, _ in auth_routes)
-    assert not any(path.startswith("/auth/jwt") or path.startswith("/auth/cookie") for path, _ in auth_routes)
+    assert auth_routes == {"/auth/login": {"POST"}, "/logout": {"GET"}}
 
 
 async def test_role_update_does_not_grant_is_superuser():
