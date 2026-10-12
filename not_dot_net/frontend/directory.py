@@ -20,11 +20,16 @@ from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import get_user_manager
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.backend.permissions import permission, has_permissions
+from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.backend.permissions import (
+    MANAGE_ROLES, check_permission, has_permissions, permission,
+)
 from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
 from not_dot_net.config import files_config
 
 MANAGE_USERS = permission("manage_users", "Manage users", "Edit/delete users in directory")
+
+SELF_EDITABLE_FIELDS = frozenset({"phone", "office", "company", "description", "webpage"})
 
 
 def parse_optional_date(value: str | None) -> date | None:
@@ -76,14 +81,17 @@ def classify_updates(updates: dict) -> tuple[dict[str, str | None], dict]:
     return ad_changes, local_updates
 
 
+def _blank_to_none(value):
+    return None if value == "" else value
+
+
 def compute_update_diff(current: dict, submitted: dict) -> dict:
     """Return only fields whose submitted value differs from current. Empty strings -> None."""
-    out: dict = {}
-    for k, raw in submitted.items():
-        new_val = raw if raw not in ("", None) else None
-        if new_val != current.get(k):
-            out[k] = new_val
-    return out
+    return {
+        k: _blank_to_none(raw)
+        for k, raw in submitted.items()
+        if _blank_to_none(raw) != _blank_to_none(current.get(k))
+    }
 
 
 async def _load_people(include_inactive: bool = False) -> list[User]:
@@ -95,17 +103,41 @@ async def _load_people(include_inactive: bool = False) -> list[User]:
         return result.scalars().all()
 
 
-async def _update_user(user_id, updates: dict, actor_email: str | None = None):
+async def authorize_user_update(actor, target: User, updates: dict) -> None:
+    """Raise PermissionError unless `actor` may apply `updates` to `target`.
+
+    A role grants a permission set, so changing one is role administration
+    (`manage_roles`), not user administration — otherwise any `manage_users`
+    holder could hand themselves admin.
+    """
+    if actor is None:
+        raise PermissionError("No actor provided")
+    is_own = getattr(actor, "id", None) == target.id
+    if not (is_own and set(updates) <= SELF_EDITABLE_FIELDS):
+        await check_permission(actor, MANAGE_USERS)
+    if "role" in updates:
+        await check_permission(actor, MANAGE_ROLES)
+    if target.is_superuser and not actor.is_superuser:
+        raise PermissionError("Only a superuser can edit a superuser")
+
+
+async def _update_user(user_id, updates: dict, *, actor):
     """Update a user via UserManager (respects FastAPI-Users hooks)."""
+    if "role" in updates:
+        # User.role is NOT NULL; "no role" is the empty string.
+        updates = {**updates, "role": updates["role"] or ""}
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
                 user = await manager.get(user_id)
+                await authorize_user_update(actor, user, updates)
                 update_schema = UserUpdate(**updates)
                 # safe=True: FastAPI-Users strips is_superuser/is_active/is_verified
                 # from self-service updates. The edit form never sets them; this
                 # guards against a stray privileged key ever reaching the sink.
-                await manager.update(update_schema, user, safe=True, actor_email=actor_email)
+                await manager.update(
+                    update_schema, user, safe=True, actor_email=getattr(actor, "email", None),
+                )
 
 
 async def _delete_user(user_id, actor=None):
@@ -115,8 +147,7 @@ async def _delete_user(user_id, actor=None):
     windows and SET NULLs the user out of workflow history, so afterwards there
     is nothing left to describe who was removed.
     """
-    if actor is not None and not await has_permissions(actor, "manage_users"):
-        raise PermissionError("manage_users required to delete users")
+    await check_permission(actor, MANAGE_USERS)
     async with session_scope() as session:
         async with asynccontextmanager(get_user_db)(session) as user_db:
             async with asynccontextmanager(get_user_manager)(user_db) as manager:
@@ -510,7 +541,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
             _add_field("end_date", t("end_date"),
                        str(person.end_date) if person.end_date else "")
 
-        if is_admin:
+        if await has_permissions(current_user, MANAGE_ROLES):
             from not_dot_net.backend.roles import roles_config
             roles_cfg = await roles_config.get()
             role_options = sorted(roles_cfg.roles.keys())
@@ -639,6 +670,12 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                 ui.notify(t("saved"), color="positive")
                 return
 
+            try:
+                await authorize_user_update(current_user, person, diff)
+            except PermissionError:
+                ui.notify(t("access_denied"), color="negative")
+                return
+
             ad_changes, local_updates = classify_updates(diff)
             needs_ad_write = bool(ad_changes) and person.auth_method == AuthMethod.LDAP
 
@@ -665,7 +702,7 @@ async def _render_edit_form(container, person: User, current_user: User, state: 
                         )
                         return
 
-            await _update_user(person.id, diff, actor_email=current_user.email)
+            await _update_user(person.id, diff, actor=current_user)
             current_values = {k: getattr(person, k) for k in diff}
             changes = {
                 k: {"old": _serialize_value(current_values.get(k)), "new": _serialize_value(v)}
@@ -751,9 +788,10 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
                 )
                 ui.notify(t("tenure_deleted"), color="positive")
                 await on_refresh()
-            ui.button(icon="delete", on_click=do_delete).props(
+            delete_dlg = confirm_dialog(t("confirm_delete_tenure"), do_delete)
+            ui.button(icon="delete", on_click=delete_dlg.open).props(
                 "flat dense round size=xs color=negative"
-            ).tooltip(t("delete"))
+            ).tooltip(t("delete")).mark("delete-tenure")
 
 
 async def _tenure_options(locale: str) -> tuple[dict[str, str], dict[str, str]]:

@@ -5,6 +5,7 @@ from nicegui.testing import User
 from not_dot_net.backend.db import session_scope, get_user_db
 from not_dot_net.backend.schemas import UserCreate
 from not_dot_net.backend.users import get_user_manager, get_jwt_strategy
+from not_dot_net.backend.permissions import SYSTEM_ACTOR
 
 
 async def _create_user_and_token(email: str, password: str) -> str:
@@ -52,7 +53,7 @@ async def test_update_user_cannot_set_is_superuser():
         ))
         await session.commit()
 
-    await _update_user(uid, {"is_superuser": True, "title": "Engineer"})
+    await _update_user(uid, {"is_superuser": True, "title": "Engineer"}, actor=SYSTEM_ACTOR)
 
     async with session_scope() as session:
         reloaded = await session.get(User, uid)
@@ -279,6 +280,11 @@ def test_compute_update_diff_no_changes_returns_empty():
     assert compute_update_diff({"phone": "+33111"}, {"phone": "+33111"}) == {}
 
 
+def test_compute_update_diff_treats_empty_current_as_none():
+    """F1: a role-less user has role == "" while the cleared select gives None."""
+    assert compute_update_diff({"role": ""}, {"role": None}) == {}
+
+
 def test_compute_update_diff_preserves_date_values():
     from datetime import date
 
@@ -343,7 +349,7 @@ async def test_self_edit_phone_writes_to_ad_and_local_db():
         bind_username="jdoe", bind_password="secret",
         ldap_cfg=cfg, connect=fake_connect,
     )
-    await _update_user(user_id, {"phone": "+33NEW"})
+    await _update_user(user_id, {"phone": "+33NEW"}, actor=SYSTEM_ACTOR)
 
     assert ad_state["telephoneNumber"] == "+33NEW"
 
