@@ -27,7 +27,7 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import as_date_range, confirm_dialog
 
 _KIND_COLOR = {
     "room": "#1976d2",
@@ -84,6 +84,7 @@ def _clamp_range_to_window(value, window_start, window_end_exclusive) -> dict[st
     back to the full window when value is missing/invalid."""
     window_last_day = window_end_exclusive - timedelta(days=1)
     default = {"from": str(window_start), "to": str(window_last_day)}
+    value = as_date_range(value)
     if not isinstance(value, dict):
         return default
     try:
@@ -576,8 +577,8 @@ async def _show_offer_dialog(parent_dialog, plan_area, state, user, is_admin, re
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
 
             async def do_save():
-                val = date_picker.value
-                if not isinstance(val, dict):
+                val = as_date_range(date_picker.value)
+                if val is None:
                     ui.notify(t("required_field"), color="negative")
                     return
                 start = date.fromisoformat(val["from"])

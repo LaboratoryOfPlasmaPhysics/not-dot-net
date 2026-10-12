@@ -28,7 +28,7 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog, options_with
+from not_dot_net.frontend.widgets import as_date_range, confirm_dialog, options_with
 
 RESOURCE_TYPES = ["desktop", "laptop", "office"]
 
@@ -48,6 +48,7 @@ def _normalize_booking_range(
     minimum_lead_days: int = 7,
 ) -> dict[str, str]:
     default_range = _default_booking_range(today, minimum_lead_days)
+    value = as_date_range(value)
     if not isinstance(value, dict):
         return default_range
     try:
@@ -216,8 +217,8 @@ async def _render_bookings(container, user: User, filter_range=None):
         resource_area = ui.column().classes("w-full")
 
         async def apply_filter():
-            val = date_picker.value
-            if not val or not isinstance(val, dict):
+            val = as_date_range(date_picker.value)
+            if val is None:
                 return
             normalized = _normalize_booking_range(val, minimum_lead_days=booking_cfg.minimum_lead_days)
             if normalized != val:

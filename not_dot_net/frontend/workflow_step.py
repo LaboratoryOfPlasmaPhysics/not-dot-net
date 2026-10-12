@@ -11,6 +11,7 @@ from not_dot_net.backend.field_definitions import field_definitions_config, reso
 from not_dot_net.backend.vocabularies import resolve_terms, term_label
 from not_dot_net.config import WorkflowStepConfig, step_display
 from not_dot_net.frontend.i18n import TRANSLATIONS, get_locale, t
+from not_dot_net.frontend.widgets import action_button, confirm_dialog
 
 _log = logging.getLogger(__name__)
 
@@ -358,7 +359,7 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
             }
             await on_submit("complete", payload)
 
-        ui.button(t("complete"), on_click=submit).props("color=primary")
+        action_button(t("complete"), submit).props("color=primary")
 
 
 async def resolve_display_values(workflow, data: dict, locale: str) -> dict[str, str]:
@@ -466,7 +467,7 @@ async def render_step_form(
 
     with ui.row().classes("mt-4 gap-2"):
         if on_save_draft and step.partial_save:
-            ui.button(t("save_draft"), on_click=lambda: on_save_draft(_collect_data(fields))).props(
+            action_button(t("save_draft"), lambda: on_save_draft(_collect_data(fields))).props(
                 "flat"
             )
 
@@ -487,7 +488,7 @@ async def render_step_form(
                 return
             await on_submit(collected)
 
-        ui.button(t("submit"), on_click=validated_submit).props("color=primary")
+        action_button(t("submit"), validated_submit).props("color=primary")
 
     return fields
 
@@ -526,25 +527,30 @@ def render_approval(
             label = t(key) if key in TRANSLATIONS.get(get_locale(), {}) else key
             ui.label(f"{label}: {value}").classes("text-sm")
 
-    comment_input = ui.textarea(label=t("comment")).props("outlined dense").classes("w-full mt-2")
+    comment_input = ui.textarea(label=t("comment")).props("outlined dense").classes("w-full mt-2").mark("comment")
 
+    reject_dlg = confirm_dialog(
+        t("confirm_reject"), lambda: on_reject(comment_input.value),
+        confirm_icon="close",
+    )
+
+    def ask_reject():
+        if not (comment_input.value or "").strip():
+            ui.notify(t("reject_reason_required"), color="negative")
+            return
+        reject_dlg.open()
+
+    group: list = []
     with ui.row().classes("mt-4 gap-2"):
-        ui.button(
-            t("approve"),
-            icon="check",
-            on_click=lambda: on_approve(comment_input.value),
+        action_button(
+            t("approve"), lambda: on_approve(comment_input.value), group=group, icon="check",
         ).props("color=positive")
         if on_request_corrections:
-            ui.button(
-                t("request_corrections"),
-                icon="edit_note",
-                on_click=lambda: on_request_corrections(comment_input.value),
+            action_button(
+                t("request_corrections"), lambda: on_request_corrections(comment_input.value),
+                group=group, icon="edit_note",
             ).props("color=warning")
-        ui.button(
-            t("reject"),
-            icon="close",
-            on_click=lambda: on_reject(comment_input.value),
-        ).props("color=negative")
+        ui.button(t("reject"), icon="close", on_click=ask_reject).props("color=negative").mark("reject")
 
 
 def render_status_badge(status: str):

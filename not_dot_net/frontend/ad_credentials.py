@@ -15,6 +15,7 @@ from not_dot_net.backend.auth.ldap import (
     store_user_connection,
 )
 from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.widgets import action_button
 
 
 async def prompt_ad_credentials(
@@ -52,7 +53,9 @@ async def prompt_ad_credentials(
             await on_bind(bind_user, password_input.value)
 
         with ui.row():
-            ui.button(t("submit"), on_click=submit).props("flat color=primary")
+            submit_button = action_button(t("submit"), submit).props("flat color=primary")
             ui.button(t("cancel"), on_click=dialog.close).props("flat")
+        # Through a client-side click, so Enter honours the disabled state too.
+        password_input.on("keydown.enter", lambda: submit_button.run_method("click"))
 
     dialog.open()

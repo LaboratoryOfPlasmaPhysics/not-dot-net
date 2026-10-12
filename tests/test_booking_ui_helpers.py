@@ -191,3 +191,30 @@ async def test_my_bookings_shows_real_office_name_not_question_mark(user):
 
     await user.open("/my-bookings-office-name-test")
     await user.should_see(resource.name)
+
+
+# --- Review 2026-10-12 F6: QDate in range mode emits a plain date string when
+# start and end are the same day (quasar.umd.js: `initHash === finalHash ? day`).
+
+
+def test_as_date_range_accepts_single_day_string():
+    from not_dot_net.frontend.widgets import as_date_range
+
+    assert as_date_range("2026-10-20") == {"from": "2026-10-20", "to": "2026-10-20"}
+    assert as_date_range({"from": "2026-10-20", "to": "2026-10-22"}) == {"from": "2026-10-20", "to": "2026-10-22"}
+    assert as_date_range(None) is None
+    assert as_date_range("") is None
+
+
+def test_normalize_booking_range_keeps_single_day():
+    today = date(2026, 5, 26)
+    assert _normalize_booking_range("2026-06-10", today) == {"from": "2026-06-10", "to": "2026-06-10"}
+
+
+def test_clamp_range_to_window_keeps_single_day():
+    from not_dot_net.frontend.floorplan import _clamp_range_to_window
+
+    window_start, window_end_exclusive = date(2026, 10, 1), date(2026, 11, 1)
+    assert _clamp_range_to_window("2026-10-20", window_start, window_end_exclusive) == {
+        "from": "2026-10-20", "to": "2026-10-20",
+    }

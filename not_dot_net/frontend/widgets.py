@@ -21,7 +21,7 @@ class ConfirmDialog(ui.dialog):
         with self, ui.card():
             ui.label(message).classes("text-bold")
             with ui.row():
-                ui.button(confirm_label, icon=confirm_icon, on_click=self.confirm).props(
+                action_button(confirm_label, self.confirm, icon=confirm_icon).props(
                     "color=negative"
                 )
                 ui.button(t("cancel"), on_click=self.close).props("flat")
@@ -46,6 +46,49 @@ def confirm_dialog(
         confirm_label=confirm_label or t("confirm"),
         confirm_icon=confirm_icon,
     )
+
+
+def action_button(text: str, on_click, *, group: list | None = None, **kwargs) -> ui.button:
+    """A button that can't run its action twice at once.
+
+    Every button in `group` (shared list, e.g. Approve/Reject) is disabled
+    while the action runs. Disabling happens in a synchronous handler on
+    purpose: NiceGUI runs an async handler's body later, as a background
+    task, so a second queued click would still find the button enabled.
+    NiceGUI drops events from disabled elements server-side.
+    """
+    siblings = group if group is not None else []
+
+    def start():
+        for b in siblings:
+            b.disable()
+        button.props("loading")
+        return run()
+
+    async def run():
+        try:
+            result = on_click()
+            if inspect.isawaitable(result):
+                await result
+        finally:
+            button.props(remove="loading")
+            for b in siblings:
+                b.enable()
+
+    button = ui.button(text, on_click=start, **kwargs)
+    siblings.append(button)
+    return button
+
+
+def as_date_range(value) -> dict[str, str] | None:
+    """A `ui.date(range)` value as {"from", "to"}, or None when empty.
+
+    QDate in range mode emits a plain date string, not a dict, when the start
+    and end are the same day (quasar.umd.js: `initHash === finalHash ? day`).
+    """
+    if isinstance(value, str):
+        return {"from": value, "to": value} if value else None
+    return value or None
 
 
 def options_with(options, value, *, label: str | None = None):
