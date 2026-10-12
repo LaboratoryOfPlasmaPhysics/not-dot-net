@@ -4,6 +4,8 @@ import asyncio
 import pytest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+
+from starlette.datastructures import Headers
 from unittest.mock import AsyncMock, patch
 
 from not_dot_net.backend.db import User, session_scope, get_user_db
@@ -37,7 +39,7 @@ class _FakeRequest:
     def __init__(self, form_data, *, client_host=None, headers=None):
         self._form_data = form_data
         self.client = SimpleNamespace(host=client_host) if client_host else None
-        self.headers = headers or {}
+        self.headers = Headers(headers or {})
 
     async def form(self):
         return self._form_data

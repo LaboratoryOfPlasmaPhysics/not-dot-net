@@ -39,8 +39,23 @@ async def test_complete_setup_creates_first_superuser():
 # real client IP, so only the last element is trustworthy ---
 
 
-def _request(headers=None, client_host="192.0.2.9"):
-    return SimpleNamespace(headers=headers or {}, client=SimpleNamespace(host=client_host))
+def _request(headers=None, client_host="192.0.2.9", raw=None):
+    from starlette.datastructures import Headers
+
+    raw = raw or [(k.encode(), v.encode()) for k, v in (headers or {}).items()]
+    return SimpleNamespace(headers=Headers(raw=raw), client=SimpleNamespace(host=client_host))
+
+
+def test_request_ip_uses_last_forwarded_for_header_line():
+    """S2 (review 2026-10-12): HAProxy `option forwardfor` adds its own header
+    LINE after the client's; `headers.get` returns the first (spoofed) one."""
+    from not_dot_net.backend.audit import request_ip
+
+    spoofed = _request(raw=[
+        (b"x-forwarded-for", b"6.6.6.6"),
+        (b"x-forwarded-for", b"10.0.0.5"),
+    ])
+    assert request_ip(spoofed) == "10.0.0.5"
 
 
 def test_request_ip_uses_last_forwarded_for_element():

@@ -54,12 +54,14 @@ def request_ip(request) -> str | None:
 
     X-Forwarded-For is client-suppliable; HAProxy APPENDS the real client IP,
     so only the LAST element is trustworthy — taking the first would let an
-    attacker choose the IP recorded in audit rows and security alerts."""
+    attacker choose the IP recorded in audit rows and security alerts.
+    HAProxy appends a separate header LINE rather than extending the client's,
+    so read the last line too — `headers.get` would return the client's."""
     if request is None:
         return None
-    forwarded_for = request.headers.get("x-forwarded-for")
+    forwarded_for = request.headers.getlist("x-forwarded-for")
     if forwarded_for:
-        return forwarded_for.rsplit(",", 1)[-1].strip() or None
+        return forwarded_for[-1].rsplit(",", 1)[-1].strip() or None
     client = getattr(request, "client", None)
     return getattr(client, "host", None)
 
