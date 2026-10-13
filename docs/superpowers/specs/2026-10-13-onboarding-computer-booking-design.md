@@ -1,6 +1,7 @@
 # Booking a computer for a newcomer — design
 
-Date: 2026-10-13. Status: approved in chat, awaiting spec review.
+Date: 2026-10-13. Status: approved in chat; revised after an opencode review
+(see "Review notes" at the end).
 
 ## Goal
 
@@ -8,8 +9,9 @@ Someone who onboards a newcomer can book them a computer right away. The booking
 covers the newcomer's presence period without typing dates. On the booking page,
 picking a person sets the range from their presence.
 
-The onboarding form also gains the presence dates it lacks: an arrival date for
-everyone, and a departure date for every non-permanent status.
+The onboarding form also gains a departure date, required for every
+non-permanent status. The default config already has a required arrival date
+(`default_workflows.py:75`); production's stored config has neither.
 
 ## Decisions (from the user)
 
@@ -36,10 +38,16 @@ everyone, and a departure date for every non-permanent status.
   `departure_required(hook, data, statuses) -> bool`, used by:
   - the form, which shows the field as required and re-evaluates when the
     status changes;
-  - the server-side step validation, so a crafted submit cannot skip it.
+  - a new server-side check in `submit_step`. Today required fields are only
+    checked in the browser (`workflow_step.py`); the server checks nothing.
+    The new check rejects a submit that misses a required, visible field of
+    the current step, or the departure date when the rule asks for it.
+- A status that is not a known term (inactive or free entry) counts as not
+  permanent, so the departure date stays required. Missing presence data is
+  the worse failure.
 - An end date before the start date is rejected (same rule as tenures).
-- Default onboarding config: the initiation step gets `start_date` ("Arrival
-  date", required) and `end_date` ("Departure date") date fields.
+- Default onboarding config: the initiation step keeps its `start_date` and
+  gets an `end_date` ("Departure date") date field.
 - `compute_warnings` also flags a hook `end_date_field` that matches no field.
 
 ## 2. Booking linked to an onboarding request
@@ -48,13 +56,19 @@ everyone, and a departure date for every non-permanent status.
   `ondelete=CASCADE`, indexed. One Alembic migration (batch mode for SQLite).
 - While the request is pending: `user_id` = the booking maker,
   `workflow_request_id` = the request.
-- On COMPLETED, next to the tenure recording (post-commit, same resolved user):
-  set `user_id` to the newcomer and `workflow_request_id` to NULL. Clearing the
-  link keeps a later deletion of the old request from deleting the booking.
-  If no user resolves, the booking stays with the maker and an audit event
-  `booking_not_transferred` is logged (shown orange, like `tenure_not_recorded`).
-- On REJECTED or CANCELLED: delete the linked bookings in the same session as
-  the status change. On delete: the FK cascade removes them.
+- On COMPLETED (post-commit, like the tenure): resolve the newcomer with the
+  same lookup the tenure uses, then set `user_id` to them and
+  `workflow_request_id` to NULL. This step is independent of the tenure
+  recording: `_record_tenure` returns early when status or employer is
+  missing, and the transfer must not be skipped with it. Clearing the link
+  keeps a later deletion of the old request from deleting the booking.
+- If no user resolves, the booking stays with the maker and the audit event
+  `workflow` / `booking_not_transferred` is logged. It sits in the `workflow`
+  category so `audit_log._severity` can show it orange next to
+  `tenure_not_recorded`; it gets an i18n label.
+- Release on REJECTED and CANCELLED, at both call sites: `submit_step` (reject)
+  and `cancel_request`, each in the session that changes the status. On
+  `delete_request` the FK cascade removes them.
 - Each transfer or release is audit-logged under `booking`.
 
 ## 3. Person picker on the booking page
@@ -63,21 +77,37 @@ everyone, and a departure date for every non-permanent status.
   may book for someone else:
   - `manage_bookings`: any active person and any pending onboarding;
   - otherwise: pending onboardings the viewer created (`created_by`).
-- Picking a person sets the range to their current tenure, or else their next
-  one. An open end leaves the end for the viewer to pick.
+- New queries in the services:
+  - `presence_period(user_id, today)`: the tenure covering today, else the
+    next one to start. The existing `current_tenure` only returns open
+    tenures, so it misses every fixed-term person.
+  - `pending_onboardings_for(actor)`: IN_PROGRESS requests of workflows with a
+    tenure hook; all of them for `manage_bookings`, else `created_by == actor`.
+- Picking a person sets the range from `presence_period`. An open end leaves
+  the end for the viewer to pick.
 - Picking a pending onboarding sets the range from the request's
   `start_date_field` / `end_date_field` and books as in §2.
-- The range still goes through `_normalize_booking_range` (minimum lead days)
-  and shows the "range shifted" notice when it moves.
-- `create_booking` gains `for_user_id` / `workflow_request_id` handling and
-  checks the same permission server-side; the UI gate alone is not trusted.
+- Presence ends are inclusive; `Booking.end_date` is exclusive. The range maps
+  the last day of presence to `end + 1 day`, in one helper.
+- `create_booking` keeps its limits (minimum lead days, `max_booking_days`).
+  The presence range is clamped to both before it is shown, with a notice
+  naming which limit moved it. A newcomer arriving next week gets a booking
+  from the earliest allowed day; a 3-year PhD gets the first
+  `max_booking_days` and a note to extend later.
+- Server-side rules in `create_booking`, the UI gate is not trusted:
+  - booking for another existing person needs `manage_bookings`;
+  - with `workflow_request_id`: the request must be IN_PROGRESS, its workflow
+    must have a tenure hook, and the actor must be its creator or hold
+    `manage_bookings`. The booking's `user_id` is the actor, never a value
+    from the client.
 
 ## 4. "Book a computer" link
 
 - Shown after the initiator submits an onboarding form, and on the detail page
   of a pending onboarding request the viewer may book for.
-- Opens the Bookings tab with that request preselected in the picker (through
-  the shell's stored tab key plus a stored "book for" target).
+- Opens the Bookings tab with that request preselected in the picker. Same
+  pattern as cloning a request: `app.storage.user["book_for"]` plus the stored
+  tab key (`workflow_detail.py:257`, read by `new_request.py:153`).
 - Only workflows with a tenure hook get the link.
 
 ## 5. Production rollout (not code)
@@ -88,7 +118,8 @@ After the code is deployed, and each write confirmed with the user first:
    vocabulary (read-only), and show the user the proposed changes.
 2. Update the onboarding workflow through `workflows_config.set` run inside the
    app container (validated by the Pydantic model, not raw SQL):
-   - add `start_date` and `end_date` date fields to the initiation step;
+   - add `start_date` and `end_date` date fields to the initiation step
+     (production has neither);
    - add `end_date_field` to the tenure hook;
    - rename "VPN Access Request" to "VPN Access".
 3. Set `permanent` on the permanent statuses, through `vocabularies_config.set`,
@@ -98,9 +129,13 @@ After the code is deployed, and each write confirmed with the user first:
 
 ## Testing
 
-- Reproducer-first unit tests for `departure_required`, `_record_tenure` with an
-  end date, transfer on completion, release on reject/cancel, cascade on delete,
-  and the permission check in `create_booking`.
+- Reproducer-first unit tests for `departure_required`, the new server-side
+  required check (a crafted submit without a required field fails today),
+  `_record_tenure` with an end date, `presence_period` with a bounded tenure,
+  the inclusive→exclusive end, clamping, transfer on completion (also when
+  the tenure is skipped), release on reject and on cancel, cascade on delete,
+  and each `create_booking` rule (non-creator linking someone else's request
+  is refused).
 - NiceGUI user tests for the picker range and the link.
 - Migration tested on SQLite; full suite before each commit.
 
@@ -108,3 +143,22 @@ After the code is deployed, and each write confirmed with the user first:
 
 - Bookings tied to workflows without a tenure hook.
 - Moving a linked booking when the request's dates change after booking.
+
+## Review notes (opencode, 2026-10-13)
+
+Accepted and folded in above: no server-side required check exists; arrival
+date already in the default config; `current_tenure` ignores bounded tenures;
+transfer must not depend on the tenure being recorded; `booking` category is
+never orange; lead-days and max-days limits; booking ownership and request
+validation in `create_booking`; release at two call sites; inclusive vs
+exclusive end; missing queries; unknown status; reuse the clone-prefill
+storage pattern.
+
+Not taken:
+- "Make the departure date always required": the user chose the per-status
+  flag on purpose.
+- "Reuse `can_user_act` for the picker gate": it answers who may act on the
+  current step, not who may book for the newcomer. The creator usually is not
+  the actor of later steps.
+- Race between a transfer and a direct booking cancel: the transfer updates by
+  `workflow_request_id`, so a cancelled booking simply isn't there to move.
