@@ -3,9 +3,10 @@
 import uuid
 from datetime import date, timedelta
 
-from nicegui import ui
+from nicegui import app, ui
 from sqlalchemy import func, select
 
+from not_dot_net.backend.book_for import book_for_choices, fit_booking_range
 from not_dot_net.backend.booking_models import ResourceStatus
 from not_dot_net.backend.booking_service import (
     BookingConflictError,
@@ -87,6 +88,59 @@ def _format_booking_period(start: date, end_exclusive: date) -> str:
     """end_date is the exclusive hand-back day — show the inclusive range
     the user actually picked."""
     return f"{start} → {end_exclusive - timedelta(days=1)}"
+
+
+def _choice_key(choice: dict) -> str:
+    return choice.get("request_id") or choice.get("user_id") or ""
+
+
+def _booking_owner(target: dict | None, me: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID | None, str]:
+    """(user_id, workflow_request_id, default note) for the booking form.
+
+    A newcomer has no account yet: the booking is held by its maker, linked
+    to the request, and carries the newcomer's name.
+    """
+    if not target:
+        return me, None, ""
+    if target.get("request_id"):
+        return me, uuid.UUID(target["request_id"]), target["label"]
+    return uuid.UUID(target["user_id"]), None, ""
+
+
+def _target_range(target: dict | None, today: date, cfg) -> dict[str, str] | None:
+    if not target or not target.get("from"):
+        return None
+    end = date.fromisoformat(target["to"]) if target.get("to") else None
+    return fit_booking_range(date.fromisoformat(target["from"]), end, today, cfg)
+
+
+def open_booking_for(choice: dict) -> None:
+    """Jump to the Bookings tab with `choice` preselected."""
+    app.storage.user["book_for"] = choice
+    app.storage.user["active_tab"] = "bookings"
+    ui.navigate.to("/")
+
+
+def _render_book_for(container, user, choices: list[dict], target: dict | None, today, cfg):
+    options = {"": t("myself"), **{_choice_key(c): c["label"] for c in choices}}
+    current = _choice_key(target) if target else ""
+
+    async def pick(e):
+        choice = next((c for c in choices if _choice_key(c) == e.value), None)
+        if choice:
+            app.storage.user["book_for"] = choice
+        else:
+            app.storage.user.pop("book_for", None)
+        await _render_bookings(container, user, _target_range(choice, today, cfg))
+
+    with ui.row().classes("items-center gap-2 mb-3"):
+        ui.icon("person", size="sm").classes("text-primary")
+        ui.select(
+            options, value=current if current in options else "", label=t("book_for"),
+            with_input=True, on_change=pick,
+        ).props("outlined dense").classes("min-w-[250px]")
+        if target:
+            ui.label(t("booking_for", name=target["label"])).classes("text-sm text-primary")
 
 
 def render(user: User):
@@ -182,8 +236,15 @@ async def _render_bookings(container, user: User, filter_range=None):
 
             ui.separator().classes("mb-4")
 
-        # --- Global date range filter ---
         today = date.today()
+        target = app.storage.user.get("book_for") if logged_in else None
+        if filter_range is None:
+            filter_range = _target_range(target, today, booking_cfg)
+        choices = await book_for_choices(user, today) if logged_in else []
+        if choices:
+            _render_book_for(container, user, choices, target, today, booking_cfg)
+
+        # --- Global date range filter ---
         default_range = _normalize_booking_range(
             filter_range,
             today,
@@ -513,6 +574,10 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
         return
 
     ui.label(t("book")).classes("text-subtitle2 mt-3 mb-1")
+    target = app.storage.user.get("book_for")
+    owner_id, request_id, default_note = _booking_owner(target, user.id)
+    if target:
+        ui.label(t("booking_for", name=target["label"])).classes("text-sm text-primary")
     bc = await bookings_config.get()
     default_range = _normalize_booking_range(
         book_range or _default_booking_range(today, bc.minimum_lead_days),
@@ -563,7 +628,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     os_select.on_value_change(on_os_change)
 
     with ui.row().classes("items-center gap-2"):
-        note_input = ui.input(t("note")).props("outlined dense")
+        note_input = ui.input(t("note"), value=default_note).props("outlined dense")
 
         async def _submit_booking(selected_sw):
             try:
@@ -574,15 +639,17 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
                 return
             try:
                 await create_booking(
-                    res.id, user.id, s, e,
+                    res.id, owner_id, s, e,
                     note=note_input.value,
                     os_choice=os_select.value,
                     software_tags=selected_sw or None,
                     actor=user,
+                    workflow_request_id=request_id,
                 )
-            except (BookingConflictError, BookingValidationError) as err:
+            except (BookingConflictError, BookingValidationError, PermissionError) as err:
                 notify_error(err)
                 return
+            app.storage.user.pop("book_for", None)
             ui.notify(t("booking_created"), color="positive")
             await _render_bookings(outer_container, user)
 

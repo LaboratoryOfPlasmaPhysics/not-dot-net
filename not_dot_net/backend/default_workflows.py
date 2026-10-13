@@ -57,6 +57,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
             label="Onboarding",
             target_email_field="contact_email",
             tenure=TenureHookConfig(),
+            computer_booking=True,
             document_instructions={
                 "Intern": ["ID document", "Internship agreement", "Photo"],
                 "PhD": ["ID document", "Bank details (RIB)", "Photo", "PhD enrollment certificate"],
@@ -73,6 +74,7 @@ def default_workflows() -> dict[str, WorkflowConfig]:
                         FieldConfig(name="status", type="select", required=True, label="status", options_key="employment_statuses"),
                         FieldConfig(name="employer", type="select", required=True, label="employer", options_key="employers"),
                         FieldConfig(name="start_date", type="date", required=True, label="start_date"),
+                        FieldConfig(name="end_date", type="date", label="end_date"),
                     ],
                     actions=["submit"],
                 ),

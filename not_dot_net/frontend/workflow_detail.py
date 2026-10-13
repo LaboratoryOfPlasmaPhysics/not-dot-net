@@ -7,7 +7,10 @@ from typing import Optional
 from fastapi import Depends
 from nicegui import app, ui
 
+from not_dot_net.backend.book_for import booking_choice_for
+from not_dot_net.backend.booking_service import MANAGE_BOOKINGS
 from not_dot_net.backend.db import User
+from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.users import current_active_user_optional
 from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
@@ -25,6 +28,7 @@ from not_dot_net.backend.workflow_service import (
 )
 from not_dot_net.config import dashboard_config
 from not_dot_net.frontend.i18n import apply_client_locale, format_datetime, get_locale, t
+from not_dot_net.frontend.bookings import open_booking_for
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog
@@ -88,7 +92,8 @@ def setup():
             ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
 
         with ui.column().classes("w-full max-w-3xl mx-auto pa-6"):
-            _render_header(req, wf, age, dash_cfg, actor_names, user)
+            _render_header(req, wf, age, dash_cfg, actor_names, user,
+                           book_choice=await _booking_choice(req, user))
 
             await _render_failed_effects(req, user, request_id)
 
@@ -217,7 +222,14 @@ def _render_not_found():
         ui.label(t("page_not_found")).classes("text-h6")
 
 
-def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
+async def _booking_choice(req, user) -> dict | None:
+    """Same rule as create_booking: the creator or a booking manager."""
+    if str(user.id) != str(req.created_by) and not await has_permissions(user, MANAGE_BOOKINGS):
+        return None
+    return await booking_choice_for(req)
+
+
+def _render_header(req, wf, age_days, dash_cfg, actor_names, user, book_choice=None):
     target = req.data.get("target_name") or req.data.get("person_name") or req.target_email or ""
     creator_name = actor_names.get(req.created_by, req.created_by or "")
     is_creator = str(user.id) == str(req.created_by)
@@ -252,6 +264,11 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user):
                     ui.button(
                         t("withdraw_request"), icon="cancel", on_click=cancel_dlg.open,
                     ).props("flat color=negative size=sm")
+            if book_choice:
+                ui.button(
+                    t("book_computer"), icon="computer",
+                    on_click=lambda: open_booking_for(book_choice),
+                ).props("flat color=primary size=sm")
             if is_creator:
                 def handle_clone():
                     app.storage.user["clone_prefill"] = {"type": req.type, "data": dict(req.data)}

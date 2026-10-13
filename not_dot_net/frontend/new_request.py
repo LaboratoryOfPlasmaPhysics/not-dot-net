@@ -14,7 +14,9 @@ from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_models import WorkflowEvent, WorkflowFile, WorkflowRequest
 from not_dot_net.backend.workflow_config import workflows_config
+from not_dot_net.backend.book_for import booking_choice_for
 from not_dot_net.backend.workflow_service import create_request, submit_step
+from not_dot_net.frontend.bookings import open_booking_for
 from not_dot_net.backend.workflow_uploads import (
     UPLOAD_ROOT,
     persist_workflow_upload,
@@ -175,14 +177,22 @@ async def render(user: User):
 
                 async def handle_submit(data, key=wf_key, fc=form_container, step=first_step, staged_uploads=None):
                     try:
-                        await _create_and_submit_request(user, key, step, data, staged_uploads)
+                        req = await _create_and_submit_request(user, key, step, data, staged_uploads)
                     except Exception:
                         logger.exception("Failed to create workflow request %s", key)
                         ui.notify(t("request_creation_failed"), color="negative")
                         return
                     ui.notify(t("request_created"), color="positive")
-                    fc.set_visibility(False)
                     fc.clear()  # next open starts a fresh form
+                    choice = await booking_choice_for(req)
+                    if choice is None:
+                        fc.set_visibility(False)
+                        return
+                    with fc:
+                        ui.button(
+                            t("book_computer"), icon="computer",
+                            on_click=lambda c=choice: open_booking_for(c),
+                        ).props("color=primary")
 
                 async def _open_form(fc=form_container, step=first_step, key=wf_key,
                                      wf=wf_config, prefill_data=None, submit_fn=handle_submit):

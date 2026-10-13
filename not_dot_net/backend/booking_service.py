@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from not_dot_net.backend.booking_models import Booking, Resource, ResourceStatus
@@ -12,6 +12,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.mail import send_mail
 from not_dot_net.backend.office_availability import is_covered, list_availability_windows
 from not_dot_net.backend.permissions import check_permission, has_permissions, permission
+from not_dot_net.backend.workflow_models import RequestStatus, WorkflowRequest
 from not_dot_net.config import bookings_config, org_config
 
 MANAGE_BOOKINGS = permission("manage_bookings", "Manage bookings", "Create/edit/delete resources and software")
@@ -359,17 +360,37 @@ def _setup_buffer_days(resource: Resource, cfg) -> int:
     return 0 if resource.resource_type == "office" else cfg.resource_setup_buffer_days
 
 
+async def _check_may_book_for_request(request_id, user_id, actor, is_manager: bool) -> None:
+    """A newcomer's booking is held by its maker until they arrive, and only
+    the request's creator or a booking manager may make it."""
+    if user_id != actor.id:
+        raise PermissionError("A booking for a newcomer belongs to whoever makes it")
+    async with session_scope() as session:
+        req = await session.get(WorkflowRequest, request_id)
+    if req is None or (req.created_by != actor.id and not is_manager):
+        raise PermissionError("Not your request")
+    if req.status != RequestStatus.IN_PROGRESS:
+        raise BookingValidationError("This request is no longer pending")
+
+
+async def release_request_bookings(session, request_id: uuid.UUID) -> None:
+    """The newcomer will not come: give their computer back."""
+    await session.execute(delete(Booking).where(Booking.workflow_request_id == request_id))
+
+
 async def create_booking(
     resource_id: uuid.UUID, user_id: uuid.UUID,
     start_date: date, end_date: date, note: str = "",
     os_choice: str | None = None, software_tags: list[str] | None = None,
-    actor=None,
+    actor=None, workflow_request_id: uuid.UUID | None = None,
 ) -> Booking:
     if actor is None:
         raise PermissionError("No actor provided")
     is_manager = await has_permissions(actor, MANAGE_BOOKINGS)
     if user_id != actor.id and not is_manager:
         raise PermissionError("Can only create bookings for yourself")
+    if workflow_request_id is not None:
+        await _check_may_book_for_request(workflow_request_id, user_id, actor, is_manager)
     if start_date >= end_date:
         raise BookingValidationError("End date must be after start date")
     if start_date < date.today():
@@ -424,6 +445,7 @@ async def create_booking(
                 os_choice=os_choice,
                 software_tags=software_tags or None,
                 note=note or None,
+                workflow_request_id=workflow_request_id,
             )
             session.add(booking)
         await session.refresh(booking)

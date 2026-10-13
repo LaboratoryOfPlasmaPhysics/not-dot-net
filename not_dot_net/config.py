@@ -113,6 +113,7 @@ class TenureHookConfig(BaseModel):
     status_field: str = "status"
     employer_field: str = "employer"
     start_date_field: str = "start_date"
+    end_date_field: str = "end_date"
     returning_user_field: str = "returning_user_id"
 
 
@@ -123,6 +124,8 @@ class WorkflowConfig(BaseModel):
     notifications: list[NotificationRuleConfig] = []
     document_instructions: dict[str, list[str]] = {}
     tenure: TenureHookConfig | None = None
+    # Offer "Book a computer" for the newcomer while the request is pending.
+    computer_booking: bool = False
 
 
 # --- OrgConfig section ---

@@ -55,4 +55,10 @@ class Booking(MappedAsDataclass, Base, kw_only=True):
     software_tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     reminder_sent_lead_days: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    # Booked for a newcomer whose onboarding is pending. SET NULL: deleting a
+    # request (superuser test cleanup) must not take the computer away.
+    workflow_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workflow_request.id", ondelete="SET NULL", name="fk_booking_workflow_request_id"),
+        nullable=True, default=None, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)

@@ -134,6 +134,37 @@ async def test_create_tenure_from_onboarding_with_start_date():
     assert tenures[0].start_date == date(2026, 6, 1)
 
 
+async def test_onboarding_initiation_has_a_departure_date():
+    cfg = await workflows_config.get()
+    initiation = cfg.workflows["onboarding"].steps[0]
+    end = next(f for f in initiation.fields if f.name == "end_date")
+    assert end.type == "date"
+    assert not end.required
+
+
+async def test_tenure_keeps_the_departure_date():
+    from not_dot_net.backend.workflow_service import _record_tenure
+    from not_dot_net.config import TenureHookConfig
+    from not_dot_net.backend.workflow_models import WorkflowRequest, RequestStatus
+    from not_dot_net.backend.db import session_scope
+
+    user = await _create_user("leaver@test.com")
+    async with session_scope() as session:
+        req = WorkflowRequest(
+            type="onboarding", current_step="done", status=RequestStatus.COMPLETED,
+            data={"status": "Intern", "employer": "CNRS",
+                  "start_date": "2026-06-01", "end_date": "2026-08-31"},
+            created_by=user.id,
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+
+    await _record_tenure(req, TenureHookConfig(), user.id)
+    [tenure] = await list_tenures(user.id)
+    assert tenure.end_date == date(2026, 8, 31)
+
+
 async def test_create_tenure_skipped_without_employer():
     """No tenure created if employer is missing from request data."""
     from not_dot_net.backend.workflow_service import _record_tenure

@@ -12,6 +12,7 @@ from datetime import date as dt_date, datetime, timedelta, timezone
 from sqlalchemy import and_, delete as sa_delete, func as sa_func, or_, select
 
 from not_dot_net.backend import workflow_uploads
+from not_dot_net.backend.booking_service import release_request_bookings
 from not_dot_net.backend.audit import log_audit
 from not_dot_net.backend.db import User, resolve_user_names, session_scope
 from not_dot_net.backend import mail
@@ -243,6 +244,13 @@ async def _record_tenure_or_report(req: WorkflowRequest, hook) -> None:
         )
 
 
+def _request_date(req: WorkflowRequest, field: str) -> dt_date | None:
+    try:
+        return dt_date.fromisoformat(req.data.get(field) or "")
+    except (ValueError, TypeError):
+        return None
+
+
 async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None:
     """Create the tenure a completed request declares, reading the hook's fields."""
     status = req.data.get(hook.status_field)
@@ -250,13 +258,10 @@ async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None
     if not status or not employer:
         return
 
-    start_date = dt_date.today()
-    raw_start = req.data.get(hook.start_date_field)
-    if raw_start:
-        try:
-            start_date = dt_date.fromisoformat(raw_start)
-        except (ValueError, TypeError):
-            pass
+    start_date = _request_date(req, hook.start_date_field) or dt_date.today()
+    end_date = _request_date(req, hook.end_date_field)
+    if end_date is not None and end_date < start_date:
+        end_date = None
 
     # SYSTEM_ACTOR, not the approver: recording the tenure is a consequence of
     # the workflow completing, and the approver need not hold manage_users.
@@ -266,6 +271,7 @@ async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None
         status=status,
         employer=employer,
         start_date=start_date,
+        end_date=end_date,
         actor=SYSTEM_ACTOR,
     )
 
@@ -366,6 +372,8 @@ async def submit_step(
         if next_step:
             req.current_step = next_step
         req.status = new_status
+        if new_status == RequestStatus.REJECTED:
+            await release_request_bookings(session, req.id)
 
         # Clear token on step completion
         if action != "save_draft":
@@ -503,6 +511,7 @@ async def cancel_request(
             raise ValueError("Only in-progress requests can be cancelled")
 
         req.status = RequestStatus.CANCELLED
+        await release_request_bookings(session, req.id)
         req.token = None
         req.token_expires_at = None
 
