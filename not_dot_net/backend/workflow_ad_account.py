@@ -18,7 +18,8 @@ from sqlalchemy import func, select
 from not_dot_net.backend import mail as mailer
 from not_dot_net.backend.ad_account_config import ad_account_config
 from not_dot_net.backend.audit import log_audit
-from not_dot_net.backend.db import User, session_scope
+from not_dot_net.backend.db import AuthMethod, User, session_scope
+from not_dot_net.backend.roles import roles_config
 from not_dot_net.backend.email_templates import render_email
 from not_dot_net.backend.uid_allocator import allocate_uid
 from not_dot_net.backend.workflow_config import workflows_config
@@ -32,6 +33,7 @@ from not_dot_net.backend.auth.ldap import (
     ldap_reset_password,
     ldap_add_to_groups,
     NewAdUser,
+    NO_LOCAL_PASSWORD,
     LdapModifyError,
     get_ldap_connect,
     USERNAME_RE,
@@ -94,6 +96,7 @@ class AdAccountCreationResult:
     uid: int
     initial_password: str
     group_failures: dict[str, str]
+    user_id: uuid.UUID
 
 
 
@@ -121,6 +124,36 @@ def should_adopt_orphan_account(
         return False  # already linked — that is the ordinary reprovision path
     existing_mail = (existing.get("mail") or "").strip().lower()
     return bool(existing_mail) and existing_mail == (intended_mail or "").strip().lower()
+
+
+async def _newcomer_account(request, form_data: dict) -> User:
+    """The local account the new AD account is linked to.
+
+    A returning person already has one under their contact email, and an AD
+    sync may already have imported this lab email. A real newcomer has
+    neither: nothing else creates their account, so it is made here, with
+    the lab email and inactive until the AD account exists.
+    """
+    emails = [e.strip().lower() for e in (request.target_email, form_data["mail"]) if e]
+    async with session_scope() as session:
+        found = {u.email.lower(): u for u in (await session.execute(
+            select(User).where(func.lower(User.email).in_(emails))
+        )).scalars()}
+        existing = next((found[e] for e in emails if e in found), None)
+        if existing is not None:
+            return existing
+        account = User(
+            email=form_data["mail"].strip(),
+            full_name=form_data.get("display_name") or f"{form_data['first_name']} {form_data['last_name']}",
+            hashed_password=NO_LOCAL_PASSWORD,
+            auth_method=AuthMethod.LDAP,
+            role=(await roles_config.get()).default_role or "",
+            is_active=False,
+        )
+        session.add(account)
+        await session.commit()
+        await session.refresh(account)
+        return account
 
 
 async def handle_ad_account_creation(
@@ -160,12 +193,7 @@ async def handle_ad_account_creation(
     if bad_groups:
         raise ValueError(f"groups not in eligible_groups: {bad_groups}")
 
-    async with session_scope() as session:
-        target = (await session.execute(
-            select(User).where(func.lower(User.email) == (request.target_email or "").lower())
-        )).scalar_one_or_none()
-    if not target:
-        raise ValueError(f"No local User for target_email={request.target_email!r}")
+    target = await _newcomer_account(request, form_data)
 
     first = form_data["first_name"]
     last = form_data["last_name"]
@@ -313,4 +341,5 @@ async def handle_ad_account_creation(
     return AdAccountCreationResult(
         request_id=request.id, new_dn=new_dn, sam_account=sam,
         uid=uid, initial_password=initial_password, group_failures=group_failures,
+        user_id=target.id,
     )

@@ -199,16 +199,21 @@ async def create_request(
         return req
 
 
+# Set by the ad_account_creation step: the local account it linked the new AD account to.
+ACCOUNT_USER_KEY = "account_user_id"
+
+
 async def _resolve_tenure_subject(req: WorkflowRequest, hook) -> uuid.UUID | None:
-    """Whose tenure this is: the declared returning-person field, else target_email."""
-    returning = req.data.get(hook.returning_user_field)
-    if returning:
+    """Whose tenure this is: the declared returning-person field, else the
+    account the AD step created or linked, else target_email."""
+    for field in (hook.returning_user_field, ACCOUNT_USER_KEY):
+        value = req.data.get(field)
+        if not value:
+            continue
         try:
-            return uuid.UUID(str(returning))
+            return uuid.UUID(str(value))
         except (ValueError, TypeError):
-            logger.warning(
-                "Request %s has an unusable %s=%r", req.id, hook.returning_user_field, returning
-            )
+            logger.warning("Request %s has an unusable %s=%r", req.id, field, value)
     if not req.target_email:
         return None
     async with session_scope() as session:
@@ -350,6 +355,7 @@ async def submit_step(
             )
             if _out is not None:
                 _out.append(ad_result)
+            data = {**(data or {}), ACCOUNT_USER_KEY: str(ad_result.user_id)}
 
         # Merge new data
         if data:

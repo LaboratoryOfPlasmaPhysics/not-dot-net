@@ -197,3 +197,55 @@ async def test_save_draft_preserves_data(monkeypatch):
     req = await save_draft(req.id, data={"first_name": "Partial"}, actor_token=req.token)
     assert req.data["first_name"] == "Partial"
     assert req.current_step == "newcomer_info"
+
+
+async def test_ad_step_creates_the_newcomers_account(monkeypatch):
+    """Nothing created a local account for a newcomer, so the AD step stopped
+    with "No local User" (the test above creates it by hand). The step now
+    creates it, with the lab email, and the tenure lands on it."""
+    from datetime import date
+    from sqlalchemy import func, select
+    from not_dot_net.backend.ad_account_config import ad_account_config
+    from not_dot_net.backend.tenure_service import list_tenures
+    from not_dot_net.backend.workflow_models import RequestStatus, WorkflowRequest
+    import not_dot_net.backend.workflow_ad_account as wa
+
+    await _setup_roles()
+    initiator = await _create_user(email="init9@test.com", role="staff")
+    admin = await _create_user(email="adm9@test.com", role="admin")
+    monkeypatch.setattr(wa, "ldap_lookup_by_sam", lambda *a, **kw: None)
+    monkeypatch.setattr(wa, "ldap_create_user",
+                        lambda new_user, bu, bp, cfg, connect=None: f"CN={new_user.display_name},OU=Users,DC=x,DC=y")
+    monkeypatch.setattr(wa, "ldap_add_to_groups", lambda *a, **kw: {})
+    cfg = await ad_account_config.get()
+    await ad_account_config.set(cfg.model_copy(update={"users_ous": ["OU=Users,DC=x,DC=y"], "eligible_groups": []}))
+
+    async with session_scope() as session:
+        req = WorkflowRequest(
+            type="onboarding", current_step="it_account_creation", status=RequestStatus.IN_PROGRESS,
+            data={"contact_email": "marie@perso.org", "status": "PhD", "employer": "CNRS",
+                  "start_date": "2026-11-02", "end_date": "2029-10-31"},
+            created_by=initiator.id, target_email="marie@perso.org",
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+
+    req = await submit_step(
+        req.id, admin.id, "complete",
+        data={"first_name": "Marie", "last_name": "Curie", "sam_account": "mcurie",
+              "ou_dn": "OU=Users,DC=x,DC=y", "mail": "marie.curie@lab.fr",
+              "home_directory": "/home/mcurie", "groups": []},
+        actor_user=admin, ad_creds=("admin", "password"),
+    )
+    assert req.status == "completed"
+
+    async with session_scope() as session:
+        account = (await session.execute(
+            select(User).where(func.lower(User.email) == "marie.curie@lab.fr")
+        )).scalar_one()
+    assert account.ldap_username == "mcurie"
+    assert account.full_name == "Marie Curie"
+    assert account.is_active
+    [tenure] = await list_tenures(account.id)
+    assert (tenure.start_date, tenure.end_date) == (date(2026, 11, 2), date(2029, 10, 31))
