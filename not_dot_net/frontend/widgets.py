@@ -201,6 +201,10 @@ class KeyedChipEditor:
         new_key = f"key_{len(self._rows) + 1}"
         self.add_key(new_key, [])
 
+    def mark(self, *markers: str) -> "KeyedChipEditor":
+        self._container.mark(*markers)
+        return self
+
     def tooltip(self, text: str) -> "KeyedChipEditor":
         self._container.tooltip(text)
         return self

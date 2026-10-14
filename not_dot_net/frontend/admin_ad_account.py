@@ -23,6 +23,10 @@ async def render(current_user) -> None:
     ui.label(t("ad_accounts")).classes("text-h5 mb-3")
 
     cfg = await ad_account_config.get()
+    if not cfg.users_ous:
+        with ui.row().classes("items-center gap-2 text-negative mb-2"):
+            ui.icon("warning")
+            ui.label(t("ops_warn_no_user_ou"))
     await _render_form("ad_account", ad_account_config, cfg, current_user)
 
     ui.separator().classes("my-4")

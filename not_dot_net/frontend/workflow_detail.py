@@ -13,7 +13,7 @@ from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.field_definitions import resolve_step_fields
 from not_dot_net.backend.users import current_active_user_optional
-from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config
+from not_dot_net.backend.workflow_engine import can_user_act, get_current_step_config, request_display_name
 from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.workflow_service import (
     cancel_request,
@@ -35,7 +35,6 @@ from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog, show_password_once
 from not_dot_net.frontend.workflow_step import (
     event_label,
-    request_display_name,
     render_approval,
     render_status_badge,
     render_step_form,

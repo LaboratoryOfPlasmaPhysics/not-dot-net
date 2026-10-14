@@ -125,3 +125,10 @@ def get_completion_status(
             value = request.data.get(field.name)
             status[field.name] = bool(value)
     return status
+
+
+def request_display_name(req) -> str:
+    """The person a request is about: their name once known, else their email."""
+    full_name = " ".join(filter(None, (req.data.get("first_name"), req.data.get("last_name"))))
+    name = req.data.get("target_name") or req.data.get("person_name") or full_name
+    return name or req.target_email or ""

@@ -28,7 +28,7 @@ async def _open_mail_form(user: UiUser, path: str):
 
 
 def _password_input(user: UiUser) -> ui.input:
-    return next(e for e in user.find(ui.input).elements if e.props.get("label") == "smtp_password")
+    return next(iter(user.find(kind=ui.input, marker="smtp_password").elements))
 
 
 async def test_stored_secret_is_not_sent_and_survives_save(user: UiUser):

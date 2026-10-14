@@ -21,12 +21,13 @@ from not_dot_net.backend.workflow_service import (
     resolve_actor_names,
 )
 from not_dot_net.backend.roles import roles_config
-from not_dot_net.backend.workflow_engine import effective_assignee, get_current_step_config, get_step_progress
+from not_dot_net.backend.workflow_engine import (
+    effective_assignee, get_current_step_config, get_step_progress, request_display_name,
+)
 from not_dot_net.config import dashboard_config, step_display
 from not_dot_net.frontend.i18n import format_datetime, format_short_date, t
 from not_dot_net.frontend.workflow_step import (
     event_label,
-    request_display_name,
     render_step_progress,
 )
 
@@ -187,6 +188,25 @@ def _render_actionable_urgency_badge(age: int) -> None:
         ui.label(t("age_days", days=age)).classes("leading-none").style("color: #111827;")
 
 
+
+
+QUICK_ACTIONS = [
+    # (label key, icon, target, permission or None)
+    ("quick_find_person", "person_search", "/?tab=people", None),
+    ("quick_book", "event_available", "/?tab=bookings", None),
+    ("quick_services", "apps", "/?tab=services", None),
+    ("new_request", "add_circle", "/?tab=new_request", "create_workflows"),
+]
+
+
+async def _render_quick_actions(user) -> None:
+    """Nothing to do: say what the app is for instead of an empty page."""
+    with ui.row().classes("gap-2 mt-2"):
+        for label_key, icon, target, permission in QUICK_ACTIONS:
+            if permission is None or await has_permissions(user, permission):
+                ui.button(t(label_key), icon=icon, on_click=lambda target=target: ui.navigate.to(target)).props(
+                    "outline color=primary"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +395,7 @@ async def _render_actionable(container, user: User):
         ui.label(t("awaiting_action")).classes("text-h6 mb-2 mt-4")
         if not requests:
             ui.label(t("no_pending")).classes("text-grey")
+            await _render_quick_actions(user)
             return
 
         cfg = await workflows_config.get()

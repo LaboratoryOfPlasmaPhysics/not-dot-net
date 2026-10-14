@@ -15,7 +15,7 @@ async def test_scheduled_jobs_use_cron_and_include_retention_purge():
     add_scheduled_jobs(scheduler)
     jobs = {job.id: job for job in scheduler.get_jobs()}
 
-    assert set(jobs) == {"booking_end_reminders", "retention_purge"}
+    assert set(jobs) == {"booking_end_reminders", "pending_request_digest", "retention_purge"}
     for job in jobs.values():
         assert isinstance(job.trigger, CronTrigger), f"{job.id} must use a cron trigger"
 

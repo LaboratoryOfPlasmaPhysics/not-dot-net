@@ -9,7 +9,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from not_dot_net.config import DashboardConfig
 from tests.ui_order import drawn_before
-from not_dot_net.frontend.workflow_step import request_display_name
+from not_dot_net.backend.workflow_engine import request_display_name
 from not_dot_net.frontend.dashboard import _age_badge, _status_badge, _waiting_for, render
 
 
@@ -104,3 +104,21 @@ def test_nobody_is_waited_for_on_a_closed_request():
     req = SimpleNamespace(status="completed", data={}, target_email="x@y")
     step = WorkflowStepConfig(key="ok", type="approval", assignee_permission="approve_workflows")
     assert _waiting_for(req, step, _roles(), requester_name="Maxime") == ""
+
+
+async def test_empty_dashboard_says_what_you_can_do(user: UiUser):
+    """E3: a student saw 'Nothing pending', 'No requests yet' and nothing else."""
+    async with session_scope() as session:
+        student = User(email="student-e3@test.com", hashed_password="x", is_active=True)
+        session.add(student)
+        await session.commit()
+        await session.refresh(student)
+
+    @ui.page("/_dash_empty")
+    def page():
+        render(student)
+
+    await user.open("/_dash_empty")
+    await user.should_see("Find a person")
+    await user.should_see("Book a resource")
+    await user.should_not_see("New Request")  # no create_workflows

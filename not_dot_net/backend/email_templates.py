@@ -121,6 +121,17 @@ DEFAULT_TEMPLATES: dict[str, EmailTemplate] = {
         "asked to change it on first login.</p>"
         "<p><a href=\"{{ app_url }}\">Sign in to the intranet</a></p>",
     ),
+    "pending_digest": _t(
+        "[{{ app_name }}] {{ count }} request(s) waiting for you",
+        "<p>Hello {{ recipient_name }},</p>"
+        "<p>{{ count }} request(s) are waiting for your action, the oldest for "
+        "{{ oldest_days }} day(s):</p>"
+        "<ul>{% for item in items %}"
+        "<li><a href=\"{{ item.url }}\">{{ item.label }}</a> — {{ item.step }}, "
+        "{{ item.age_days }} day(s)</li>"
+        "{% endfor %}</ul>"
+        "<p><a href=\"{{ app_url }}\">Open the dashboard</a></p>",
+    ),
     "booking_reminder": _t(
         "[{{ app_name }}] Your booking ends {{ delay_label }}",
         "<p>Hello {{ recipient_name }},</p>"
@@ -202,6 +213,13 @@ EMAIL_EVENTS: list[EmailEvent] = [
                ["workflow_label", "display_name", "sam", "mail", "app_url"],
                {"workflow_label": "Onboarding", "display_name": "Marie Curie",
                 "sam": "curiem", "mail": "marie.curie@lpp.fr"}),
+    EmailEvent("pending_digest", "Workflow", "Weekly reminder of pending requests",
+               ["count", "oldest_days", "items"],
+               {"count": 2, "oldest_days": 9, "items": [
+                   {"label": "Onboarding — Wei Zhang", "step": "IT account creation",
+                    "age_days": 9, "url": "http://x/workflow/request/1"},
+                   {"label": "VPN Access — Yuki Tanaka", "step": "Approval",
+                    "age_days": 3, "url": "http://x/workflow/request/2"}]}),
     EmailEvent("booking_reminder", "Booking", "Booking ending soon",
                ["delay_label", "resource_name", "start_date", "end_date", "os",
                 "software", "bookings_url"],

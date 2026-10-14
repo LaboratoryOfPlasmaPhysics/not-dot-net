@@ -9,9 +9,9 @@ from not_dot_net.backend.db import session_scope
 from not_dot_net.backend.operations import OperationsStatus, operations_status
 from not_dot_net.backend.users import dev_mode
 from not_dot_net.backend.workflow_config import workflows_config
+from not_dot_net.backend.workflow_engine import request_display_name
 from not_dot_net.backend.workflow_models import WorkflowRequest
 from not_dot_net.frontend.i18n import format_datetime, t
-from not_dot_net.frontend.workflow_step import request_display_name
 
 
 def render():

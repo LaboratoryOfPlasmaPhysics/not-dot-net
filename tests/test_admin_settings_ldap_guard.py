@@ -35,7 +35,7 @@ async def test_settings_admin_cannot_repoint_ldap(user: UiUser):
         await _render_form("ldap", ldap_config, await ldap_config.get(), admin)
 
     await user.open("/ldap-guard")
-    url_input = next(e for e in user.find(ui.input).elements if e.props.get("label") == "url")
+    url_input = next(iter(user.find(kind=ui.input, marker="url").elements))
     url_input.value = "ldap://attacker.example"
     user.find(marker="form-save").click()
     await user.should_see("Permission denied")

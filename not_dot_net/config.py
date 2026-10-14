@@ -195,6 +195,11 @@ bookings_config = section("bookings", BookingsConfig, label="Bookings")
 class DashboardConfig(BaseModel):
     urgency_fresh_days: int = 2
     urgency_aging_days: int = 7
+    digest_weekdays: list[int] = Field(
+        default=[0],
+        description="Days (0 = Monday … 6 = Sunday) when each approver is emailed the "
+                    "requests waiting on them. Empty turns the email off.",
+    )
 
 
 dashboard_config = section("dashboard", DashboardConfig, label="Dashboard")

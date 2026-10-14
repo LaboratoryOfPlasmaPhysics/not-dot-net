@@ -63,6 +63,10 @@ def _is_complex(schema: type[BaseModel]) -> bool:
 # Sections edited by a dedicated screen (above, or their own tab for
 # ad_account); the generic loop would show them a second time.
 _SECTIONS_WITH_OWN_EDITOR = {"vocabularies", "field_definitions", "mail_templates", "roles", "ad_account"}
+def _field_label(name: str, field_info) -> str:
+    return field_info.title or name.replace("_", " ").capitalize()
+
+
 def section_title_key(prefix: str) -> str:
     return f"settings_section_{prefix}"
 
@@ -139,29 +143,33 @@ async def _render_form(prefix, cfg_section, current, user):
         value = data.get(field_name, field_info.default)
 
         hint = field_info.description
+        label = _field_label(field_name, field_info)
 
         if annotation is bool:
-            widget = ui.switch(field_name, value=value)
+            widget = ui.switch(label, value=value)
         elif _is_enum(annotation):
             options = {m.value: m.value for m in annotation}
-            widget = ui.select(options, label=field_name, value=value).classes("w-full")
+            widget = ui.select(options, label=label, value=value).classes("w-full")
         elif annotation is int:
-            widget = ui.number(field_name, value=value)
+            widget = ui.number(label, value=value)
         elif annotation is str and _is_secret_field(field_info):
-            widget = ui.input(field_name, value="", placeholder=t("secret_keep_hint"), password=True).classes("w-full")
+            widget = ui.input(label, value="", placeholder=t("secret_keep_hint"), password=True).classes("w-full")
         elif annotation is str:
-            widget = ui.input(field_name, value=value).classes("w-full")
+            widget = ui.input(label, value=value).classes("w-full")
         elif _is_list_int(annotation):
-            widget = chip_list_editor([str(item) for item in value or []], label=field_name)
+            widget = chip_list_editor([str(item) for item in value or []], label=label)
         elif annotation == list[str]:
-            widget = chip_list_editor(value if isinstance(value, list) else [], label=field_name)
+            widget = chip_list_editor(value if isinstance(value, list) else [], label=label)
         elif annotation == dict[str, list[str]]:
+            ui.label(label).classes("text-sm")
             widget = keyed_chip_editor(value if isinstance(value, dict) else {})
         else:
-            widget = ui.input(field_name, value=str(value)).classes("w-full")
+            widget = ui.input(label, value=str(value)).classes("w-full")
 
+        widget.mark(field_name)
         if hint:
-            widget.tooltip(hint)
+            # Visible, not a tooltip: hover help doesn't exist on touch screens.
+            ui.label(hint).classes("text-xs text-grey-8 -mt-1 mb-2")
         inputs[field_name] = widget
 
     async def save():

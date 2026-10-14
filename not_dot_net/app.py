@@ -55,11 +55,19 @@ def add_scheduled_jobs(scheduler) -> None:
     from apscheduler.triggers.cron import CronTrigger
     from not_dot_net.backend.booking_service import run_booking_reminder_job
     from not_dot_net.backend.encrypted_storage import run_retention_purge_job
+    from not_dot_net.backend.workflow_digest import run_pending_digest_job
 
     scheduler.add_job(
         run_booking_reminder_job,
         CronTrigger(hour=8, minute=0),
         id="booking_end_reminders",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_pending_digest_job,
+        CronTrigger(hour=8, minute=15),
+        id="pending_request_digest",
         max_instances=1,
         coalesce=True,
     )
