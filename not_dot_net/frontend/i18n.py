@@ -15,6 +15,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "my_profile": "My Profile",
         "change_password": "Change password",
         "change_my_password": "Change my password",
+        "completed_action_needed": "Completed — action needed",
         "password_expired_explain": "Your password has expired. Choose a new one to continue.",
         "ad_username": "Username",
         "current_password": "Current password",
@@ -710,6 +711,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "my_profile": "Mon profil",
         "change_password": "Changer le mot de passe",
         "change_my_password": "Changer mon mot de passe",
+        "completed_action_needed": "Terminée — action requise",
         "password_expired_explain": "Votre mot de passe a expiré. Choisissez-en un nouveau pour continuer.",
         "ad_username": "Identifiant",
         "current_password": "Mot de passe actuel",
@@ -1411,19 +1413,19 @@ def get_locale() -> str:
         return DEFAULT_LOCALE
     if stored in SUPPORTED_LOCALES:
         return stored
-    # Detect from Accept-Language header
-    try:
-        accept = app.storage.browser.get("accept_language", "")
-        if not accept:
-            from starlette.requests import Request
-            request: Request = app.storage.browser.get("request")
-            if request:
-                accept = request.headers.get("accept-language", "")
-    except Exception:
-        accept = ""
-    locale = _parse_accept_language(accept)
+    locale = _parse_accept_language(_browser_accept_language())
     app.storage.user["locale"] = locale
     return locale
+
+
+def _browser_accept_language() -> str:
+    from nicegui import context
+
+    try:
+        return context.client.request.headers.get("accept-language", "")
+    except (RuntimeError, AttributeError):
+        # No page context (background task) or no request (test client).
+        return ""
 
 
 def _parse_accept_language(header: str) -> str:

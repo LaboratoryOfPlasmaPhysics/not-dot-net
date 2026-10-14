@@ -714,3 +714,42 @@ async def test_list_events_batch_empty():
     from not_dot_net.backend.workflow_service import list_events_batch
 
     assert await list_events_batch([]) == {}
+
+
+async def _backdate(request_id, days: int, status=None):
+    from datetime import datetime, timedelta, timezone
+    from not_dot_net.backend.workflow_models import WorkflowRequest
+
+    old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    async with asynccontextmanager(get_async_session)() as session:
+        req = await session.get(WorkflowRequest, request_id)
+        req.created_at = old
+        if status is not None:
+            req.status = status
+        req.updated_at = old
+        await session.commit()
+
+
+async def test_period_filter_never_hides_open_requests():
+    """D3: an onboarding opened 6 weeks ago and still open is not 'old'."""
+    from datetime import datetime, timedelta, timezone
+    from not_dot_net.backend.workflow_service import list_all_requests
+    from not_dot_net.backend.workflow_models import RequestStatus
+
+    user = await _create_user(email="period@test.com")
+    still_open = await create_request(
+        workflow_type="vpn_access", created_by=user.id,
+        data={"target_name": "Open", "target_email": "o@test.com"}, actor=SYSTEM_ACTOR,
+    )
+    long_closed = await create_request(
+        workflow_type="vpn_access", created_by=user.id,
+        data={"target_name": "Closed", "target_email": "c@test.com"}, actor=SYSTEM_ACTOR,
+    )
+    await _backdate(still_open.id, 45)
+    await _backdate(long_closed.id, 45, status=RequestStatus.COMPLETED)
+
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    mine = {r.id for r in await list_user_requests(user.id, since=since)}
+    everyone = {r.id for r in await list_all_requests(since=since)}
+    assert still_open.id in mine and still_open.id in everyone
+    assert long_closed.id not in mine and long_closed.id not in everyone

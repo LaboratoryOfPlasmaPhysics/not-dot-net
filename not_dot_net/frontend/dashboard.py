@@ -10,6 +10,8 @@ from nicegui import ui
 from not_dot_net.backend.db import User
 from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.workflow_config import workflows_config
+from not_dot_net.backend.effect_retry import pending_effects
+from not_dot_net.backend.workflow_models import RequestStatus
 from not_dot_net.backend.workflow_service import (
     list_user_requests,
     list_all_requests,
@@ -47,9 +49,9 @@ def _preview_line(content: str) -> str:
 
 def render(user: User):
     """Render the dashboard tab content. Returns the refresh coroutine."""
-    pages_container = ui.column().classes("w-full")
     actionable_container = ui.column().classes("w-full")
     my_requests_container = ui.column().classes("w-full")
+    pages_container = ui.column().classes("w-full mt-6")
 
     # Each section clears, awaits the DB, then draws: overlapping refreshes
     # (initial timer + shell tab refresh) would both draw — duplicated cards.
@@ -57,10 +59,10 @@ def render(user: User):
 
     async def refresh():
         async with lock:
-            await _render_pages_section(pages_container)
             if user.is_active:
                 await _render_actionable(actionable_container, user)
                 await _render_my_requests(my_requests_container, user)
+            await _render_pages_section(pages_container)
 
     ui.timer(0, refresh, once=True)
     return refresh
@@ -98,8 +100,37 @@ def _format_date(dt) -> str:
 
 
 def _target_display(req) -> str:
-    name = req.data.get("target_name") or req.data.get("person_name") or ""
+    full_name = " ".join(filter(None, (req.data.get("first_name"), req.data.get("last_name"))))
+    name = req.data.get("target_name") or req.data.get("person_name") or full_name
     return name or req.target_email or ""
+
+
+_STATUS_COLOR = {
+    RequestStatus.COMPLETED: "positive",
+    RequestStatus.REJECTED: "negative",
+    RequestStatus.CANCELLED: "grey",
+}
+
+
+def _status_badge(status: str, *, needs_action: bool) -> tuple[str, str]:
+    """(label, colour) of the status badge. A completed request whose AD step
+    failed is not done: the person is still missing their access."""
+    if status == RequestStatus.COMPLETED and needs_action:
+        return t("completed_action_needed"), "orange-9"
+    return t(status), _STATUS_COLOR.get(status, "primary")
+
+
+def _age_badge(age: int, status: str, dash_cfg) -> tuple[str, str]:
+    """(label, colour) of the age badge; none on a closed request, where it reads as 'late'."""
+    if status != RequestStatus.IN_PROGRESS:
+        return "", ""
+    if age < dash_cfg.urgency_fresh_days:
+        color = "positive"
+    elif age < dash_cfg.urgency_aging_days:
+        color = "warning"
+    else:
+        color = "negative"
+    return t("age_days", days=age), color
 
 
 TIME_PERIOD_DAYS = {
@@ -194,6 +225,7 @@ async def _render_requests_table(container, requests):
         wf_labels = await _workflow_labels()
         dash_cfg = await dashboard_config.get()
         events_by_req = await list_events_batch([req.id for req in requests])
+        needs_action = {e.request_id for e in await pending_effects()}
 
         columns = [
             {"name": "type", "label": t("workflow_type"), "field": "type", "sortable": True, "align": "left"},
@@ -213,6 +245,8 @@ async def _render_requests_table(container, requests):
             current, total = get_step_progress(req, wf) if wf else (0, 0)
             events = events_by_req.get(req.id, [])
             age = compute_step_age_days(events, req.current_step)
+            age_label, age_color = _age_badge(age, req.status, dash_cfg)
+            status_label, status_color = _status_badge(req.status, needs_action=req.id in needs_action)
 
             rows.append({
                 "id": str(req.id),
@@ -222,15 +256,12 @@ async def _render_requests_table(container, requests):
                 "progress_pct": current / total if total else 0,
                 "step": step_label,
                 "age": age,
-                "age_label": t("age_days", days=age),
-                "age_color": (
-                    "positive" if age < dash_cfg.urgency_fresh_days
-                    else "warning" if age < dash_cfg.urgency_aging_days
-                    else "negative"
-                ),
+                "age_label": age_label,
+                "age_color": age_color,
                 "date": _format_date(req.created_at),
                 "status": req.status,
-                "status_label": t(req.status),
+                "status_label": status_label,
+                "status_color": status_color,
             })
 
         table = ui.table(
@@ -244,10 +275,10 @@ async def _render_requests_table(container, requests):
                   @keydown.enter="() => $parent.$emit('row-click', props.row)">
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <q-badge v-if="col.name === 'status'"
-                        :color="col.value === 'completed' ? 'positive' : col.value === 'rejected' ? 'negative' : col.value === 'cancelled' ? 'grey' : 'primary'"
+                        :color="props.row.status_color"
                         :label="props.row.status_label"
                     />
-                    <q-badge v-else-if="col.name === 'age'"
+                    <q-badge v-else-if="col.name === 'age' && props.row.age_label"
                         :color="props.row.age_color"
                         :label="props.row.age_label"
                         outline
@@ -261,7 +292,7 @@ async def _render_requests_table(container, requests):
                         />
                         <span class="text-caption">{{ col.value }}</span>
                     </div>
-                    <span v-else>{{ col.value }}</span>
+                    <span v-else-if="col.name !== 'age'">{{ col.value }}</span>
                 </q-td>
             </q-tr>
         ''')

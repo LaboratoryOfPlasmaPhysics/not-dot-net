@@ -59,7 +59,7 @@ def _audit_severity(ev) -> str:
         if meta.get("success") is False:
             return "red"
         if meta.get("is_superuser"):
-            return "red"
+            return "orange"
         return "green"
 
     if cat == "settings":

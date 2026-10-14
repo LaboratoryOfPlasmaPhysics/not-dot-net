@@ -164,7 +164,7 @@ def setup():
 
                 ui.toggle(
                     list(SUPPORTED_LOCALES), value=locale, on_change=on_lang_change
-                ).props("flat dense color=white text-color=white toggle-color=white")
+                ).props("unelevated dense color=primary text-color=white toggle-color=white toggle-text-color=primary")
 
                 if logged_in:
                     with ui.button(icon="person").props(f'flat color=white aria-label="{t("my_account")}"').tooltip(t("my_account")):

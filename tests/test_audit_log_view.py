@@ -41,9 +41,10 @@ def test_regular_login_is_normal():
     assert al._audit_severity(_ev("auth", "login")) == "green"
 
 
-def test_superuser_login_is_critical_via_metadata():
+def test_superuser_login_is_sensitive_not_critical():
+    """I3: every admin login was red, so 21 of 21 critical rows were logins."""
     ev = _ev("auth", "login", metadata={"is_superuser": True, "success": True})
-    assert al._audit_severity(ev) == "red"
+    assert al._audit_severity(ev) == "orange"
 
 
 def test_failed_superuser_login_is_critical_via_metadata():

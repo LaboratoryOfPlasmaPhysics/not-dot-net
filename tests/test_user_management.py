@@ -255,3 +255,14 @@ async def test_rows_have_an_edit_button(user):
     await _render_user_management(user, "/_um_edit")
     table = next(iter(user.find(kind=ui.table).elements))
     assert "body-cell-actions" in table.slots
+
+
+async def test_bulk_buttons_sit_above_the_table(user):
+    """I6: with 50 rows per page they were a full scroll below the selection."""
+    from nicegui import ui
+    from tests.ui_order import drawn_before
+
+    await _render_user_management(user, "/_um_bulk_top")
+    table = next(iter(user.find(kind=ui.table).elements))
+    button = next(iter(user.find("Disable in AD").elements))
+    assert drawn_before(button, table)

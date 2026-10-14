@@ -200,7 +200,13 @@ async def render(current_user: User):
             value="any", label=t("last_ad_logon"),
         ).props("outlined dense stack-label").classes("min-w-[230px]")
 
-    summary = ui.label("").classes("text-sm text-gray-500")
+    with ui.row().classes("items-center gap-2 w-full"):
+        summary = ui.label("").classes("text-sm text-gray-500")
+        ui.space()
+        ui.button(t("bulk_enable"), icon="check_circle",
+                  on_click=lambda: bulk(True)).props("flat dense color=positive")
+        ui.button(t("bulk_disable"), icon="block",
+                  on_click=lambda: bulk(False)).props("flat dense color=negative")
     table = _build_user_table()
 
     async def reload():
@@ -222,12 +228,6 @@ async def render(current_user: User):
             ui.notify(t("nothing_selected"), color="warning")
             return
         await _open_bulk_dialog(targets, enabling=enabling, actor=current_user, on_done=reload)
-
-    with ui.row().classes("items-center gap-2 mt-2"):
-        ui.button(t("bulk_enable"), icon="check_circle",
-                  on_click=lambda: bulk(True)).props("flat color=positive")
-        ui.button(t("bulk_disable"), icon="block",
-                  on_click=lambda: bulk(False)).props("flat color=negative")
 
     table.on("edit", lambda e: _open_edit_dialog(e.args, current_user, reload))
     table.on("rowDblclick", lambda e: _open_edit_dialog(e.args[1], current_user, reload))

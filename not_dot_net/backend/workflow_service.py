@@ -695,9 +695,17 @@ async def list_user_requests(
             .order_by(WorkflowRequest.created_at.desc())
         )
         if since:
-            query = query.where(WorkflowRequest.created_at >= since)
+            query = query.where(_open_or_active_since(since))
         result = await session.execute(query)
         return list(result.scalars().all())
+
+
+def _open_or_active_since(since: datetime):
+    """A period only limits closed requests: one still in progress is never 'old'."""
+    return or_(
+        WorkflowRequest.status == RequestStatus.IN_PROGRESS,
+        WorkflowRequest.updated_at >= since,
+    )
 
 
 async def list_actionable(user) -> list[WorkflowRequest]:
@@ -751,7 +759,7 @@ async def list_all_requests(
     async with session_scope() as session:
         query = select(WorkflowRequest).order_by(WorkflowRequest.created_at.desc())
         if since:
-            query = query.where(WorkflowRequest.created_at >= since)
+            query = query.where(_open_or_active_since(since))
         result = await session.execute(query)
         return list(result.scalars().all())
 
