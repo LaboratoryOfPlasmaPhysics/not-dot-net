@@ -208,3 +208,29 @@ class KeyedChipEditor:
 
 def keyed_chip_editor(value: dict[str, list[str]], *, key_label: str = "Key") -> KeyedChipEditor:
     return KeyedChipEditor(value, key_label=key_label)
+
+
+def show_password_once(password: str, on_close=None, message_key: str = "initial_password_copy_now"):
+    """Show a generated password once. Not stored anywhere in the frontend.
+
+    Persistent: Esc or a backdrop click would lose the password for good and
+    skip `on_close`, so the only way out is the Close button."""
+    dlg = ui.dialog().props("persistent")
+    with dlg, ui.card():
+        ui.label(t(message_key)).classes("text-bold")
+        ui.label(password).classes("font-mono text-lg p-2 bg-grey-2")
+
+        def _copy():
+            ui.run_javascript(f"navigator.clipboard.writeText({password!r})")
+            ui.notify(t("copied"), type="positive")
+
+        def _close():
+            dlg.close()
+            if on_close:
+                on_close()
+
+        with ui.row():
+            ui.button(t("copy"), on_click=_copy).props("color=primary")
+            ui.button(t("close"), on_click=_close).props("flat")
+    dlg.open()
+    return dlg

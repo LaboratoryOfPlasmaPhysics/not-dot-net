@@ -31,7 +31,7 @@ from not_dot_net.frontend.i18n import apply_client_locale, format_datetime, get_
 from not_dot_net.frontend.bookings import open_booking_for
 from not_dot_net.frontend.errors import notify_error
 from not_dot_net.frontend.step_uploads import make_upload_handler
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import confirm_dialog, show_password_once
 from not_dot_net.frontend.workflow_step import (
     event_label,
     render_approval,
@@ -522,7 +522,7 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                         if ad_res.group_failures:
                             failed = ", ".join(ad_res.group_failures)
                             ui.notify(t("group_add_failures", groups=failed), type="warning")
-                        _show_temp_password_dialog(
+                        show_password_once(
                             ad_res.initial_password,
                             on_close=lambda: ui.navigate.to(f"/workflow/request/{request_id_str}"),
                         )
@@ -576,31 +576,5 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                 on_file_upload=handle_file_upload,
                 max_upload_size_mb=(await workflows_config.get()).max_upload_size_mb,
             )
-
-
-def _show_temp_password_dialog(password: str, on_close=None):
-    """Show the generated initial password once. Not stored anywhere in the frontend.
-
-    Persistent: Esc or a backdrop click would lose the password for good and
-    skip `on_close`, so the only way out is the Close button."""
-    dlg = ui.dialog().props("persistent")
-    with dlg, ui.card():
-        ui.label(t("initial_password_copy_now")).classes("text-bold")
-        ui.label(password).classes("font-mono text-lg p-2 bg-grey-2")
-
-        def _copy():
-            ui.run_javascript(f"navigator.clipboard.writeText({password!r})")
-            ui.notify(t("copied"), type="positive")
-
-        def _close():
-            dlg.close()
-            if on_close:
-                on_close()
-
-        with ui.row():
-            ui.button(t("copy"), on_click=_copy).props("color=primary")
-            ui.button(t("close"), on_click=_close).props("flat")
-    dlg.open()
-    return dlg
 
 

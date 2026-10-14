@@ -20,6 +20,7 @@ from not_dot_net.frontend.workflow_token import setup as setup_token
 from not_dot_net.frontend.workflow_detail import setup as setup_workflow_detail
 from not_dot_net.frontend.setup_wizard import setup as setup_wizard
 from not_dot_net.frontend.public_page import setup as setup_public_pages
+from not_dot_net.frontend.change_password import setup as setup_change_password
 
 
 DEV_DB_URL = "sqlite+aiosqlite:///./dev.db"
@@ -175,6 +176,7 @@ def create_app(
         setup_wizard()
 
     setup_public_pages()
+    setup_change_password()
 
 
 def main(

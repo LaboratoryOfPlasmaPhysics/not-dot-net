@@ -2,7 +2,7 @@ import asyncio
 import logging
 from html import escape as html_escape
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -23,6 +23,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.users import get_user_manager, cookie_transport, get_jwt_strategy, current_active_user_optional
 from not_dot_net.frontend.i18n import apply_client_locale, t
 from not_dot_net.backend.auth import login_throttle
+from not_dot_net.backend.auth.ldap import AdPasswordExpired
 
 logger = logging.getLogger("not_dot_net.login")
 
@@ -89,7 +90,13 @@ async def handle_login(
 
     # Fallback to LDAP/AD if local auth failed
     if user is None or not user.is_active:
-        user = await _try_ldap_auth(username, password)
+        try:
+            user = await _try_ldap_auth(username, password)
+        except AdPasswordExpired:
+            # The password was right, so this is no failed attempt.
+            return RedirectResponse(
+                f"/change-password?{urlencode({'username': username, 'expired': 1})}", status_code=303
+            )
 
     if user is None or not user.is_active:
         login_throttle.record_failure(username, ip)
@@ -244,6 +251,7 @@ def setup():
     def login(
         redirect_to: str = "/",
         error: str = "",
+        changed: bool = False,
         user: Optional[User] = Depends(current_active_user_optional),
     ) -> Optional[RedirectResponse]:
         apply_client_locale()
@@ -258,6 +266,8 @@ def setup():
                 "color: #0F52AC"
             )
             with ui.card().classes("w-80"):
+                if changed:
+                    ui.label(t("password_changed_log_in")).classes("text-positive")
                 if error == "throttled":
                     ui.label(t("login_throttled")).classes("text-negative")
                 elif error:

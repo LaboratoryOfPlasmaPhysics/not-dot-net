@@ -24,11 +24,14 @@ from not_dot_net.backend.schemas import UserUpdate
 from not_dot_net.backend.users import current_active_user_optional, get_user_manager
 from not_dot_net.frontend.i18n import format_datetime, get_locale, t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog, options_with
+from not_dot_net.frontend.widgets import confirm_dialog, options_with, show_password_once
 from not_dot_net.backend.permissions import (
     MANAGE_ROLES, check_permission, has_permissions, permission,
 )
-from not_dot_net.backend.auth.ldap import AD_ATTR_MAP
+from not_dot_net.backend.ad_account_config import ad_account_config
+from not_dot_net.backend.auth.ldap import AD_ATTR_MAP, LdapModifyError, ldap_config, ldap_reset_password
+from not_dot_net.backend.workflow_ad_account import generate_initial_password
+from not_dot_net.frontend.ad_credentials import prompt_ad_credentials
 from not_dot_net.config import files_config
 
 MANAGE_USERS = permission("manage_users", "Manage users", "Edit/delete users in directory")
@@ -420,6 +423,7 @@ async def _render_detail(container, person: User, current_user: User, state: dic
         is_ad_user = person.auth_method == AuthMethod.LDAP and person.ldap_dn
         if current_user.is_superuser and is_ad_user and not is_own:
             _render_ad_enable_disable_button(container, person, current_user)
+            _render_reset_password_button(person, current_user)
 
         if is_own or is_admin:
             ui.separator().classes("my-2")
@@ -555,6 +559,46 @@ def _render_ad_enable_disable_button(container, person: User, current_user: User
     ui.button(label, icon=icon, on_click=confirm_dialog.open).props(
         f"flat dense color={color}"
     )
+
+
+def _render_reset_password_button(person: User, current_user: User) -> None:
+    """IT resets someone's AD password; the new one is shown once, never stored.
+
+    Same gate as enable/disable (superuser, AD user, not self). Binds with the
+    acting admin's credentials: there is no service account to do it with.
+    """
+    display = person.full_name or person.email
+
+    async def reset(bind_user: str, bind_password: str) -> None:
+        password = generate_initial_password((await ad_account_config.get()).password_length)
+        try:
+            await asyncio.to_thread(
+                ldap_reset_password, person.ldap_dn, password, bind_user, bind_password,
+                await ldap_config.get(), must_change_password=must_change.value, unlock=True,
+            )
+        except LdapModifyError as e:
+            notify_error(e)
+            return
+        await log_audit(
+            "user", "reset_password",
+            actor_id=current_user.id, actor_email=current_user.email,
+            target_type="user", target_id=person.id,
+            detail=f"ad_dn={person.ldap_dn} must_change={must_change.value}",
+        )
+        show_password_once(password, message_key="reset_password_copy_now")
+
+    async def on_confirm():
+        dialog.close()
+        await prompt_ad_credentials(current_user, reset)
+
+    with ui.dialog() as dialog, ui.card():
+        ui.label(t("confirm_reset_password", name=display))
+        must_change = ui.checkbox(t("reset_must_change"), value=True)
+        with ui.row():
+            ui.button(t("cancel"), on_click=dialog.close).props("flat")
+            ui.button(t("reset_password"), on_click=on_confirm).props("flat color=warning").mark("reset-confirm")
+
+    ui.button(t("reset_password"), icon="key", on_click=dialog.open).props("flat dense color=warning").mark("reset-open")
 
 
 def _is_ad_writable(field_name: str, ad_writable: set[str] | None) -> bool:

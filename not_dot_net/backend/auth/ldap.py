@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from ldap3 import Server, ServerPool, Connection, ALL, Tls, MODIFY_REPLACE, MODIFY_ADD, MODIFY_DELETE, ROUND_ROBIN
+from ldap3 import (
+    ALL, AUTO_BIND_NONE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE, ROUND_ROBIN,
+    Connection, Server, ServerPool, Tls,
+)
 from ldap3.core.exceptions import LDAPBindError, LDAPException
 from ldap3.utils.conv import escape_filter_chars
 from pydantic import BaseModel, Field
@@ -164,6 +167,10 @@ def _build_tls(ldap_cfg: LdapConfig) -> Tls | None:
     return Tls(validate=validate)
 
 
+# A DC that drops packets would otherwise hold a login for the OS TCP timeout (minutes).
+CONNECT_TIMEOUT_S = 10
+
+
 def _build_server_or_pool(ldap_cfg: LdapConfig) -> Server | ServerPool:
     """Build a Server (single URL) or ServerPool (multiple URLs / SRV discovery)."""
     use_ssl = ldap_cfg.tls_mode == TlsMode.LDAPS
@@ -171,7 +178,11 @@ def _build_server_or_pool(ldap_cfg: LdapConfig) -> Server | ServerPool:
     urls = ldap_cfg.effective_urls
     if not urls:
         raise LDAPException(f"No LDAP servers found for domain '{ldap_cfg.domain}'")
-    servers = [Server(url, port=ldap_cfg.port, use_ssl=use_ssl, tls=tls, get_info=ALL) for url in urls]
+    servers = [
+        Server(url, port=ldap_cfg.port, use_ssl=use_ssl, tls=tls, get_info=ALL,
+               connect_timeout=CONNECT_TIMEOUT_S)
+        for url in urls
+    ]
     if len(servers) == 1:
         return servers[0]
     pool = ServerPool(servers, ROUND_ROBIN, active=True, exhaust=True)
@@ -186,8 +197,52 @@ def default_ldap_connect(ldap_cfg: LdapConfig, username: str, password: str) -> 
     """
     server = _build_server_or_pool(ldap_cfg)
     bind_user = f"{username}@{ldap_cfg.domain}"
-    auto_bind = "TLS_BEFORE_BIND" if ldap_cfg.tls_mode == TlsMode.START_TLS else True
-    return Connection(server, user=bind_user, password=password, auto_bind=auto_bind)
+    # Bound by hand, not auto_bind: auto_bind keeps only "invalidCredentials"
+    # and drops AD's `data 773` sub-code, the only sign of an expired password.
+    conn = Connection(server, user=bind_user, password=password, auto_bind=AUTO_BIND_NONE)
+    conn.open()
+    if ldap_cfg.tls_mode == TlsMode.START_TLS:
+        conn.start_tls()
+    if not conn.bind():
+        result = conn.result or {}
+        conn.unbind()
+        raise LDAPBindError(f"bind failed: {result.get('description')} - {result.get('message')}")
+    return conn
+
+
+class BindFailure(StrEnum):
+    BAD_CREDENTIALS = "bad_credentials"
+    EXPIRED = "expired"
+    MUST_CHANGE = "must_change"
+    LOCKED = "locked"
+    DISABLED = "disabled"
+
+
+# AD bind sub-codes, see https://ldapwiki.com/wiki/Wiki.jsp?page=Common%20Active%20Directory%20Bind%20Errors
+_AD_BIND_SUBCODES = {
+    "52e": BindFailure.BAD_CREDENTIALS,
+    "532": BindFailure.EXPIRED,
+    "773": BindFailure.MUST_CHANGE,
+    "775": BindFailure.LOCKED,
+    "533": BindFailure.DISABLED,
+    "701": BindFailure.DISABLED,
+}
+_AD_SUBCODE_RE = re.compile(r"data ([0-9a-f]{3}),", re.IGNORECASE)
+
+
+def bind_failure(exc: Exception) -> BindFailure | None:
+    """Why AD refused a bind, from the `data XXX` sub-code in its message."""
+    match = _AD_SUBCODE_RE.search(str(exc))
+    return _AD_BIND_SUBCODES.get(match.group(1).lower()) if match else None
+
+
+def password_expired(exc: Exception) -> bool:
+    """AD only reports 532/773 when the password itself was right."""
+    return bind_failure(exc) in (BindFailure.EXPIRED, BindFailure.MUST_CHANGE)
+
+
+class AdPasswordExpired(Exception):
+    """Right password, but AD requires it to be changed before any login."""
 
 
 def _attr_value(entry, name: str) -> str | None:
@@ -270,7 +325,9 @@ def ldap_authenticate(
     """
     try:
         conn = connect(ldap_cfg, username, password)
-    except LDAPBindError:
+    except LDAPBindError as exc:
+        if password_expired(exc):
+            raise AdPasswordExpired(username) from exc
         logger.debug("LDAP bind failed for '%s' (bad credentials)", username)
         return None
     except LDAPException as exc:
@@ -976,12 +1033,14 @@ def ldap_reset_password(
     ldap_cfg: LdapConfig,
     connect: Callable[..., Connection] = default_ldap_connect,
     must_change_password: bool = True,
+    unlock: bool = False,
 ) -> None:
     """Reset an existing AD account's password (unicodePwd MODIFY_REPLACE).
 
-    Used to recover an account created on a prior, partially-failed run so the
-    workflow can complete idempotently with a fresh temporary password (the
-    original one-time password is unrecoverable). Raises LdapModifyError on failure.
+    Used by IT's reset button, and to recover an account created on a prior,
+    partially-failed run so the workflow can complete idempotently with a fresh
+    temporary password (the original one-time password is unrecoverable).
+    Raises LdapModifyError on failure.
     """
     conn = _ldap_bind(bind_username, bind_password, ldap_cfg, connect)
     try:
@@ -995,6 +1054,12 @@ def ldap_reset_password(
             if not ok:
                 raise LdapModifyError(
                     f"pwdLastSet failed: {conn.result.get('description')} ({conn.result.get('message')})"
+                )
+        if unlock:
+            ok = conn.modify(dn, {"lockoutTime": [(MODIFY_REPLACE, ["0"])]})
+            if not ok:
+                raise LdapModifyError(
+                    f"unlock failed: {conn.result.get('description')} ({conn.result.get('message')})"
                 )
     finally:
         conn.unbind()

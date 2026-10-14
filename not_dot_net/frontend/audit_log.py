@@ -79,7 +79,7 @@ def _audit_severity(ev) -> str:
         return "orange"
 
     if cat == "user":
-        if action in {"add_tenure", "update_tenure", "delete_tenure"}:
+        if action in {"add_tenure", "update_tenure", "delete_tenure", "reset_password"}:
             return "orange"
         if action == "update" and "role" in (meta.get("changes") or {}):
             return "red"

@@ -170,6 +170,11 @@ def setup():
                     with ui.button(icon="person").props(f'flat color=white aria-label="{t("my_account")}"').tooltip(t("my_account")):
                         with ui.menu():
                             ui.menu_item(t("my_profile"), on_click=lambda: tabs.set_value(people_label))
+                            if effective_user.ldap_username:
+                                ui.menu_item(
+                                    t("change_my_password"),
+                                    on_click=lambda: ui.navigate.to("/change-password"),
+                                )
                             ui.menu_item(t("logout"), on_click=lambda: _logout())
                 else:
                     ui.button(t("log_in"), icon="login", on_click=lambda: ui.navigate.to("/login")).props(

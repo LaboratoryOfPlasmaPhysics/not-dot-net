@@ -14,7 +14,7 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from not_dot_net.backend.tenure_service import add_tenure, list_tenures
 from not_dot_net.frontend.directory import _render_tenure_history
-from not_dot_net.frontend.workflow_detail import _show_temp_password_dialog
+from not_dot_net.frontend.widgets import show_password_once
 
 
 async def test_temp_password_dialog_cannot_be_dismissed_by_escape(user: UiUser):
@@ -22,7 +22,7 @@ async def test_temp_password_dialog_cannot_be_dismissed_by_escape(user: UiUser):
 
     @ui.page("/temp-password-dialog-test")
     def page():
-        dialogs.append(_show_temp_password_dialog("S3cret-pw"))
+        dialogs.append(show_password_once("S3cret-pw"))
 
     await user.open("/temp-password-dialog-test")
     await user.should_see("S3cret-pw")
