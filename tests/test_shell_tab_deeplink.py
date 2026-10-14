@@ -39,7 +39,7 @@ async def test_tab_query_param_selects_bookings(user: User) -> None:
     await user.should_see(t("resources"))
     with user.client:
         panels_el = next(el for el in ElementFilter(kind=ui.tab_panels))
-        assert panels_el.value == t("bookings"), (
+        assert panels_el.value == "bookings", (
             f"Expected bookings tab to be selected, got {panels_el.value!r}"
         )
 
@@ -51,6 +51,6 @@ async def test_unknown_tab_falls_back_to_dashboard(user: User) -> None:
     await user.should_see(t("no_requests"))
     with user.client:
         panels_el = next(el for el in ElementFilter(kind=ui.tab_panels))
-        assert panels_el.value == t("dashboard"), (
+        assert panels_el.value == "dashboard", (
             f"Expected dashboard tab on unknown key, got {panels_el.value!r}"
         )

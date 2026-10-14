@@ -205,8 +205,14 @@ async def _render_my_requests(container, user: User):
     period_options = {k: t(k) for k in TIME_PERIOD_DAYS}
 
     with container:
-        with ui.row().classes("items-center justify-between w-full mb-2"):
+        with ui.row().classes("items-center w-full mb-2 gap-3"):
             ui.label(t(_requests_title_key(sees_all=is_admin))).classes("text-h6")
+            if await has_permissions(user, "create_workflows"):
+                ui.button(
+                    t("new_request"), icon="add_circle",
+                    on_click=lambda: ui.navigate.to("/?tab=new_request"),
+                ).props("color=primary")
+            ui.space()
             period_select = ui.select(
                 options=period_options,
                 value="last_30_days",

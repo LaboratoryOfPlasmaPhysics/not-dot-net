@@ -65,6 +65,14 @@ The remaining HTTP surface is:
 - `GET /directory/photo/{id}` (`frontend/directory.py`) — profile photo; public for active people like the directory, `manage_users` for inactive ones
 - The NiceGUI shell at `/`
 
+### Navigation
+
+`frontend/shell.py` drives the main page from `DESTINATIONS`: key, label,
+icon, permission, and `place` — `"bar"` (tab bar), `"admin"` (the Admin
+menu) or `"hidden"` (reached by a button, e.g. New request). Tab values are
+these keys, never translated labels, so `?tab=<key>` and the stored active
+tab survive a language switch. Add a page by adding a row.
+
 ### Module-level dependency injection
 
 Following idiomatic FastAPI-Users:

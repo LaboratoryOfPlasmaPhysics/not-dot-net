@@ -38,6 +38,10 @@ def init_user_secrets(secrets: AppSecrets) -> None:
     _secrets = secrets
 
 
+def dev_mode() -> bool:
+    return _dev_mode
+
+
 def set_dev_mode(dev: bool) -> None:
     """Toggle the cookie's Secure flag. Production must call set_dev_mode(False)."""
     global _dev_mode

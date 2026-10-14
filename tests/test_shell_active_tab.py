@@ -17,10 +17,11 @@ async def test_open_tab_survives_switching_language(user: UiUser):
     user.http_client.cookies.set("fastapiusersauth", token)
     await user.open("/")
 
-    user.find(ui.tabs).elements.pop().set_value("Bookings")
+    user.find(ui.tabs).elements.pop().set_value("bookings")
     await user.should_see("Bookings")
     with user.client:
         app.storage.user["locale"] = "fr"
 
     await user.open("/")
-    assert user.find(ui.tabs).elements.pop().value == "Réservations"
+    assert user.find(ui.tabs).elements.pop().value == "bookings"
+    await user.should_see("Réservations")
