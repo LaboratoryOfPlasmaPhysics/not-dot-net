@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from not_dot_net.backend.app_config import section
 
@@ -198,3 +198,35 @@ class DashboardConfig(BaseModel):
 
 
 dashboard_config = section("dashboard", DashboardConfig, label="Dashboard")
+
+
+# --- ServicesConfig section ---
+
+class ServiceEntry(BaseModel):
+    name: str
+    description: str = ""
+    category: str = ""
+    url: str = ""
+    doc_url: str = ""
+    icon: str = "apps"
+    tags: list[str] = []
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("name must not be blank")
+        return value.strip()
+
+    @field_validator("tags")
+    @classmethod
+    def _normalize_tags(cls, value: list[str]) -> list[str]:
+        cleaned = (tag.strip().lower() for tag in value)
+        return list(dict.fromkeys(tag for tag in cleaned if tag))
+
+
+class ServicesConfig(BaseModel):
+    services: list[ServiceEntry] = []
+
+
+services_config = section("services", ServicesConfig, label="Services")

@@ -15,6 +15,7 @@ from not_dot_net.frontend.audit_log import render as render_audit
 from not_dot_net.frontend.bookings import render as render_bookings
 from not_dot_net.frontend.floorplan import render as render_floorplan
 from not_dot_net.frontend.pages import render as render_pages
+from not_dot_net.frontend.services import render as render_services
 from not_dot_net.frontend.directory import render as render_directory
 from not_dot_net.frontend.dashboard import render as render_dashboard
 from not_dot_net.frontend.user_management import render as render_user_management
@@ -72,6 +73,7 @@ def setup():
         bookings_label = t("bookings")
         floorplan_label = t("floorplan")
         pages_label = t("pages")
+        services_label = t("services")
         audit_label = t("audit_log")
         settings_label = t("settings")
         ad_accounts_label = t("ad_accounts")
@@ -82,7 +84,7 @@ def setup():
         is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
         is_superuser = bool(getattr(effective_user, "is_superuser", False))
 
-        available_tabs = [dashboard_label, people_label, bookings_label, floorplan_label, pages_label]
+        available_tabs = [dashboard_label, services_label, people_label, bookings_label, floorplan_label, pages_label]
         if can_create:
             available_tabs.append(new_request_label)
         if can_audit:
@@ -98,6 +100,7 @@ def setup():
             "bookings": bookings_label,
             "floorplan": floorplan_label,
             "pages": pages_label,
+            "services": services_label,
             "new_request": new_request_label,
             "audit": audit_label,
             "settings": settings_label,
@@ -126,6 +129,7 @@ def setup():
             # Ten tabs overflow at laptop width: scroll with arrows instead of wrapping.
             with ui.tabs().props("outside-arrows mobile-arrows").classes("ml-4 min-w-0 flex-1") as tabs:
                 dashboard_tab = ui.tab(dashboard_label, icon="dashboard")
+                ui.tab(services_label, icon="apps")
                 ui.tab(people_label, icon="people")
                 ui.tab(bookings_label, icon="event_available")
                 ui.tab(floorplan_label, icon="map")
@@ -179,6 +183,8 @@ def setup():
         with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
             with ui.tab_panel(dashboard_label):
                 refreshers[dashboard_label] = render_dashboard(effective_user)
+            with ui.tab_panel(services_label):
+                refreshers[services_label] = render_services(effective_user)
             with ui.tab_panel(people_label):
                 refreshers[people_label] = render_directory(effective_user)
             with ui.tab_panel(bookings_label):
