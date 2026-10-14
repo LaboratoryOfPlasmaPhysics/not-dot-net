@@ -209,6 +209,7 @@ class ServiceEntry(BaseModel):
     url: str = ""
     doc_url: str = ""
     icon: str = "apps"
+    image: str = ""  # logo/thumbnail URL; replaces the icon tile when set
     tags: list[str] = []
 
     @field_validator("name")

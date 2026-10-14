@@ -21,6 +21,18 @@ def group_by_category(entries: list[ServiceEntry]) -> dict[str, list[ServiceEntr
     return groups
 
 
+CATEGORY_PALETTE = ["indigo-7", "teal-7", "deep-orange-7", "purple-7", "blue-grey-7", "green-8", "pink-7"]
+
+
+def category_colors(entries: list[ServiceEntry]) -> dict[str, str]:
+    """By first appearance, not by hashing the name: the name is translated per
+    viewer, so a hash would recolor categories when switching language."""
+    return {
+        category: CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)]
+        for i, category in enumerate(group_by_category(entries))
+    }
+
+
 def localize(entry: ServiceEntry, glossary: dict[str, str]) -> ServiceEntry:
     return entry.model_copy(update={
         field: glossary.get(getattr(entry, field), getattr(entry, field))
@@ -32,10 +44,18 @@ def _all_tags(entries: list[ServiceEntry]) -> list[str]:
     return sorted({tag for e in entries for tag in e.tags})
 
 
-def _render_card(entry: ServiceEntry, glossary: dict[str, str]):
+def _render_visual(entry: ServiceEntry, color: str):
+    if entry.image:
+        ui.image(entry.image).props("fit=contain").classes("w-12 h-12 shrink-0").mark(f"logo-{entry.name}")
+    else:
+        ui.avatar(entry.icon or "apps", color=color, text_color="white", rounded=True) \
+            .props("size=48px").mark(f"tile-{entry.name}")
+
+
+def _render_card(entry: ServiceEntry, glossary: dict[str, str], color: str):
     with ui.card().classes("q-py-sm q-px-md"):
-        with ui.row().classes("items-center no-wrap"):
-            ui.icon(entry.icon or "apps", color="primary").classes("text-2xl")
+        with ui.row().classes("items-center no-wrap gap-3"):
+            _render_visual(entry, color)
             ui.label(entry.name).classes("text-subtitle1 font-bold")
         if entry.description:
             ui.label(entry.description).classes("text-sm text-grey-8")
@@ -56,12 +76,13 @@ def _render_groups(entries: list[ServiceEntry], glossary: dict[str, str]):
     if not entries:
         ui.label(t("services_empty")).classes("text-grey-7")
         return
+    colors = category_colors(entries)
     for category, items in group_by_category(entries).items():
         if category:
             ui.label(category).classes("text-h6 q-mt-md")
         with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"):
             for entry in items:
-                _render_card(entry, glossary)
+                _render_card(entry, glossary, colors[category])
 
 
 def render(user):

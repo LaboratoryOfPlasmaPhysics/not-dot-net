@@ -5,7 +5,9 @@ from nicegui.testing import User
 from pydantic import ValidationError
 
 from not_dot_net.config import ServiceEntry, ServicesConfig, services_config
-from not_dot_net.frontend.services import filter_services, group_by_category, localize
+from not_dot_net.frontend.services import (
+    CATEGORY_PALETTE, category_colors, filter_services, group_by_category, localize,
+)
 
 
 GITLAB = ServiceEntry(
@@ -64,6 +66,21 @@ async def test_english_viewer_sees_glossary_translations(user: User):
     await user.should_see("Travel orders")
     await user.should_see("admin staff")
     await user.should_not_see("Ordres de mission")
+
+
+def test_category_colors_follow_first_appearance():
+    colors = category_colors([GITLAB, MISSION, CLUSTER])
+    assert colors == {"Computing": CATEGORY_PALETTE[0], "Admin": CATEGORY_PALETTE[1]}
+
+
+async def test_card_shows_logo_when_image_set_else_icon_tile(user: User):
+    logo = ServiceEntry(name="Speasy", image="https://example.org/speasy.png")
+    await services_config.set(ServicesConfig(services=[logo, MISSION]))
+    await user.open("/?tab=services")
+    await user.should_see("Speasy")
+    assert user.find(marker="logo-Speasy").elements
+    assert user.find(marker="tile-Ordres de mission").elements
+    await user.should_not_see(marker="tile-Speasy")
 
 
 async def test_guest_sees_services_tab(user: User):
