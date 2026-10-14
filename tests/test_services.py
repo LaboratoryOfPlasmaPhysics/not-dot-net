@@ -5,7 +5,7 @@ from nicegui.testing import User
 from pydantic import ValidationError
 
 from not_dot_net.config import ServiceEntry, ServicesConfig, services_config
-from not_dot_net.frontend.services import filter_services, group_by_category
+from not_dot_net.frontend.services import filter_services, group_by_category, localize
 
 
 GITLAB = ServiceEntry(
@@ -46,6 +46,24 @@ def test_group_by_category_keeps_config_order():
     groups = group_by_category([GITLAB, MISSION, CLUSTER])
     assert list(groups) == ["Computing", "Admin"]
     assert groups["Computing"] == [GITLAB, CLUSTER]
+
+
+def test_localize_translates_texts_and_falls_back():
+    entry = ServiceEntry(name="Annuaire", description="Pas traduit", category="Intranet")
+    shown = localize(entry, {"Annuaire": "Directory", "Intranet": "Intranet EN"})
+    assert (shown.name, shown.description, shown.category) == ("Directory", "Pas traduit", "Intranet EN")
+    assert entry.name == "Annuaire"
+
+
+async def test_english_viewer_sees_glossary_translations(user: User):
+    await services_config.set(ServicesConfig(
+        services=[MISSION],
+        translations={"en": {"Ordres de mission": "Travel orders", "administration": "admin staff"}},
+    ))
+    await user.open("/?tab=services")
+    await user.should_see("Travel orders")
+    await user.should_see("admin staff")
+    await user.should_not_see("Ordres de mission")
 
 
 async def test_guest_sees_services_tab(user: User):

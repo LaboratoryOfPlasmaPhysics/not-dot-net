@@ -227,6 +227,11 @@ class ServiceEntry(BaseModel):
 
 class ServicesConfig(BaseModel):
     services: list[ServiceEntry] = []
+    # locale -> {stored text: translated text}; covers names, descriptions,
+    # categories and tags alike. simplify: keyed on the stored text, so editing
+    # an entry's wording drops its translation (falls back to the stored text)
+    # until the glossary key is updated; per-entry translations would avoid that.
+    translations: dict[str, dict[str, str]] = {}
 
 
 services_config = section("services", ServicesConfig, label="Services")

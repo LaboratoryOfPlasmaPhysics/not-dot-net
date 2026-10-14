@@ -3,7 +3,7 @@
 from nicegui import ui
 
 from not_dot_net.config import ServiceEntry, services_config
-from not_dot_net.frontend.i18n import t
+from not_dot_net.frontend.i18n import get_locale, t
 
 
 def filter_services(entries: list[ServiceEntry], query: str, tags: set[str]) -> list[ServiceEntry]:
@@ -21,11 +21,18 @@ def group_by_category(entries: list[ServiceEntry]) -> dict[str, list[ServiceEntr
     return groups
 
 
+def localize(entry: ServiceEntry, glossary: dict[str, str]) -> ServiceEntry:
+    return entry.model_copy(update={
+        field: glossary.get(getattr(entry, field), getattr(entry, field))
+        for field in ("name", "description", "category")
+    })
+
+
 def _all_tags(entries: list[ServiceEntry]) -> list[str]:
     return sorted({tag for e in entries for tag in e.tags})
 
 
-def _render_card(entry: ServiceEntry):
+def _render_card(entry: ServiceEntry, glossary: dict[str, str]):
     with ui.card().classes("q-py-sm q-px-md"):
         with ui.row().classes("items-center no-wrap"):
             ui.icon(entry.icon or "apps", color="primary").classes("text-2xl")
@@ -35,7 +42,7 @@ def _render_card(entry: ServiceEntry):
         if entry.tags:
             with ui.row().classes("gap-1"):
                 for tag in entry.tags:
-                    ui.badge(tag, color="grey-4", text_color="grey-9")
+                    ui.badge(glossary.get(tag, tag), color="grey-4", text_color="grey-9")
         with ui.row().classes("gap-2"):
             if entry.url:
                 ui.button(t("services_open"), icon="open_in_new",
@@ -45,7 +52,7 @@ def _render_card(entry: ServiceEntry):
                           on_click=lambda u=entry.doc_url: ui.navigate.to(u, new_tab=True)).props("flat dense")
 
 
-def _render_groups(entries: list[ServiceEntry]):
+def _render_groups(entries: list[ServiceEntry], glossary: dict[str, str]):
     if not entries:
         ui.label(t("services_empty")).classes("text-grey-7")
         return
@@ -54,19 +61,20 @@ def _render_groups(entries: list[ServiceEntry]):
             ui.label(category).classes("text-h6 q-mt-md")
         with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"):
             for entry in items:
-                _render_card(entry)
+                _render_card(entry, glossary)
 
 
 def render(user):
     """Render the services tab content. Returns the refresh coroutine."""
-    state = {"entries": [], "query": "", "tags": set()}
+    locale = get_locale()
+    state = {"entries": [], "glossary": {}, "query": "", "tags": set()}
     filters = ui.row().classes("w-full items-center gap-2")
     results = ui.column().classes("w-full")
 
     def redraw():
         results.clear()
         with results:
-            _render_groups(filter_services(state["entries"], state["query"], state["tags"]))
+            _render_groups(filter_services(state["entries"], state["query"], state["tags"]), state["glossary"])
 
     def on_search(e):
         state["query"] = e.value or ""
@@ -83,12 +91,14 @@ def render(user):
             ui.input(t("services_search"), value=state["query"], on_change=on_search) \
                 .props("dense clearable").classes("w-64")
             for tag in _all_tags(state["entries"]):
-                chip = ui.chip(tag, color="primary" if tag in state["tags"] else "grey-4") \
+                chip = ui.chip(state["glossary"].get(tag, tag), color="primary" if tag in state["tags"] else "grey-4") \
                     .props("clickable").mark(f"tag-{tag}")
                 chip.on_click(lambda _, tag=tag, chip=chip: toggle_tag(tag, chip))
 
     async def refresh():
-        state["entries"] = (await services_config.get()).services
+        cfg = await services_config.get()
+        state["glossary"] = cfg.translations.get(locale, {})
+        state["entries"] = [localize(e, state["glossary"]) for e in cfg.services]
         state["tags"] &= set(_all_tags(state["entries"]))
         draw_filters()
         redraw()
