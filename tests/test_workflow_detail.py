@@ -153,3 +153,45 @@ async def test_non_target_person_cannot_view_onboarding_target_step():
     assert req.current_step == "newcomer_info"
 
     assert await can_view_request(other, req) is False
+
+
+async def test_delete_sits_in_a_menu_not_beside_the_status(user):
+    """D8: the rarest action was the most visible one on the page."""
+    from nicegui import ui
+    from not_dot_net.backend.workflow_service import create_request
+    from tests.test_workflow_detail_download import _make_admin, _open_as
+
+    from not_dot_net.backend.db import User, session_scope
+
+    admin = await _make_admin("admin-d8@test.com")
+    async with session_scope() as session:
+        (await session.get(User, admin.id)).is_superuser = True
+        await session.commit()
+    admin.is_superuser = True
+    req = await create_request(
+        workflow_type="vpn_access", created_by=admin.id,
+        data={"target_name": "D8", "target_email": "d8@test.com"}, actor=admin,
+    )
+    await _open_as(user, admin, f"/workflow/request/{req.id}")
+    delete = next(iter(user.find("Delete").elements))
+    ancestors = []
+    while delete.parent_slot is not None:
+        delete = delete.parent_slot.parent
+        ancestors.append(delete)
+    assert any(isinstance(a, ui.menu) for a in ancestors)
+
+
+async def test_header_shows_the_newcomer_name_like_the_dashboard(user):
+    """The table said 'Priya Sharma', the request page still said her email."""
+    from not_dot_net.backend.workflow_service import create_request
+    from tests.test_workflow_detail_download import _make_admin, _open_as
+
+    admin = await _make_admin("admin-name@test.com")
+    req = await create_request(
+        workflow_type="onboarding", created_by=admin.id,
+        data={"contact_email": "priya@iisc.ac.in", "status": "PhD",
+              "first_name": "Priya", "last_name": "Sharma"},
+        actor=admin,
+    )
+    await _open_as(user, admin, f"/workflow/request/{req.id}")
+    await user.should_see("Onboarding — Priya Sharma")

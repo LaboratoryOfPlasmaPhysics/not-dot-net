@@ -433,3 +433,31 @@ class TestWebpageUrlSafety:
         assert safe_external_url("") is None
         assert safe_external_url(None) is None
         assert safe_external_url("   ") is None
+
+
+async def test_directory_can_open_on_one_person(user: User):
+    """E4: 'My profile' used to drop you in the whole directory."""
+    from nicegui import ui
+    from not_dot_net.backend.db import User as UserModel
+    from not_dot_net.frontend.directory import render
+
+    async with session_scope() as session:
+        me = UserModel(email="me-e4@test.com", hashed_password="x", is_active=True, full_name="Mia Profile")
+        other = UserModel(email="other-e4@test.com", hashed_password="x", is_active=True, full_name="Otto Other")
+        session.add_all([me, other])
+        await session.commit()
+        await session.refresh(me)
+
+    refreshers = []
+
+    @ui.page("/_dir_focus")
+    def _page():
+        refreshers.append(render(me, focus_id=str(me.id)))
+
+    await user.open("/_dir_focus")
+    await user.should_see("me-e4@test.com")  # only shown in the open card
+    # The shell refreshes the tab again right after load; the card must stay open.
+    with user.client:
+        await refreshers[0]()
+    await user.should_see("me-e4@test.com")
+    await user.should_not_see("Otto Other")

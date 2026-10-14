@@ -90,7 +90,7 @@ async def test_bulk_ad_state_does_not_block_event_loop(slow_ad, monkeypatch):
     )
 
     async with session_scope() as session:
-        actor = User(email="actor@example.com", hashed_password="x", is_active=True, role="")
+        actor = User(email="actor@example.com", hashed_password="x", is_active=True, role="", is_superuser=True)
         targets = [
             User(
                 email=f"bulk{i}@example.com", hashed_password="x", is_active=True, role="",

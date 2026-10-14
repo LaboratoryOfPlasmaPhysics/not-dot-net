@@ -8,7 +8,7 @@ from nicegui import ui
 
 
 from not_dot_net.backend.db import User
-from not_dot_net.backend.permissions import has_permissions
+from not_dot_net.backend.permissions import get_permissions, has_permissions
 from not_dot_net.backend.workflow_config import workflows_config
 from not_dot_net.backend.effect_retry import pending_effects
 from not_dot_net.backend.workflow_models import RequestStatus
@@ -20,11 +20,13 @@ from not_dot_net.backend.workflow_service import (
     compute_step_age_days,
     resolve_actor_names,
 )
-from not_dot_net.backend.workflow_engine import get_current_step_config, get_step_progress
+from not_dot_net.backend.roles import roles_config
+from not_dot_net.backend.workflow_engine import effective_assignee, get_current_step_config, get_step_progress
 from not_dot_net.config import dashboard_config, step_display
 from not_dot_net.frontend.i18n import format_datetime, format_short_date, t
 from not_dot_net.frontend.workflow_step import (
     event_label,
+    request_display_name,
     render_step_progress,
 )
 
@@ -99,12 +101,6 @@ def _format_date(dt) -> str:
     return format_datetime(dt, "%Y-%m-%d")
 
 
-def _target_display(req) -> str:
-    full_name = " ".join(filter(None, (req.data.get("first_name"), req.data.get("last_name"))))
-    name = req.data.get("target_name") or req.data.get("person_name") or full_name
-    return name or req.target_email or ""
-
-
 _STATUS_COLOR = {
     RequestStatus.COMPLETED: "positive",
     RequestStatus.REJECTED: "negative",
@@ -118,6 +114,24 @@ def _status_badge(status: str, *, needs_action: bool) -> tuple[str, str]:
     if status == RequestStatus.COMPLETED and needs_action:
         return t("completed_action_needed"), "orange-9"
     return t(status), _STATUS_COLOR.get(status, "primary")
+
+
+def _waiting_for(req, step, roles: dict, *, requester_name: str) -> str:
+    """Who the request is blocked on, in words a person can chase."""
+    if req.status != RequestStatus.IN_PROGRESS or step is None:
+        return ""
+    match effective_assignee(step):
+        case ("target_person", _):
+            return request_display_name(req)
+        case ("requester", _):
+            return requester_name
+        case ("permission", perm):
+            holders = ", ".join(r.label for r in roles.values() if perm in r.permissions)
+            info = get_permissions().get(perm)
+            return holders or (info.label if info else perm)
+        case ("role", role):
+            return roles[role].label if role in roles else role
+    return ""
 
 
 def _age_badge(age: int, status: str, dash_cfg) -> tuple[str, str]:
@@ -226,12 +240,15 @@ async def _render_requests_table(container, requests):
         dash_cfg = await dashboard_config.get()
         events_by_req = await list_events_batch([req.id for req in requests])
         needs_action = {e.request_id for e in await pending_effects()}
+        roles = (await roles_config.get()).roles
+        requester_names = await resolve_actor_names({r.created_by for r in requests if r.created_by})
 
         columns = [
             {"name": "type", "label": t("workflow_type"), "field": "type", "sortable": True, "align": "left"},
             {"name": "target", "label": t("target_person"), "field": "target", "sortable": True, "align": "left"},
             {"name": "progress", "label": t("progress"), "field": "progress", "sortable": True, "align": "center"},
             {"name": "step", "label": t("current_step"), "field": "step", "sortable": True, "align": "left"},
+            {"name": "waiting_for", "label": t("waiting_for"), "field": "waiting_for", "sortable": True, "align": "left"},
             {"name": "age", "label": t("age"), "field": "age", "sortable": True, "align": "center"},
             {"name": "date", "label": t("created_at"), "field": "date", "sortable": True, "align": "left"},
             {"name": "status", "label": t("status"), "field": "status", "sortable": True, "align": "center"},
@@ -251,10 +268,13 @@ async def _render_requests_table(container, requests):
             rows.append({
                 "id": str(req.id),
                 "type": wf_labels.get(req.type, req.type),
-                "target": _target_display(req),
+                "target": request_display_name(req),
                 "progress": f"{current}/{total}",
                 "progress_pct": current / total if total else 0,
                 "step": step_label,
+                "waiting_for": _waiting_for(
+                    req, step_config, roles, requester_name=requester_names.get(req.created_by, ""),
+                ),
                 "age": age,
                 "age_label": age_label,
                 "age_color": age_color,
@@ -385,7 +405,7 @@ async def _render_actionable(container, user: User):
             "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
         ):
             for req, wf, step_config, events, age in card_data:
-                target = _target_display(req)
+                target = request_display_name(req)
                 group_label = wf_labels.get(req.type, req.type)
                 requester = actor_names.get(req.created_by, "")
 

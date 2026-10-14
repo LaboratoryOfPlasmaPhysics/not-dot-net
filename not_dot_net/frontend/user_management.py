@@ -13,6 +13,7 @@ from not_dot_net.backend.auth.ldap import (
     LdapModifyError, ldap_config, ldap_set_account_enabled,
 )
 from not_dot_net.backend.db import AuthMethod, User, session_scope
+from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import field_options
 from not_dot_net.frontend.i18n import format_datetime, get_locale, t
 
@@ -91,6 +92,8 @@ async def apply_bulk_ad_state(
 
     Skips non-AD users and self. Errors are collected per-user; the loop continues.
     """
+    if not getattr(actor, "is_superuser", False):
+        raise PermissionError("Bulk AD changes are superuser-only")
     cfg = await ldap_config.get()
     succeeded: list[User] = []
     failed: list[tuple[User, str]] = []
@@ -171,7 +174,7 @@ def _localized_columns() -> list[dict]:
 
 
 async def render(current_user: User):
-    if not current_user.is_superuser:
+    if not await has_permissions(current_user, "manage_users"):
         ui.label(t("forbidden")).classes("text-negative")
         return
 
@@ -203,10 +206,12 @@ async def render(current_user: User):
     with ui.row().classes("items-center gap-2 w-full"):
         summary = ui.label("").classes("text-sm text-gray-500")
         ui.space()
-        ui.button(t("bulk_enable"), icon="check_circle",
-                  on_click=lambda: bulk(True)).props("flat dense color=positive")
-        ui.button(t("bulk_disable"), icon="block",
-                  on_click=lambda: bulk(False)).props("flat dense color=negative")
+        # AD writes stay superuser-only, like the per-person buttons in People.
+        if current_user.is_superuser:
+            ui.button(t("bulk_enable"), icon="check_circle",
+                      on_click=lambda: bulk(True)).props("flat dense color=positive")
+            ui.button(t("bulk_disable"), icon="block",
+                      on_click=lambda: bulk(False)).props("flat dense color=negative")
     table = _build_user_table()
 
     async def reload():

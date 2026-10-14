@@ -61,6 +61,7 @@ def setup():
     async def main_page(
         user: Optional[User] = Depends(current_active_user_optional),
         tab: Optional[str] = None,
+        person: Optional[str] = None,
     ):
         logged_in = user is not None
         effective_user = user or GuestUser()
@@ -82,7 +83,7 @@ def setup():
         can_create = await has_permissions(effective_user, "create_workflows") if logged_in else False
         can_audit = await has_permissions(effective_user, "view_audit_log") if logged_in else False
         is_admin = await has_permissions(effective_user, "manage_settings") if logged_in else False
-        is_superuser = bool(getattr(effective_user, "is_superuser", False))
+        can_manage_users = await has_permissions(effective_user, "manage_users") if logged_in else False
 
         available_tabs = [dashboard_label, services_label, people_label, bookings_label, floorplan_label, pages_label]
         if can_create:
@@ -92,7 +93,7 @@ def setup():
         if is_admin:
             available_tabs.append(settings_label)
             available_tabs.append(ad_accounts_label)
-        if is_superuser:
+        if can_manage_users:
             available_tabs.append(users_label)
         tab_keys = {
             "dashboard": dashboard_label,
@@ -141,7 +142,7 @@ def setup():
                 if is_admin:
                     ui.tab(settings_label, icon="settings")
                     ui.tab(ad_accounts_label, icon="manage_accounts")
-                if is_superuser:
+                if can_manage_users:
                     ui.tab(users_label, icon="group")
 
             async def on_tab_change(e):
@@ -169,7 +170,10 @@ def setup():
                 if logged_in:
                     with ui.button(icon="person").props(f'flat color=white aria-label="{t("my_account")}"').tooltip(t("my_account")):
                         with ui.menu():
-                            ui.menu_item(t("my_profile"), on_click=lambda: tabs.set_value(people_label))
+                            ui.menu_item(
+                                t("my_profile"),
+                                on_click=lambda: ui.navigate.to(f"/?tab=people&person={effective_user.id}"),
+                            )
                             if effective_user.ldap_username:
                                 ui.menu_item(
                                     t("change_my_password"),
@@ -191,7 +195,7 @@ def setup():
             with ui.tab_panel(services_label):
                 refreshers[services_label] = render_services(effective_user)
             with ui.tab_panel(people_label):
-                refreshers[people_label] = render_directory(effective_user)
+                refreshers[people_label] = render_directory(effective_user, focus_id=person)
             with ui.tab_panel(bookings_label):
                 refreshers[bookings_label] = render_bookings(effective_user)
             with ui.tab_panel(floorplan_label):
@@ -209,7 +213,7 @@ def setup():
                     await render_settings(effective_user)
                 with ui.tab_panel(ad_accounts_label):
                     await render_ad_accounts(effective_user)
-            if is_superuser:
+            if can_manage_users:
                 with ui.tab_panel(users_label):
                     refreshers[users_label] = await render_user_management(effective_user)
 

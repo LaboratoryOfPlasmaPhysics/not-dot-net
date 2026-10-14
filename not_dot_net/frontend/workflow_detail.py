@@ -21,6 +21,7 @@ from not_dot_net.backend.workflow_service import (
     compute_step_age_days,
     delete_request,
     get_request_by_id,
+    list_actionable,
     list_events,
     resolve_actor_names,
     save_draft,
@@ -34,6 +35,7 @@ from not_dot_net.frontend.step_uploads import make_upload_handler
 from not_dot_net.frontend.widgets import confirm_dialog, show_password_once
 from not_dot_net.frontend.workflow_step import (
     event_label,
+    request_display_name,
     render_approval,
     render_status_badge,
     render_step_form,
@@ -230,7 +232,7 @@ async def _booking_choice(req, user) -> dict | None:
 
 
 def _render_header(req, wf, age_days, dash_cfg, actor_names, user, book_choice=None):
-    target = req.data.get("target_name") or req.data.get("person_name") or req.target_email or ""
+    target = request_display_name(req)
     creator_name = actor_names.get(req.created_by, req.created_by or "")
     is_creator = str(user.id) == str(req.created_by)
 
@@ -279,10 +281,11 @@ def _render_header(req, wf, age_days, dash_cfg, actor_names, user, book_choice=N
                     "flat color=primary size=sm"
                 )
             if getattr(user, "is_superuser", False):
-                ui.button(
-                    t("delete"), icon="delete_forever",
-                    on_click=lambda: _confirm_delete(req, user),
-                ).props("flat color=negative size=sm")
+                with ui.button(icon="more_vert").props(f'flat round size=sm aria-label="{t("more_actions")}"'):
+                    with ui.menu():
+                        ui.menu_item(t("delete"), on_click=lambda: _confirm_delete(req, user)).classes(
+                            "text-negative"
+                        )
 
 
 def _confirm_delete(req, user):
@@ -426,6 +429,15 @@ def _render_files_section(files, field_order, field_labels, user):
                 _render_field_group(group, field_labels, user)
 
 
+async def next_destination(user, request_id) -> str:
+    """Where to go once the user has acted: the same request while it still
+    waits on them, else their oldest pending one, else the dashboard."""
+    pending = sorted(await list_actionable(user), key=lambda r: r.created_at)
+    if any(str(r.id) == str(request_id) for r in pending):
+        return f"/workflow/request/{request_id}"
+    return f"/workflow/request/{pending[0].id}" if pending else "/"
+
+
 async def _render_action_panel(container, user, req, step_config, wf, request_id_str):
     with ui.card().classes("w-full q-pa-md").style(
         "background: #f8f9fa; border: 1px solid #e0e0e0;"
@@ -449,14 +461,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                             notify_error(e)
                             return
                         ui.notify(t("step_submitted"), color="positive")
-                        ui.navigate.to(f"/workflow/request/{request_id_str}")
+                        ui.navigate.to(await next_destination(user, req.id))
                     await prompt_ad_credentials(user, _retry_approve)
                     return
                 except Exception as e:
                     notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
-                ui.navigate.to(f"/workflow/request/{request_id_str}")
+                ui.navigate.to(await next_destination(user, req.id))
 
             async def handle_reject(comment):
                 try:
@@ -469,14 +481,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                             notify_error(e)
                             return
                         ui.notify(t("step_submitted"), color="positive")
-                        ui.navigate.to(f"/workflow/request/{request_id_str}")
+                        ui.navigate.to(await next_destination(user, req.id))
                     await prompt_ad_credentials(user, _retry_reject)
                     return
                 except Exception as e:
                     notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
-                ui.navigate.to(f"/workflow/request/{request_id_str}")
+                ui.navigate.to(await next_destination(user, req.id))
 
             async def handle_corrections(comment):
                 try:
@@ -489,14 +501,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                             notify_error(e)
                             return
                         ui.notify(t("corrections_requested"), color="positive")
-                        ui.navigate.to(f"/workflow/request/{request_id_str}")
+                        ui.navigate.to(await next_destination(user, req.id))
                     await prompt_ad_credentials(user, _retry_corrections)
                     return
                 except Exception as e:
                     notify_error(e)
                     return
                 ui.notify(t("corrections_requested"), color="positive")
-                ui.navigate.to(f"/workflow/request/{request_id_str}")
+                ui.navigate.to(await next_destination(user, req.id))
 
             corrections_fn = handle_corrections if step_config.corrections_target else None
 
@@ -522,13 +534,14 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                         if ad_res.group_failures:
                             failed = ", ".join(ad_res.group_failures)
                             ui.notify(t("group_add_failures", groups=failed), type="warning")
+                        destination = await next_destination(user, req.id)
                         show_password_once(
                             ad_res.initial_password,
-                            on_close=lambda: ui.navigate.to(f"/workflow/request/{request_id_str}"),
+                            on_close=lambda: ui.navigate.to(destination),
                         )
                     else:
                         ui.notify(t("step_submitted"), color="positive")
-                        ui.navigate.to(f"/workflow/request/{request_id_str}")
+                        ui.navigate.to(await next_destination(user, req.id))
 
                 await prompt_ad_credentials(user, _on_bind)
 
@@ -542,7 +555,7 @@ async def _render_action_panel(container, user, req, step_config, wf, request_id
                     notify_error(e)
                     return
                 ui.notify(t("step_submitted"), color="positive")
-                ui.navigate.to(f"/workflow/request/{request_id_str}")
+                ui.navigate.to(await next_destination(user, req.id))
 
             async def handle_save_draft(data):
                 try:

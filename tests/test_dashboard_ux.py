@@ -9,7 +9,8 @@ from not_dot_net.backend.db import User, session_scope
 from not_dot_net.backend.permissions import SYSTEM_ACTOR
 from not_dot_net.config import DashboardConfig
 from tests.ui_order import drawn_before
-from not_dot_net.frontend.dashboard import _age_badge, _status_badge, _target_display, render
+from not_dot_net.frontend.workflow_step import request_display_name
+from not_dot_net.frontend.dashboard import _age_badge, _status_badge, _waiting_for, render
 
 
 async def test_todo_list_comes_before_the_pages(user: UiUser):
@@ -47,12 +48,12 @@ def test_closed_requests_have_no_age_badge():
 def test_card_uses_the_newcomer_name_once_known():
     """D7: after the newcomer step, show 'Wei Zhang', not wei.zhang@cas.cn."""
     req = SimpleNamespace(data={"first_name": "Wei", "last_name": "Zhang"}, target_email="wei.zhang@cas.cn")
-    assert _target_display(req) == "Wei Zhang"
+    assert request_display_name(req) == "Wei Zhang"
 
 
 def test_card_falls_back_to_email_before_the_name_is_known():
     req = SimpleNamespace(data={}, target_email="wei.zhang@cas.cn")
-    assert _target_display(req) == "wei.zhang@cas.cn"
+    assert request_display_name(req) == "wei.zhang@cas.cn"
 
 
 def test_completed_request_with_a_failed_ad_step_is_not_green():
@@ -69,3 +70,37 @@ async def test_first_visit_follows_the_browser_language(user: UiUser):
     user.http_client.headers["accept-language"] = "fr-FR,fr;q=0.9,en;q=0.8"
     await user.open("/login")
     await user.should_see("E-mail ou identifiant AD")
+
+
+def _roles():
+    from not_dot_net.backend.roles import RoleDefinition
+    return {
+        "director": RoleDefinition(label="Director", permissions=["approve_workflows"]),
+        "it": RoleDefinition(label="IT", permissions=["manage_users", "approve_workflows"]),
+        "staff": RoleDefinition(label="Staff", permissions=["create_workflows"]),
+    }
+
+
+def test_waiting_for_names_who_blocks_the_request():
+    """D4: a request stuck 6 days at 'Newcomer information' didn't say who to chase."""
+    from not_dot_net.config import WorkflowStepConfig
+
+    req = SimpleNamespace(status="in_progress", data={"first_name": "Wei", "last_name": "Zhang"},
+                          target_email="wei@x")
+    newcomer = WorkflowStepConfig(key="info", type="form", assignee="target_person")
+    requester = WorkflowStepConfig(key="init", type="form", assignee="requester")
+    approval = WorkflowStepConfig(key="ok", type="approval", assignee_permission="approve_workflows")
+
+    assert _waiting_for(req, newcomer, _roles(), requester_name="Maxime") == "Wei Zhang"
+    assert _waiting_for(req, requester, _roles(), requester_name="Maxime") == "Maxime"
+    assert _waiting_for(req, approval, _roles(), requester_name="Maxime") == "Director, IT"
+    # No role holds it yet: the permission's own label, never its key.
+    assert _waiting_for(req, approval, {}, requester_name="Maxime") == "Approve workflows"
+
+
+def test_nobody_is_waited_for_on_a_closed_request():
+    from not_dot_net.config import WorkflowStepConfig
+
+    req = SimpleNamespace(status="completed", data={}, target_email="x@y")
+    step = WorkflowStepConfig(key="ok", type="approval", assignee_permission="approve_workflows")
+    assert _waiting_for(req, step, _roles(), requester_name="Maxime") == ""

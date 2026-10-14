@@ -218,7 +218,8 @@ async def _delete_user(user_id, actor=None):
     )
 
 
-def render(current_user: User):
+def render(current_user: User, focus_id: str | None = None):
+    """`focus_id` opens on that person's card, alone (the "My profile" link)."""
     is_admin = False
 
     with ui.row().classes("items-center gap-4 w-full mb-4"):
@@ -233,7 +234,7 @@ def render(current_user: User):
     no_match = ui.label(t("directory_no_match")).classes("text-grey")
     no_match.set_visibility(False)
 
-    state = {"expanded_id": None, "details": {}}
+    state = {"expanded_id": None, "details": {}, "toggles": {}}
 
     async def refresh():
         nonlocal is_admin
@@ -243,11 +244,22 @@ def render(current_user: User):
         photo_sizes = await _photo_sizes()
         state["expanded_id"] = None
         state["details"] = {}
+        state["toggles"] = {}
         card_container.clear()
         with card_container:
             for person in people:
                 _person_card(person, current_user, state, photo_sizes.get(person.id))
         filter_cards()
+        await _open_focused(people)
+
+    async def _open_focused(people):
+        # Every refresh reopens it: the URL names this person, and the shell
+        # refreshes the tab again right after the page loads.
+        target = next((p for p in people if str(p.id) == focus_id), None)
+        if target is None:
+            return
+        search.set_value(target.full_name or target.email)
+        await state["toggles"][target.id]()
 
     def filter_cards():
         query = (search.value or "").strip().lower()
@@ -339,6 +351,7 @@ def _person_card(person: User, current_user: User, state: dict, photo_size: int 
                 await _render_detail(detail_container, person, current_user, state)
 
         header.on("click", toggle_expand)
+        state["toggles"][person.id] = toggle_expand
 
 
 async def _render_detail(container, person: User, current_user: User, state: dict):

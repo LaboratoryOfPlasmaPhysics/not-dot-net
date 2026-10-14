@@ -266,3 +266,47 @@ async def test_bulk_buttons_sit_above_the_table(user):
     table = next(iter(user.find(kind=ui.table).elements))
     button = next(iter(user.find("Disable in AD").elements))
     assert drawn_before(button, table)
+
+
+async def _it_member(email: str):
+    from not_dot_net.backend.db import User, session_scope
+    from not_dot_net.backend.roles import RoleDefinition, roles_config
+
+    cfg = await roles_config.get()
+    cfg.roles["it"] = RoleDefinition(label="IT", permissions=["manage_users"])
+    await roles_config.set(cfg)
+    async with session_scope() as session:
+        member = User(email=email, hashed_password="x", is_active=True, role="it")
+        session.add(member)
+        await session.commit()
+        await session.refresh(member)
+    return member
+
+
+async def test_it_member_without_superuser_sees_the_user_list(user):
+    """I7: every IT member had to be a superuser just to see this list."""
+    from nicegui import ui
+    from not_dot_net.frontend.user_management import render
+
+    member = await _it_member("it-i7@test.com")
+
+    @ui.page("/_um_it")
+    async def _page():
+        await render(member)
+
+    await user.open("/_um_it")
+    await user.should_not_see("Forbidden")
+    await user.should_see("Showing")
+    table = next(iter(user.find(kind=ui.table).elements))
+    assert "it-i7@test.com" in [r["email"] for r in table.rows]
+    await user.should_not_see("Disable in AD")
+
+
+async def test_bulk_ad_change_refuses_a_non_superuser():
+    """Service-layer guard: the screen hiding the buttons is not enough."""
+    import pytest
+    from not_dot_net.frontend.user_management import apply_bulk_ad_state
+
+    member = await _it_member("it-bulk@test.com")
+    with pytest.raises(PermissionError):
+        await apply_bulk_ad_state([], enabling=False, bind_username="x", bind_password="y", actor=member)
