@@ -19,6 +19,7 @@ from not_dot_net.frontend.floorplan import render as render_floorplan
 from not_dot_net.frontend.operations import render as render_operations
 from not_dot_net.frontend.pages import render as render_pages
 from not_dot_net.frontend.services import render as render_services
+from not_dot_net.frontend.statistics import render as render_statistics
 from not_dot_net.frontend.directory import render as render_directory
 from not_dot_net.frontend.dashboard import render as render_dashboard
 from not_dot_net.frontend.user_management import render as render_user_management
@@ -68,6 +69,8 @@ DESTINATIONS = [
     Destination("operations", "operations", "monitor_heart", lambda u, p: render_operations(),
                 permission="manage_users", place="admin"),
     Destination("users", "user_management", "group", lambda u, p: render_user_management(u),
+                permission="manage_users", place="admin"),
+    Destination("statistics", "statistics", "query_stats", lambda u, p: render_statistics(u),
                 permission="manage_users", place="admin"),
     Destination("ad_accounts", "ad_accounts", "manage_accounts", lambda u, p: render_ad_accounts(u),
                 permission="manage_settings", place="admin", refresh_on_show=False),
