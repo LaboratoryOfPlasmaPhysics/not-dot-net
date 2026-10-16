@@ -277,8 +277,15 @@ async def _record_tenure(req: WorkflowRequest, hook, user_id: uuid.UUID) -> None
         employer=employer,
         start_date=start_date,
         end_date=end_date,
+        team=req.data.get(hook.team_field) or await _current_team(user_id),
         actor=SYSTEM_ACTOR,
     )
+
+
+async def _current_team(user_id: uuid.UUID) -> str | None:
+    async with session_scope() as session:
+        user = await session.get(User, user_id)
+        return user.team if user else None
 
 
 async def submit_step(

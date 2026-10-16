@@ -894,6 +894,8 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
     with ui.row().classes("items-center gap-2 w-full"):
         ui.chip(status_labels.get(tenure.status, tenure.status), color="primary").props("dense outline")
         ui.label(f"{tenure.employer}").classes("text-sm font-medium")
+        if tenure.team:
+            ui.label(tenure.team).classes("text-sm")
         ui.label(f"{tenure.start_date} → {end_label}").classes("text-sm text-gray-500")
         if tenure.notes:
             ui.icon("info", size="xs").tooltip(tenure.notes)
@@ -902,7 +904,7 @@ def _render_tenure_row(tenure, is_admin: bool, on_refresh, person: User, current
                 await _tenure_edit_dialog(t_id, person, current_user, on_refresh)
             ui.button(icon="edit", on_click=do_edit).props(
                 "flat dense round size=xs"
-            ).tooltip(t("edit"))
+            ).tooltip(t("edit")).mark("edit-tenure")
 
             async def do_delete(t_id=tenure.id):
                 from not_dot_net.backend.tenure_service import delete_tenure as _del
@@ -928,6 +930,14 @@ async def _tenure_options(locale: str) -> tuple[dict[str, str], dict[str, str]]:
     return status, employer
 
 
+async def _team_select(current: str | None = None) -> ui.select:
+    from not_dot_net.backend.vocabularies import field_options
+    teams = (await field_options("teams", get_locale())).options
+    return ui.select(
+        options_with(teams, current) if current else teams, value=current, label=t("team"), clearable=True,
+    ).props("outlined dense stack-label").mark("tenure-team")
+
+
 async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
     from not_dot_net.backend.tenure_service import add_tenure as _add
     from not_dot_net.frontend.i18n import get_locale
@@ -939,6 +949,7 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
         ui.label(t("add_tenure")).classes("text-h6")
         status_input = ui.select(status_opts, label=t("status")).props("outlined dense stack-label")
         employer_input = ui.select(employer_opts, label=t("employer")).props("outlined dense stack-label")
+        team_input = await _team_select()
         start_input = ui.input(t("start_date"), placeholder="YYYY-MM-DD").props("outlined dense stack-label")
         end_input = ui.input(t("end_date"), placeholder=t("date_placeholder_optional")).props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes")).props("outlined dense stack-label")
@@ -960,13 +971,14 @@ async def _tenure_add_dialog(person: User, current_user: User, on_refresh):
                 start_date=start,
                 end_date=end,
                 notes=notes_input.value or None,
+                team=team_input.value or None,
                 actor=current_user,
             )
             await log_audit(
                 "user", "add_tenure",
                 actor_id=current_user.id, actor_email=current_user.email,
                 target_type="user", target_id=person.id,
-                detail=f"status={status_input.value} employer={employer_input.value}",
+                detail=f"status={status_input.value} employer={employer_input.value} team={team_input.value}",
             )
             dialog.close()
             ui.notify(t("tenure_saved"), color="positive")
@@ -998,6 +1010,7 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
         employer_input = ui.select(
             options_with(employer_opts, tenure.employer), value=tenure.employer, label=t("employer"),
         ).props("outlined dense stack-label")
+        team_input = await _team_select(tenure.team)
         start_input = ui.input(t("start_date"), value=str(tenure.start_date)).props("outlined dense stack-label")
         end_input = ui.input(t("end_date"), value=str(tenure.end_date) if tenure.end_date else "").props("outlined dense stack-label")
         notes_input = ui.input(t("tenure_notes"), value=tenure.notes or "").props("outlined dense stack-label")
@@ -1019,13 +1032,14 @@ async def _tenure_edit_dialog(tenure_id, person: User, current_user: User, on_re
                 start_date=start,
                 end_date=end,
                 notes=notes_input.value or None,
+                team=team_input.value or None,
                 actor=current_user,
             )
             await log_audit(
                 "user", "update_tenure",
                 actor_id=current_user.id, actor_email=current_user.email,
                 target_type="user", target_id=person.id,
-                detail=f"status={status_input.value} employer={employer_input.value}",
+                detail=f"status={status_input.value} employer={employer_input.value} team={team_input.value}",
             )
             dialog.close()
             ui.notify(t("tenure_saved"), color="positive")

@@ -175,6 +175,7 @@ async def import_personnel(records: Iterable[ContractRecord]) -> ImportSummary:
             existing = await _existing_tenures(session, user.id)
             for rec in sorted(contracts, key=lambda r: r.start_date):
                 if (rec.start_date, rec.status, _stored_employer(rec)) in {t[:3] for t in existing}:
+                    await _fill_missing_team(session, user.id, rec)
                     summary.tenures_skipped_existing += 1
                     continue
                 if any(periods_overlap(t[0], t[3], rec.start_date, rec.end_date) for t in existing):
@@ -188,6 +189,7 @@ async def import_personnel(records: Iterable[ContractRecord]) -> ImportSummary:
                         start_date=rec.start_date,
                         end_date=rec.end_date,
                         notes=rec.notes or None,
+                        team=rec.team or None,
                     )
                 )
                 existing.append((rec.start_date, rec.status, _stored_employer(rec), rec.end_date))
@@ -195,6 +197,20 @@ async def import_personnel(records: Iterable[ContractRecord]) -> ImportSummary:
         await session.commit()
 
     return summary
+
+
+async def _fill_missing_team(session, user_id, rec: ContractRecord) -> None:
+    """Tenures imported before teams were stored get theirs; a team set since is kept."""
+    if not rec.team:
+        return
+    tenure = (await session.execute(select(UserTenure).where(
+        UserTenure.user_id == user_id,
+        UserTenure.start_date == rec.start_date,
+        UserTenure.status == rec.status,
+        UserTenure.employer == _stored_employer(rec),
+    ))).scalars().first()
+    if tenure is not None and not tenure.team:
+        tenure.team = rec.team
 
 
 async def _resolve_user(session, contracts: list[ContractRecord], summary: ImportSummary) -> User:

@@ -129,6 +129,7 @@ def _serialize_tenure(t: UserTenure, email: str) -> dict:
         "user_email": email,
         "status": t.status,
         "employer": t.employer,
+        "team": t.team,
         "start_date": t.start_date.isoformat(),
         "end_date": t.end_date.isoformat() if t.end_date else None,
         "notes": t.notes,
@@ -261,6 +262,9 @@ async def import_tenures(data: list[dict], *, replace: bool = False) -> dict[str
                                          exclude_id=same_start.id if same_start else None)
                 fields = dict(status=status, employer=employer, end_date=end_date,
                               notes=_as_str(item.get("notes"), None))
+                # An export from before tenures had a team must not wipe one.
+                if "team" in item:
+                    fields["team"] = _as_str(item.get("team"), None)
                 if same_start:
                     for name, value in fields.items():
                         setattr(same_start, name, value)

@@ -33,6 +33,7 @@ class UserTenure(MappedAsDataclass, Base, kw_only=True):
     start_date: Mapped[date] = mapped_column(Date)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None, index=True)
+    team: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), default=None)
 
@@ -71,6 +72,7 @@ async def add_tenure(
     start_date: date,
     end_date: date | None = None,
     notes: str | None = None,
+    team: str | None = None,
     actor=None,
 ) -> UserTenure:
     await check_permission(actor, MANAGE_USERS)
@@ -91,6 +93,7 @@ async def add_tenure(
             start_date=start_date,
             end_date=end_date,
             notes=notes,
+            team=team,
         )
         session.add(tenure)
         await session.commit()
@@ -180,6 +183,7 @@ async def update_tenure(
     start_date: date | None = None,
     end_date: date | None = ...,
     notes: str | None = ...,
+    team: str | None = ...,
     actor=None,
 ) -> UserTenure:
     await check_permission(actor, MANAGE_USERS)
@@ -203,6 +207,8 @@ async def update_tenure(
             tenure.end_date = end_date
         if notes is not ...:
             tenure.notes = notes
+        if team is not ...:
+            tenure.team = team
         await session.commit()
         await session.refresh(tenure)
         return tenure

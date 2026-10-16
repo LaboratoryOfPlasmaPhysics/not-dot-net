@@ -114,6 +114,8 @@ class TenureHookConfig(BaseModel):
     employer_field: str = "employer"
     start_date_field: str = "start_date"
     end_date_field: str = "end_date"
+    # Optional: without it in the form, the tenure takes the person's current team.
+    team_field: str = "team"
     returning_user_field: str = "returning_user_id"
 
 
