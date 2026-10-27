@@ -17,11 +17,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY pyproject.toml README.md LICENSE alembic.ini ./
+COPY pyproject.toml uv.lock README.md LICENSE alembic.ini ./
 COPY not_dot_net ./not_dot_net
 COPY alembic ./alembic
 
-RUN uv sync --no-dev
+RUN uv sync --no-dev --locked
 
 RUN useradd --system --uid 1000 --home /data notdotnet \
     && mkdir -p /data /secrets \

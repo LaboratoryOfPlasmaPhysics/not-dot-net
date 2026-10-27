@@ -111,7 +111,6 @@ ENV/
 *.db
 
 # uv
-uv.lock
 .superpowers/
 .worktrees/
 
