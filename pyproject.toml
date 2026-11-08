@@ -28,9 +28,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
 # Floors are the versions the suite was last verified against.
-# Ceilings stop an untested major (Pillow 14, APScheduler 4, NiceGUI 4, ...)
+# Ceilings stop an untested major (Pillow 14, APScheduler 4, NiceGUI 5, ...)
 # from arriving via `uv lock --upgrade` or a lock-less install. Raising a
 # ceiling is a deliberate act: bump it, re-lock, run the suite.
 dependencies = [
