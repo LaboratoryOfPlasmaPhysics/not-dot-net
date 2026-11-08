@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import date as dt_date
 
-import httpx
+import httpx2
 from nicegui import ui
 
 from not_dot_net.backend.field_definitions import field_definitions_config, resolve_step_fields
@@ -34,7 +34,7 @@ async def _nominatim_search(query: str) -> list[dict]:
         return []
     locale = get_locale()
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             resp = await client.get(
                 _NOMINATIM_URL,
                 params={"q": query, "format": "json", "limit": 5, "accept-language": locale},
@@ -88,7 +88,7 @@ def _format_reverse_location(payload: dict) -> str:
 async def _nominatim_reverse(lat: float, lon: float) -> str:
     """Return a compact location label for map clicks."""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             resp = await client.get(
                 _NOMINATIM_REVERSE_URL,
                 params={
