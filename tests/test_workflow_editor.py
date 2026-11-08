@@ -62,7 +62,8 @@ async def test_save_persists_working_copy(user: User, admin_user):
     await user.open("/_we2")
     dlg = captured["dlg"]
     dlg.working_copy.workflows["demo"].label = "Renamed"
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
 
     persisted = await workflows_config.get()
     assert persisted.workflows["demo"].label == "Renamed"
@@ -683,7 +684,8 @@ async def test_save_invalid_does_not_persist(user: User, admin_user):
     dlg.working_copy.workflows["a"].steps.append(
         WorkflowStepConfig.model_construct(key="bad", type=123)  # type must be str
     )
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
     persisted = await workflows_config.get()
     assert persisted.workflows["a"].steps == []  # save was rejected, original preserved
 
@@ -703,7 +705,8 @@ async def test_audit_log_emitted_on_save(user: User, admin_user):
     await user.open("/_audit1")
     dlg = captured["dlg"]
     dlg.set_workflow_label("a", "Edited")
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
 
     events = await list_audit_events(limit=10)
     assert any(e.category == "settings" and e.action == "update"
@@ -738,7 +741,8 @@ workflows:
     notifications: []
     document_instructions: {}
 """
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
     persisted = await workflows_config.get()
     assert persisted.workflows["a"].label == "From YAML Save"
 
@@ -799,7 +803,8 @@ async def test_reset_refreshes_ui_and_logs_audit(user: User, admin_user):
     await user.open("/_reset1")
     dlg = captured["dlg"]
     assert "custom" in dlg.working_copy.workflows
-    await dlg.reset()
+    with user.client.layout:
+        await dlg.reset()
     # Working copy now matches defaults (vpn_access + onboarding from WorkflowsConfig defaults)
     assert "custom" not in dlg.working_copy.workflows
     # Selection updated to first default workflow (or None if defaults are empty)
@@ -974,7 +979,8 @@ async def test_existing_yaml_compat_with_recipient_picker(user: User, admin_user
     dlg = captured["dlg"]
     rule = dlg.working_copy.workflows["a"].notifications[0]
     assert rule.notify == ["permission:approve_workflows", "requester"]
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
     persisted = await workflows_config.get()
     assert persisted.workflows["a"].notifications[0].notify == ["permission:approve_workflows", "requester"]
 

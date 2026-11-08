@@ -58,7 +58,8 @@ async def test_save_refused_when_it_would_strand_open_requests(user: User, admin
     await _request_on("review")
     dlg = await _editor(user, admin_user, "/_w5_save")
     dlg.delete_step("a", "review")
-    await dlg.save()
+    with user.client.layout:
+        await dlg.save()
 
     await user.should_see("in progress")
     assert [s.key for s in (await workflows_config.get()).workflows["a"].steps] == ["fill", "review"]

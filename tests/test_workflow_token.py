@@ -112,7 +112,9 @@ async def test_fieldref_encrypted_file_stored_encrypted(user: User, monkeypatch)
     class _MockEvent:
         file = _MockFile()
 
-    await captured["on_file_upload"]("passport", _MockEvent())
+    with user.client.layout:
+
+        await captured["on_file_upload"]("passport", _MockEvent())
 
     # Assert: the file was stored ENCRYPTED (encrypted_file_id must be set)
     async with session_scope() as s:
@@ -202,7 +204,9 @@ async def test_stale_tab_cannot_upload_after_token_cleared(user: User, monkeypat
     class _MockEvent:
         file = _MockFile()
 
-    await captured["on_file_upload"]("passport", _MockEvent())
+    with user.client.layout:
+
+        await captured["on_file_upload"]("passport", _MockEvent())
 
     async with session_scope() as s:
         rows = (await s.execute(
