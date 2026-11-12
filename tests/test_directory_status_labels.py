@@ -35,6 +35,6 @@ async def test_status_and_tenure_chip_use_the_term_label(user: UiUser):
 
     await user.open("/_status_labels")
     await user.should_see("Status: PhD student")
-    user.find("Employment History").click()
+    user.find("Employment history").click()
     await user.should_see(kind=ui.chip, content="PhD student")
     await user.should_not_see("phd_cdd")

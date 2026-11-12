@@ -2,6 +2,7 @@
 
 from nicegui import ui
 
+from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.config import ServiceEntry, services_config
 from not_dot_net.frontend.i18n import get_locale, t
 
@@ -85,16 +86,27 @@ def _render_groups(entries: list[ServiceEntry], glossary: dict[str, str]):
                 _render_card(entry, glossary, colors[category])
 
 
+def _render_nothing_configured(can_configure: bool) -> None:
+    ui.label(t("services_none")).classes("text-grey-7")
+    if can_configure:
+        ui.link(t("services_none_admin"), "/?tab=settings")
+
+
 def render(user):
     """Render the services tab content. Returns the refresh coroutine."""
     locale = get_locale()
-    state = {"entries": [], "glossary": {}, "query": "", "tags": set()}
+    state = {"entries": [], "glossary": {}, "query": "", "tags": set(), "can_configure": False}
     filters = ui.row().classes("w-full items-center gap-2")
     results = ui.column().classes("w-full")
+    with results:
+        ui.label(t("loading")).classes("text-grey-7")
 
     def redraw():
         results.clear()
         with results:
+            if not state["entries"]:
+                _render_nothing_configured(state["can_configure"])
+                return
             _render_groups(filter_services(state["entries"], state["query"], state["tags"]), state["glossary"])
 
     def on_search(e):
@@ -118,6 +130,7 @@ def render(user):
 
     async def refresh():
         cfg = await services_config.get()
+        state["can_configure"] = await has_permissions(user, "manage_settings")
         state["glossary"] = cfg.translations.get(locale, {})
         state["entries"] = [localize(e, state["glossary"]) for e in cfg.services]
         state["tags"] &= set(_all_tags(state["entries"]))

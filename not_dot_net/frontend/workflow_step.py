@@ -318,6 +318,7 @@ async def _render_ad_account_creation_form(step, prefill, on_submit):
 
         if not cfg.users_ous:
             ui.label(t("no_users_ous_configured")).classes("text-sm text-negative")
+            ui.link(t("open_ad_accounts"), "/?tab=ad_accounts").classes("text-sm")
         ou_select = ui.select(
             options={dn: dn for dn in cfg.users_ous},
             value=state["ou_dn"] or None,

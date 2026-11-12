@@ -187,7 +187,7 @@ def _header(nav: _Navigation, user, logged_in: bool) -> None:
             f'flat color=white aria-label="{t("open_menu")}"'
         ).classes("xs")
         ui.label(t("app_name")).classes("text-h6 text-white text-weight-light")
-        with ui.tabs().props("outside-arrows mobile-arrows").classes("ml-4 min-w-0 flex-1 gt-xs") as tabs:
+        with ui.tabs().props("outside-arrows mobile-arrows align=left").classes("ml-4 min-w-0 flex-1 gt-xs") as tabs:
             for d in nav.placed("bar"):
                 tab = ui.tab(d.key, label=t(d.label_key), icon=d.icon)
                 if d.key == "dashboard":

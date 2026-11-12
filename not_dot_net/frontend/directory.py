@@ -229,7 +229,7 @@ def render(current_user: User, focus_id: str | None = None):
         show_inactive = ui.switch(t("show_inactive"), value=False).classes("ml-auto")
 
     card_container = ui.element("div").classes(
-        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full"
+        "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full items-start"
     )
     no_match = ui.label(t("directory_no_match")).classes("text-grey")
     no_match.set_visibility(False)
@@ -402,11 +402,14 @@ async def _render_detail(container, person: User, current_user: User, state: dic
             stamp = format_datetime(person.last_ad_logon)
             ui.label(f"{t('last_ad_logon')}: {stamp}").classes("text-sm text-gray-500")
 
+        # Delete sits at the far end of the row: right under Edit it gets hit by mistake.
+        actions = ui.row().classes("w-full items-center justify-between")
         if is_own or is_admin:
             async def do_edit():
                 await _render_edit(container, person, current_user, state)
 
-            ui.button(t("edit"), icon="edit", on_click=do_edit).props("flat dense")
+            with actions:
+                ui.button(t("edit"), icon="edit", on_click=do_edit).props("flat dense")
 
         if is_admin and not is_own:
             display = person.full_name or person.email
@@ -429,9 +432,10 @@ async def _render_detail(container, person: User, current_user: User, state: dic
                         "flat color=negative"
                     )
 
-            ui.button(t("delete"), icon="delete", on_click=confirm_dialog.open).props(
-                "flat dense color=negative"
-            )
+            with actions:
+                ui.button(t("delete"), icon="delete", on_click=confirm_dialog.open).props(
+                    "flat dense color=negative"
+                )
 
         is_ad_user = person.auth_method == AuthMethod.LDAP and person.ldap_dn
         if current_user.is_superuser and is_ad_user and not is_own:

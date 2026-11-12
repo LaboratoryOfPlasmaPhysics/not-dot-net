@@ -55,7 +55,7 @@ async def test_required_file_blocks_submit_when_missing(user: User, monkeypatch)
 
     await user.open(f"/workflow/token/{tok}")
     user.find("Verify").click()
-    await user.should_see("ID Document")
+    await user.should_see("ID document")
 
     # Click Submit without uploading the required file.
     user.find("Submit").click()

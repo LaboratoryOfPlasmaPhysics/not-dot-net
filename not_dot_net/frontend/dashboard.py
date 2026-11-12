@@ -54,7 +54,9 @@ def render(user: User):
     """Render the dashboard tab content. Returns the refresh coroutine."""
     actionable_container = ui.column().classes("w-full")
     my_requests_container = ui.column().classes("w-full")
-    pages_container = ui.column().classes("w-full mt-6")
+    for requests_container in (actionable_container, my_requests_container):
+        requests_container.set_visibility(user.is_active)
+    pages_container = ui.column().classes("w-full mt-6" if user.is_active else "w-full")
 
     # Each section clears, awaits the DB, then draws: overlapping refreshes
     # (initial timer + shell tab refresh) would both draw — duplicated cards.
@@ -313,7 +315,29 @@ async def _render_requests_table(container, requests):
         table = ui.table(
             columns=columns, rows=rows, row_key="id", pagination={"rowsPerPage": 15},
         ).classes("w-full")
-        table.props("flat bordered dense")
+        # NiceGUI evaluates ":" props in global scope: no $q there, only the Quasar global.
+        table.props('flat bordered dense :grid="Quasar.Screen.xs"')
+
+        table.add_slot("item", r'''
+            <div class="q-pa-xs col-12">
+                <q-card flat bordered tabindex="0" class="cursor-pointer q-pa-sm"
+                        @click="() => $parent.$emit('row-click', props.row)"
+                        @keydown.enter="() => $parent.$emit('row-click', props.row)">
+                    <div class="row items-center justify-between no-wrap">
+                        <div class="text-weight-bold ellipsis">{{ props.row.target }}</div>
+                        <q-badge :color="props.row.status_color" :label="props.row.status_label" />
+                    </div>
+                    <div class="text-caption text-grey-8">
+                        {{ props.row.type }} · {{ props.row.step }} ({{ props.row.progress }})
+                    </div>
+                    <div class="row items-center justify-between text-caption">
+                        <span>{{ props.row.waiting_for }}</span>
+                        <q-badge v-if="props.row.age_label" :color="props.row.age_color"
+                                 :label="props.row.age_label" outline />
+                    </div>
+                </q-card>
+            </div>
+        ''')
 
         table.add_slot("body", r'''
             <q-tr :props="props" tabindex="0" class="cursor-pointer"

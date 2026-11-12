@@ -1,10 +1,27 @@
 """Reusable input widgets used in admin settings forms."""
 
+import asyncio
 import inspect
 
 from nicegui import ui
 
 from not_dot_net.frontend.i18n import t
+
+
+def one_at_a_time(refresh):
+    """Make overlapping calls of a page refresh run one after the other.
+
+    A refresh empties its container, awaits the database, then draws. The
+    page's own first load and the shell's tab refresh overlap, and two runs
+    that both emptied the container both draw into it: everything twice.
+    """
+    lock = asyncio.Lock()
+
+    async def serialized():
+        async with lock:
+            await refresh()
+
+    return serialized
 
 
 class ConfirmDialog(ui.dialog):

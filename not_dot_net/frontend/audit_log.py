@@ -8,6 +8,7 @@ from nicegui import ui
 
 from not_dot_net.backend.audit import AuditEventView, list_audit_events
 from not_dot_net.frontend.i18n import format_datetime, local_time, t
+from not_dot_net.frontend.widgets import one_at_a_time
 from not_dot_net.backend.permissions import permission
 
 VIEW_AUDIT_LOG = permission("view_audit_log", "View audit log", "Access the audit log")
@@ -18,7 +19,7 @@ FILTER_CONTROL_HEIGHT = "40px"
 SEVERITY_ORDER = ("green", "orange", "red")
 
 SEVERITY_ROW_COLOR = {
-    "green": "#DCEFE2",
+    "green": "transparent",
     "orange": "#FFE6B8",
     "red": "#FFB3B3",
 }
@@ -143,6 +144,7 @@ def normalize_filter(value: str | None) -> str | None:
 def render():
     container = ui.column().classes("w-full")
 
+    @one_at_a_time
     async def refresh():
         await _render_log(container)
 
@@ -304,9 +306,10 @@ async def _render_log(
                     severity_filter=s,
                 )
 
-            ui.button(t("filter"), icon="search", on_click=apply).props(
-                "flat color=primary"
-            )
+            for select in (period_select, cat_select, severity_select):
+                select.on_value_change(apply)
+            # "change" fires on Enter and when leaving an edited field, not on every key.
+            email_input.on("change", apply)
 
             def _time_button_tooltip() -> str:
                 return t("audit_time_full") if relative_state["enabled"] else t("audit_time_relative")
@@ -334,6 +337,7 @@ async def _render_log(
                     on_click=toggle_time_display,
                 ).props(
                     f"flat round dense color={'primary' if relative_state['enabled'] else 'grey'}"
+                    f' aria-label="{t("audit_time_format")}"'
                 ).tooltip(_time_button_tooltip())
 
             with ui.element("div").style(

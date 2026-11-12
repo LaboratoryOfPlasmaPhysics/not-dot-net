@@ -47,11 +47,18 @@ def _summary(status: OperationsStatus) -> None:
             ui.badge(t("ops_all_clear"), color="positive")
 
 
+# Where each warning gets fixed.
+_WARNING_TAB = {"ops_warn_no_user_ou": "ad_accounts"}
+
+
 def _warnings(warnings: list[str]) -> None:
     for key in warnings:
         with ui.row().classes("items-center gap-2 text-negative"):
             ui.icon("warning")
-            ui.label(t(key))
+            if key in _WARNING_TAB:
+                ui.link(t(key), f"/?tab={_WARNING_TAB[key]}").classes("text-negative")
+            else:
+                ui.label(t(key))
 
 
 async def _failed_effects(status: OperationsStatus) -> None:

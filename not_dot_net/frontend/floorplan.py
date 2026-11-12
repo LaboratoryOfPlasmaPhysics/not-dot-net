@@ -27,7 +27,7 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.frontend.floorplan_leaflet import FloorPlanLeaflet
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import as_date_range, confirm_dialog
+from not_dot_net.frontend.widgets import as_date_range, confirm_dialog, one_at_a_time
 
 _KIND_COLOR = {
     "room": "#1976d2",
@@ -164,6 +164,7 @@ def _points_payload(points: list[MapPoint], highlight_id=None) -> list[dict]:
 def render(user: User):
     container = ui.column().classes("w-full")
 
+    @one_at_a_time
     async def refresh():
         await _render_floorplan(container, user)
 

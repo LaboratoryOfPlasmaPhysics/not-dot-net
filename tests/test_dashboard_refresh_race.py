@@ -28,7 +28,7 @@ async def test_concurrent_refreshes_render_once(user: UiUser):
         refreshers.append(render(viewer))
 
     await user.open("/_dash_race")
-    await user.should_see("Awaiting My Action")
+    await user.should_see("Awaiting my action")
     with user.client:
         await asyncio.gather(refreshers[0](), refreshers[0]())
-    assert len(user.find("Awaiting My Action").elements) == 1
+    assert len(user.find("Awaiting my action").elements) == 1

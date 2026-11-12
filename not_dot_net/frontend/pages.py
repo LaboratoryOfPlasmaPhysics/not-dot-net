@@ -17,7 +17,7 @@ from not_dot_net.backend.page_service import (
 from not_dot_net.backend.permissions import check_permission, has_permissions
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import confirm_dialog
+from not_dot_net.frontend.widgets import confirm_dialog, one_at_a_time
 
 
 def _slugify(text: str) -> str:
@@ -30,6 +30,7 @@ def _slugify(text: str) -> str:
 def render(user: User):
     container = ui.column().classes("w-full")
 
+    @one_at_a_time
     async def refresh():
         await _render_page_list(container, user)
 
@@ -70,7 +71,9 @@ async def _render_page_list(container, user: User):
                             ui.button(
                                 icon="edit",
                                 on_click=lambda p=page: _show_editor(container, user, p),
-                            ).props("flat dense round color=primary size=sm")
+                            ).props(
+                                f'flat dense round color=primary size=sm aria-label="{t("edit")}"'
+                            ).tooltip(t("edit"))
 
                             async def do_delete(p=page):
                                 try:
@@ -88,15 +91,30 @@ async def _render_page_list(container, user: User):
                             )
                             ui.button(
                                 icon="delete", on_click=delete_dlg.open,
-                            ).props("flat dense round color=negative size=sm").tooltip(
-                                t("delete")
-                            )
+                            ).props(
+                                f'flat dense round color=negative size=sm aria-label="{t("delete")}"'
+                            ).tooltip(t("delete"))
+
+
+def _is_dirty(initial: tuple[str, str], current: tuple[str, str]) -> bool:
+    return initial != current
 
 
 async def _show_editor(container, user: User, page=None):
     editing = page is not None
+    initial = (page.title, page.content) if editing else ("", "")
 
-    with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
+    def cancel():
+        if _is_dirty(initial, (title_input.value, content_input.value)):
+            confirm_dialog(
+                t("confirm_discard_changes"), dialog.close,
+                confirm_label=t("discard"), confirm_icon="delete",
+            ).open()
+        else:
+            dialog.close()
+
+    # Persistent: Escape or a click outside would drop the text typed.
+    with ui.dialog().props("maximized persistent") as dialog, ui.card().classes("w-full h-full"):
         # Top bar: metadata + actions
         with ui.row().classes("items-center gap-3 w-full mb-2"):
             title_input = ui.input(
@@ -117,7 +135,7 @@ async def _show_editor(container, user: User, page=None):
 
             ui.space()
 
-            ui.button(t("cancel"), on_click=dialog.close).props("flat")
+            ui.button(t("cancel"), on_click=cancel).props("flat")
 
             async def do_save():
                 try:

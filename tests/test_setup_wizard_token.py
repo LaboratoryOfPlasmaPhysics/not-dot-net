@@ -27,11 +27,11 @@ async def test_page_without_token_hides_the_form_and_logs_the_link(user: UiUser,
     setup_wizard.setup()
     with caplog.at_level(logging.WARNING, logger=setup_wizard.__name__):
         await user.open("/setup")
-    await user.should_not_see("Complete Setup")
+    await user.should_not_see("Complete setup")
     assert f"/setup?token={setup_token()}" in caplog.text
 
 
 async def test_page_with_token_shows_the_form(user: UiUser):
     setup_wizard.setup()
     await user.open(f"/setup?token={setup_token()}")
-    await user.should_see("Complete Setup")
+    await user.should_see("Complete setup")

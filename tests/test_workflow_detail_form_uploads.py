@@ -47,7 +47,7 @@ async def test_target_person_gets_upload_and_draft_on_detail_page(user: UiUser):
     newcomer = await _create_plain_user("newcomer@example.com")
 
     await _open_as(user, newcomer, f"/workflow/request/{req.id}")
-    await user.should_see("Save Draft")
+    await user.should_see("Save draft")
     await user.should_not_see("no upload available")
 
 

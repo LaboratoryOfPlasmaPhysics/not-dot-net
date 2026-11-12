@@ -158,6 +158,10 @@ async def render(user: User):
     can_create = await has_permissions(user, "create_workflows")
 
     with container:
+        ui.button(
+            t("back_to_dashboard"), icon="arrow_back",
+            on_click=lambda: ui.navigate.to("/?tab=dashboard"),
+        ).props("flat dense no-caps")
         ui.label(t("select_workflow")).classes("text-h6 mb-4")
 
         for wf_key, wf_config in cfg.workflows.items():

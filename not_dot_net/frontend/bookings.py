@@ -30,7 +30,7 @@ from not_dot_net.backend.permissions import has_permissions
 from not_dot_net.backend.vocabularies import resolve_terms
 from not_dot_net.frontend.i18n import t
 from not_dot_net.frontend.errors import notify_error
-from not_dot_net.frontend.widgets import as_date_range, confirm_dialog, options_with
+from not_dot_net.frontend.widgets import as_date_range, confirm_dialog, one_at_a_time, options_with
 
 RESOURCE_TYPES = ["desktop", "laptop", "office"]
 
@@ -145,7 +145,10 @@ def _render_book_for(container, user, choices: list[dict], target: dict | None, 
 
 def render(user: User):
     container = ui.column().classes("w-full")
+    with container:
+        ui.label(t("loading")).classes("text-grey")
 
+    @one_at_a_time
     async def refresh():
         await _render_bookings(container, user)
 
@@ -244,6 +247,20 @@ async def _render_bookings(container, user: User, filter_range=None):
         if choices:
             _render_book_for(container, user, choices, target, today, booking_cfg)
 
+        # --- Resources header ---
+        with ui.row().classes("items-center justify-between w-full mb-2"):
+            ui.label(t("resources")).classes("text-h6")
+            if is_admin:
+                with ui.row().classes("gap-2"):
+                    ui.button(
+                        t("add_resource"), icon="add",
+                        on_click=lambda: _show_resource_dialog(container, user),
+                    ).props("flat color=primary")
+                    ui.button(
+                        t("manage_software"), icon="settings",
+                        on_click=lambda: _show_software_dialog(container, user),
+                    ).props("flat color=primary")
+
         # --- Global date range filter ---
         default_range = _normalize_booking_range(
             filter_range,
@@ -261,7 +278,7 @@ async def _render_bookings(container, user: User, filter_range=None):
             ui.icon("date_range", size="sm").classes("text-primary")
             with ui.element("div"):
                 range_display = ui.input(
-                    t("filter"), value=_range_label(default_range),
+                    t("booking_period"), value=_range_label(default_range),
                 ).props("outlined dense readonly").classes("min-w-[250px]")
                 with range_display.add_slot("append"):
                     ui.icon("event").classes("cursor-pointer")
@@ -306,20 +323,6 @@ async def _render_bookings(container, user: User, filter_range=None):
         date_picker.on_value_change(lambda _: apply_filter())
         site_select.on_value_change(lambda _: apply_filter())
         type_select.on_value_change(lambda _: apply_filter())
-
-        # --- Resources header ---
-        with ui.row().classes("items-center justify-between w-full mb-2"):
-            ui.label(t("resources")).classes("text-h6")
-            if is_admin:
-                with ui.row().classes("gap-2"):
-                    ui.button(
-                        t("add_resource"), icon="add",
-                        on_click=lambda: _show_resource_dialog(container, user),
-                    ).props("flat color=primary")
-                    ui.button(
-                        t("manage_software"), icon="settings",
-                        on_click=lambda: _show_software_dialog(container, user),
-                    ).props("flat color=primary")
 
         if not resources:
             ui.label(t("no_bookings")).classes("text-grey")
@@ -393,7 +396,7 @@ async def _render_resource_list(outer_container, area, resources, user, is_admin
             site_resources.sort(key=lambda r: (not availability.get(r.id, True)))
 
             with ui.element("div").classes(
-                "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
+                "w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-start"
             ):
                 for res in site_resources:
                     await _resource_card(
@@ -590,6 +593,7 @@ async def _render_resource_detail(outer_container, res, user, is_admin, book_ran
     all_software = bc.software_tags
 
     ui.label(range_label).classes("text-sm text-grey-8")
+    ui.label(t("booking_period_hint")).classes("text-xs text-grey-7")
     if book_range and default_range["from"] != book_range.get("from"):
         ui.label(t("booking_range_shifted", days=bc.minimum_lead_days)).classes("text-xs text-orange-9")
     with ui.row().classes("items-center gap-2"):

@@ -75,6 +75,18 @@ def section_title_key(prefix: str) -> str:
 _SUPERUSER_ONLY_SECTIONS = {"ldap"}
 
 
+_SECTION_ICON = {
+    "bookings": "event_available",
+    "dashboard": "dashboard",
+    "files": "folder",
+    "ldap": "dns",
+    "mail": "outgoing_mail",
+    "org": "business",
+    "services": "apps",
+    "workflows": "account_tree",
+}
+
+
 async def render(user):
     """Render the admin settings tab content."""
     from not_dot_net.backend.permissions import check_permission
@@ -107,7 +119,8 @@ async def render(user):
         current = await cfg_section.get()
         schema = cfg_section.schema
 
-        with ui.expansion(t(section_title_key(prefix)), icon="settings").classes("w-full"):
+        icon = _SECTION_ICON.get(prefix, "settings")
+        with ui.expansion(t(section_title_key(prefix)), icon=icon).classes("w-full"):
             if prefix == "workflows":
                 from not_dot_net.frontend.workflow_editor import open_workflow_editor
                 wf_count = len(current.workflows)

@@ -29,9 +29,9 @@ async def test_todo_list_comes_before_the_pages(user: UiUser):
         render(viewer)
 
     await user.open("/_dash_order")
-    await user.should_see("Awaiting My Action")
+    await user.should_see("Awaiting my action")
     await user.should_see("Welcome")
-    todo = user.find("Awaiting My Action").elements.pop()
+    todo = user.find("Awaiting my action").elements.pop()
     page_card = user.find("Welcome").elements.pop()
     assert drawn_before(todo, page_card)
 
@@ -121,4 +121,4 @@ async def test_empty_dashboard_says_what_you_can_do(user: UiUser):
     await user.open("/_dash_empty")
     await user.should_see("Find a person")
     await user.should_see("Book a resource")
-    await user.should_not_see("New Request")  # no create_workflows
+    await user.should_not_see("New request")  # no create_workflows

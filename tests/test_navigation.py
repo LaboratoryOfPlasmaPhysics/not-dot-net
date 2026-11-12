@@ -44,7 +44,7 @@ async def test_admin_places_live_in_one_menu(user: UiUser):
     await user.open("/")
     await user.should_see("Admin")
     assert _bar_tabs(user) == EVERYDAY
-    for label in ["Operations", "Users", "AD Accounts", "Audit Log", "Settings"]:
+    for label in ["Operations", "Users", "AD accounts", "Audit log", "Settings"]:
         assert any(_in_a_menu(e) for e in user.find(label).elements), label
 
 
@@ -66,5 +66,5 @@ async def test_deep_links_to_admin_places_still_work(user: UiUser):
 async def test_new_request_is_a_button_on_the_dashboard(user: UiUser):
     await _log_in(user, "nav-new@test.com", superuser=True)
     await user.open("/")
-    await user.should_see("New Request")
+    await user.should_see("New request")
     assert "new_request" not in _bar_tabs(user)

@@ -165,7 +165,7 @@ async def test_the_person_page_shows_and_edits_the_tenure_team(user):
         await _render_detail(ui.column(), person, person, {"details": {}, "expanded_id": None})
 
     await user.open("/_tenure_team")
-    user.find("Employment History").click()
+    user.find("Employment history").click()
     await user.should_see("Theory")
     user.find(marker="edit-tenure").click()
     await user.should_see(marker="tenure-team")
